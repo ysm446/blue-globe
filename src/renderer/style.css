@@ -1,0 +1,649 @@
+:root {
+  color-scheme: dark;
+  --bg: #0a0e14;
+  --panel: rgba(13, 19, 29, 0.95);
+  --panel-solid: #111825;
+  --field: #0c121c;
+  --line: rgba(157, 180, 214, 0.18);
+  --text: #eef2f8;
+  --text-2: #b3bfd0;
+  --text-3: #8795a9;
+  --accent: #7fb2ff;
+  --warn: #f2c56b;
+  --icon-sun: #ffc857;
+  --icon-moon: #dfe6f5;
+  --icon-cloud: #aebbd0;
+  --icon-rain: #6db4ff;
+  --icon-snow: #e8f2ff;
+  --icon-bolt: #ffd84d;
+  --icon-fog: #8795a9;
+  font-family: system-ui, -apple-system, 'Segoe UI', 'Yu Gothic UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  font-size: 14px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+#app canvas {
+  display: block;
+}
+
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  min-height: 30px;
+  padding: 3px 12px;
+  background: rgba(157, 180, 214, 0.1);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: rgba(157, 180, 214, 0.2);
+}
+
+button:active:not(:disabled) {
+  background: rgba(157, 180, 214, 0.28);
+}
+
+button:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+a {
+  color: var(--text-2);
+}
+
+a:hover {
+  color: var(--text);
+}
+
+/* ------------------------------------------------ 地点マーカー */
+
+#marker {
+  position: fixed;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.marker-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(10, 14, 20, 0.7);
+}
+
+.marker-dot::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  animation: marker-pulse 2.4s ease-out infinite;
+}
+
+@keyframes marker-pulse {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(3.6);
+    opacity: 0;
+  }
+}
+
+.marker-label {
+  position: absolute;
+  left: 13px;
+  top: -11px;
+  padding: 1px 7px;
+  background: rgba(10, 14, 20, 0.78);
+  border-radius: 4px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* ------------------------------------------------ 時計 */
+
+#clock {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 16px 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+#clock-weather {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+}
+
+#clock-weather[hidden] {
+  display: none;
+}
+
+#clock-icon {
+  flex: none;
+  height: 48px;
+}
+
+#clock-temperature {
+  font-size: 28px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+#clock-condition {
+  color: var(--text-2);
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+#clock-time {
+  display: block;
+  font-size: 44px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+
+#clock-date {
+  color: var(--text-2);
+  font-size: 16px;
+}
+
+/* ------------------------------------------------ ニュースパネル */
+
+#news {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: 432px;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 20px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+.news-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.news-kicker {
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.news-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.news-status {
+  margin-top: 16px;
+  color: var(--text-2);
+  line-height: 1.6;
+}
+
+.news-status:empty {
+  display: none;
+}
+
+.news-status.error {
+  color: var(--warn);
+}
+
+#news-body {
+  flex: 1;
+}
+
+.news-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 0 8px;
+}
+
+#current-icon {
+  flex: none;
+  height: 52px;
+}
+
+.weather-icon {
+  display: inline-block;
+  vertical-align: middle;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.icon-sun {
+  fill: var(--icon-sun);
+  stroke: var(--icon-sun);
+  stroke-width: 1.8;
+}
+
+.icon-moon {
+  fill: var(--icon-moon);
+}
+
+/* 太陽や月と重なっても輪郭が分かるよう、背景色の縁を付ける */
+.icon-cloud {
+  fill: var(--icon-cloud);
+  stroke: var(--panel-solid);
+  stroke-width: 1.2;
+}
+
+.icon-rain {
+  stroke: var(--icon-rain);
+  stroke-width: 2;
+}
+
+.icon-snow {
+  stroke: var(--icon-snow);
+  stroke-width: 1.5;
+}
+
+.icon-bolt {
+  fill: var(--icon-bolt);
+  stroke: var(--panel-solid);
+  stroke-width: 1;
+}
+
+.icon-fog {
+  stroke: var(--icon-fog);
+  stroke-width: 2;
+}
+
+#headline {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.news-text {
+  margin: 0 0 10px;
+  font-size: 16px;
+  line-height: 1.7;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  margin: 14px 0;
+  border-block: 1px solid var(--line);
+}
+
+.stats > div {
+  padding: 9px 0 10px 10px;
+  border-left: 1px solid var(--line);
+}
+
+.stats > div:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.stats dt {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.stats dd {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.stats small {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.hourly {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hourly caption {
+  margin-bottom: 6px;
+  color: var(--text-3);
+  text-align: left;
+}
+
+.hourly th {
+  width: 34px;
+  padding: 3px 0;
+  color: var(--text-3);
+  font-weight: 400;
+  text-align: left;
+}
+
+.hourly td {
+  padding: 3px 0;
+  text-align: right;
+}
+
+#hourly-time td {
+  color: var(--text-2);
+}
+
+.weekly {
+  width: 100%;
+  margin-top: 16px;
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.weekly caption {
+  margin-bottom: 4px;
+  color: var(--text-3);
+  text-align: left;
+}
+
+.weekly th {
+  padding: 2px 0;
+  color: var(--text-3);
+  font-weight: 400;
+  text-align: left;
+}
+
+.weekly .col-date {
+  width: 66px;
+}
+
+.weekly .col-icon {
+  width: 28px;
+}
+
+.weekly .col-temp {
+  width: 40px;
+}
+
+.weekly .col-rain {
+  width: 46px;
+}
+
+.weekly td {
+  padding: 2px 0;
+  border-top: 1px solid var(--line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weekly th.num,
+.weekly td.num {
+  text-align: right;
+}
+
+.weekly td.low {
+  color: var(--text-2);
+}
+
+.weekly tr.today td {
+  font-weight: 600;
+}
+
+.news-note {
+  margin: 14px 0 0;
+  color: var(--warn);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+#original-box {
+  margin-top: 14px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+#original-box summary {
+  cursor: pointer;
+}
+
+#original-box p {
+  margin: 6px 0 0;
+}
+
+.news-footer {
+  margin-top: 16px;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.news-footer p {
+  margin: 0;
+}
+
+.news-footer a {
+  color: var(--text-3);
+}
+
+/* ------------------------------------------------ 風の凡例 */
+
+#wind-info {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  width: 280px;
+  padding: 10px 12px;
+  color: var(--text-2);
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.legend-bar {
+  height: 5px;
+  border-radius: 3px;
+}
+
+.legend-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+}
+
+#wind-source {
+  margin-top: 3px;
+}
+
+#wind-source.warn {
+  color: var(--warn);
+}
+
+/* ------------------------------------------------ 設定 */
+
+#settings {
+  width: 520px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  padding: 16px 20px;
+  overflow-y: auto;
+  color: var(--text);
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+#settings::backdrop {
+  background: rgba(4, 7, 11, 0.55);
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#settings h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+#settings h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+#settings section {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.field-row {
+  display: flex;
+  gap: 6px;
+}
+
+.field-label {
+  display: block;
+  margin: 10px 0 4px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+input[type='text'],
+input[type='search'],
+select {
+  flex: 1;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  background: var(--field);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+select option {
+  background: var(--panel-solid);
+}
+
+.settings-help {
+  margin: 6px 0 0;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.settings-help:empty {
+  display: none;
+}
+
+.settings-help.error {
+  color: var(--warn);
+}
+
+#location-results {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+#location-results button {
+  width: 100%;
+  margin-top: 4px;
+  text-align: left;
+}
+
+#location-results small {
+  margin-left: 8px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.settings-credit {
+  margin: 14px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  #news {
+    top: auto;
+    left: 16px;
+    width: auto;
+    max-height: 58vh;
+  }
+
+  #wind-info {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .marker-dot::after {
+    animation: none;
+  }
+}

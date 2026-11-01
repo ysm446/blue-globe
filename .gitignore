@@ -1,0 +1,14 @@
+# --- 実行バイナリ (llama.cpp。サイズが大きいので Git 管理しない) ---
+runtime/
+
+# --- アプリ生成データ (設定・キャッシュ・ログ)。src/renderer/data などは管理する ---
+/data/
+
+# --- Node / Electron ---
+node_modules/
+dist/
+
+# --- Python ---
+.venv/
+__pycache__/
+*.py[cod]

@@ -1,0 +1,86 @@
+interface WindResult {
+  source: 'cache' | 'nomads' | 'stale' | 'sample';
+  records: unknown;
+}
+
+interface WeatherLocation {
+  name: string;
+  admin1: string | null;
+  country: string | null;
+  country_code: string | null;
+  latitude: number;
+  longitude: number;
+}
+
+interface AppSettings {
+  location: WeatherLocation | null;
+  models_dir: string;
+  model: string | null;
+}
+
+interface ModelEntry {
+  path: string;
+  name: string;
+  size_gb: number;
+}
+
+interface ModelList {
+  models: ModelEntry[];
+  error: string | null;
+}
+
+interface NewsOutlook {
+  text: string;
+  method: 'rule' | 'llm' | 'verbatim';
+  original: string | null;
+  model: string | null;
+  reported_at: string | null;
+}
+
+interface NewsReport {
+  location: WeatherLocation;
+  headline: string;
+  current_text: string;
+  day_text: string;
+  outlook: NewsOutlook | null;
+  note: string | null;
+  current: {
+    weather: string;
+    icon: string;
+    is_day: boolean;
+    temperature: number;
+    apparent: number;
+    humidity: number;
+    wind_speed: number;
+    wind_direction: string;
+    gust: number;
+  };
+  hourly: Array<{
+    time: string;
+    temperature: number;
+    rain: number | null;
+    weather: string;
+    icon: string;
+    is_day: boolean;
+  }>;
+  weekly: Array<{
+    label: string;
+    weather: string;
+    icon: string;
+    high: number;
+    low: number;
+    rain: number | null;
+  }>;
+}
+
+interface Window {
+  weatherApi: {
+    getWind(): Promise<WindResult>;
+    getNews(): Promise<NewsReport>;
+    getSettings(): Promise<AppSettings>;
+    saveSettings(settings: AppSettings): Promise<AppSettings>;
+    searchLocations(query: string): Promise<WeatherLocation[]>;
+    listModels(modelsDir: string): Promise<ModelList>;
+    pickFolder(defaultPath: string): Promise<string | null>;
+  };
+}

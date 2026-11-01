@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+    />
+    <title>Weather News</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+
+    <div id="marker" hidden>
+      <span class="marker-dot"></span>
+      <span id="marker-label" class="marker-label"></span>
+    </div>
+
+    <div id="clock">
+      <div>
+        <time id="clock-time"></time>
+        <div id="clock-date"></div>
+      </div>
+      <div id="clock-weather" hidden>
+        <span id="clock-icon"></span>
+        <div>
+          <div id="clock-temperature"></div>
+          <div id="clock-condition"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside id="news">
+      <header class="news-bar">
+        <span class="news-kicker">天気ニュース</span>
+        <span class="news-actions">
+          <button id="refresh" type="button">更新</button>
+          <button id="open-settings" type="button">設定</button>
+        </span>
+      </header>
+
+      <div id="news-status" class="news-status" role="status"></div>
+
+      <article id="news-body" hidden>
+        <div class="news-head">
+          <h1 id="headline"></h1>
+          <span id="current-icon"></span>
+        </div>
+        <p id="current-text" class="news-text"></p>
+        <p id="day-text" class="news-text"></p>
+        <p id="outlook-text" class="news-text" hidden></p>
+
+        <dl class="stats">
+          <div><dt>気温</dt><dd id="stat-temperature"></dd></div>
+          <div><dt>体感</dt><dd id="stat-apparent"></dd></div>
+          <div><dt>湿度</dt><dd id="stat-humidity"></dd></div>
+          <div><dt>風速</dt><dd id="stat-wind"></dd></div>
+          <div><dt>瞬間</dt><dd id="stat-gust"></dd></div>
+        </dl>
+
+        <table class="hourly">
+          <caption>これから24時間</caption>
+          <tbody>
+            <tr id="hourly-time"><th scope="row">時刻</th></tr>
+            <tr id="hourly-icon"><th scope="row">天気</th></tr>
+            <tr id="hourly-temperature"><th scope="row">気温</th></tr>
+            <tr id="hourly-rain"><th scope="row">降水</th></tr>
+          </tbody>
+        </table>
+
+        <table class="weekly">
+          <caption>週間予報(今日はこのあとの予報)</caption>
+          <colgroup>
+            <col class="col-date" />
+            <col class="col-icon" />
+            <col />
+            <col class="col-temp" />
+            <col class="col-temp" />
+            <col class="col-rain" />
+          </colgroup>
+          <thead>
+            <tr>
+              <th scope="col">日付</th>
+              <th scope="col" colspan="2">天気</th>
+              <th scope="col" class="num">最高</th>
+              <th scope="col" class="num">最低</th>
+              <th scope="col" class="num">降水</th>
+            </tr>
+          </thead>
+          <tbody id="weekly-body"></tbody>
+        </table>
+
+        <p id="outlook-note" class="news-note" hidden></p>
+        <details id="original-box" hidden>
+          <summary>気象庁の原文</summary>
+          <p id="original-text"></p>
+        </details>
+      </article>
+
+      <footer class="news-footer">
+        <p id="outlook-source"></p>
+        <p>
+          <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Weather data by Open-Meteo.com</a>
+          ・<a href="https://www.jma.go.jp/bosai/" target="_blank" rel="noreferrer">気象庁</a>
+        </p>
+      </footer>
+    </aside>
+
+    <div id="wind-info">
+      <div class="legend-bar" id="legend-bar"></div>
+      <div class="legend-scale"><span>0</span><span>風速 m/s</span><span>35</span></div>
+      <div id="wind-source"></div>
+    </div>
+
+    <dialog id="settings">
+      <form method="dialog" class="settings-head">
+        <h2>設定</h2>
+        <button id="close-settings" value="close">閉じる</button>
+      </form>
+
+      <section>
+        <h3>地点</h3>
+        <p id="current-location" class="settings-help"></p>
+        <form id="location-form" class="field-row">
+          <input id="location-query" type="search" placeholder="市区町村や都市名(例: 札幌、Paris)" aria-label="地名" />
+          <button type="submit">検索</button>
+        </form>
+        <p id="location-status" class="settings-help" role="status"></p>
+        <ul id="location-results"></ul>
+      </section>
+
+      <section>
+        <h3>LLM モデル</h3>
+        <label class="field-label" for="models-dir">モデルフォルダ</label>
+        <div class="field-row">
+          <input id="models-dir" type="text" spellcheck="false" />
+          <button id="pick-folder" type="button">参照</button>
+        </div>
+        <label class="field-label" for="model-select">使用するモデル</label>
+        <select id="model-select"></select>
+        <p id="model-status" class="settings-help" role="status"></p>
+        <p class="settings-help">
+          気象庁の文を1文にまとめる必要があるときだけ読み込み、しばらく使わないと VRAM を解放します。
+        </p>
+      </section>
+      <p class="settings-credit">地名検索: 国土地理院、Open-Meteo</p>
+    </dialog>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
