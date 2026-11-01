@@ -30,6 +30,7 @@ import {
 } from './region-camera';
 import { RegionDetail } from './region-detail';
 import { linePath, linePoints } from './hourly-chart';
+import { DEMO_SCENES, pickDemoPlace } from './demo';
 
 const COLORS = {
   ocean: '#0c1422',
@@ -76,6 +77,13 @@ const CAMERA_NEAR_MAX = 0.1;
 const CAMERA_NEAR_MIN = 0.005;
 const CLOUD_TOP = 0.012; // 雲の層の最も高い位置。カメラの手前の範囲はこれより内側に保つ
 const REGION_BLEND_SECONDS = 0.5;
+const DEMO_FLY_SECONDS = 6;
+const DEMO_ROTATE_SPEED = 0.42; // OrbitControls の単位。毎秒約 2.5 度で、地表は実際の自転と同じ東向きに動く
+const DEMO_TURN_DEGREES_PER_SECOND = 1.2; // 地域ビューで中心のまわりを回る速さ
+const DEMO_TILT = 62;
+const DEMO_DISTANCE = 0.22;
+const DEMO_DAYSIDE_OFFSET = 30; // 太陽の真下より東から始め、回転で真下を通る
+const DEMO_HINT_MS = 4000;
 const REGION_RELEASE_BLEND = 0.01; // 地球ビューへ戻って、高解像度の画像が見えなくなったら解放する
 const WHEEL_ZOOM_RATE = 0.0012;
 const ROTATE_DEGREES_PER_HEIGHT = 180; // 右ドラッグで画面の高さぶん動かしたときの回転
@@ -277,7 +285,8 @@ function initGlobe() {
 
   // 地域ビュー。null の間は地球ビューで、OrbitControls がカメラを動かす
   let regionView: RegionView | null = null;
-  let regionFlight: { from: RegionView; to: RegionView; elapsed: number; leaving: boolean } | null = null;
+  let regionFlight: { from: RegionView; to: RegionView; elapsed: number; seconds: number; leaving: boolean } | null = null;
+  let demoMotion = false;
   let regionVelocity: RegionVelocity = REGION_STILL;
   let regionDistanceGoal = REGION_DISTANCE;
   let regionBlend = 0;
@@ -302,9 +311,9 @@ function initGlobe() {
     return hit ? lonLatOf([hit.x, hit.y, hit.z]) : null;
   }
 
-  function flyRegion(to: RegionView, leaving: boolean): void {
+  function flyRegion(to: RegionView, leaving: boolean, seconds = FLY_SECONDS): void {
     if (!regionView) return;
-    regionFlight = { from: regionView, to, elapsed: 0, leaving };
+    regionFlight = { from: regionView, to, elapsed: 0, seconds, leaving };
     regionVelocity = REGION_STILL;
     regionDrag = null;
   }
@@ -362,8 +371,7 @@ function initGlobe() {
     if (!regionView && regionDetail && regionBlend < REGION_RELEASE_BLEND) stopRegionDetail();
   }
 
-  function enterRegion(): void {
-    if (mode === 'wind' || (regionView && !regionFlight?.leaving)) return;
+  function beginRegion(): RegionView {
     flight = null;
     controls.enabled = false;
     startRegionDetail();
@@ -373,23 +381,28 @@ function initGlobe() {
       tilt: 0,
       distance: camera.position.length() - GLOBE_RADIUS,
     };
-    flyRegion(regionHomeOf(regionView), false);
+    return regionView;
+  }
+
+  function enterRegion(): void {
+    if (mode === 'wind' || (regionView && !regionFlight?.leaving)) return;
+    flyRegion(regionHomeOf(beginRegion()), false);
   }
 
   // 真上から見た姿勢まで戻してから、地球ビューの操作へ引き渡す
-  function leaveRegion(distance: number): void {
+  function leaveRegion(distance: number, seconds = FLY_SECONDS): void {
     if (!regionView) return;
-    flyRegion({ ...regionView, heading: 0, tilt: 0, distance: distance - GLOBE_RADIUS }, true);
+    flyRegion({ ...regionView, heading: 0, tilt: 0, distance: distance - GLOBE_RADIUS }, true, seconds);
   }
 
   function updateRegion(dt: number): void {
     if (!regionView) return;
     if (regionFlight) {
-      regionFlight.elapsed = Math.min(FLY_SECONDS, regionFlight.elapsed + dt);
-      const t = regionFlight.elapsed / FLY_SECONDS;
+      regionFlight.elapsed = Math.min(regionFlight.seconds, regionFlight.elapsed + dt);
+      const t = regionFlight.elapsed / regionFlight.seconds;
       regionView = interpolateRegionView(regionFlight.from, regionFlight.to, t * t * (3 - 2 * t));
       regionDistanceGoal = clampRegionDistance(regionView.distance);
-      if (regionFlight.elapsed >= FLY_SECONDS) {
+      if (regionFlight.elapsed >= regionFlight.seconds) {
         const { leaving } = regionFlight;
         regionFlight = null;
         if (leaving) {
@@ -407,6 +420,7 @@ function initGlobe() {
       }
       regionView = clampRegionView({
         ...regionView,
+        heading: regionView.heading + (demoMotion ? DEMO_TURN_DEGREES_PER_SECOND * dt : 0),
         distance: approachDistance(regionView.distance, regionDistanceGoal, dt),
       });
     }
@@ -544,7 +558,7 @@ function initGlobe() {
       controls.rotateSpeed = THREE.MathUtils.clamp(altitude * 0.32, 0.05, 0.6);
       // 慣性はフレームごとに減衰するので、FPS によらず同じ時間で止まるように換算する
       controls.dampingFactor = 1 - Math.pow(1 - DAMPING_AT_REFERENCE, dt * REFERENCE_HZ);
-      controls.update();
+      controls.update(dt); // 自動回転の速さを FPS によらず同じにする
       return;
     }
     flight.elapsed = Math.min(FLY_SECONDS, flight.elapsed + dt);
@@ -700,6 +714,7 @@ function initGlobe() {
     earth,
     regionView: () => regionView,
     regionDetailProgress: () => regionDetail?.progress ?? null,
+    demoTimeScale: 1,
     renderHourly,
     mapLinesVisible: () => [coastlines.group.visible, borders.group.visible],
     stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),
@@ -726,6 +741,27 @@ function initGlobe() {
     setView(next: GlobeView): void {
       if (next === 'region') enterRegion();
       else leaveRegion(EARTH_VIEW_DIST);
+    },
+    sunLonLat: (): LonLat => lonLatOf([sky.sunDir.x, sky.sunDir.y, sky.sunDir.z]),
+    setDemoMotion(on: boolean): void {
+      demoMotion = on;
+      controls.autoRotate = on;
+      controls.autoRotateSpeed = DEMO_ROTATE_SPEED;
+    },
+    // place を省くと設定地点へ向かう
+    demoRegion(place?: LonLat): void {
+      if (mode === 'wind') return;
+      const from = beginRegion();
+      const target = place ?? { lat: focused?.latitude ?? from.lat, lon: focused?.longitude ?? from.lon };
+      flyRegion({ ...target, heading: 0, tilt: DEMO_TILT, distance: DEMO_DISTANCE }, false, DEMO_FLY_SECONDS);
+    },
+    // 風速モードへの切り替えで既に離れ始めていたら、その動きに任せる
+    demoGlobe(dayside = false): void {
+      if (!regionView || regionFlight?.leaving) return;
+      const distance = (mode === 'wind' ? FOCUS_DIST : EARTH_VIEW_DIST) - GLOBE_RADIUS;
+      const sun = lonLatOf([sky.sunDir.x, sky.sunDir.y, sky.sunDir.z]);
+      const place = dayside ? { lat: sun.lat, lon: sun.lon + DEMO_DAYSIDE_OFFSET } : regionView;
+      flyRegion({ ...regionView, ...place, heading: 0, tilt: 0, distance }, true, DEMO_FLY_SECONDS);
     },
   };
 }
@@ -1408,6 +1444,113 @@ function initPanelFolds(): (panels: PanelSettings) => void {
   };
 }
 
+const DEMO_MODE_CAPTION: Record<MapMode, { title: string; note: string }> = {
+  normal: { title: '地球', note: '今の太陽の位置で描いています' },
+  weather: { title: '今の雲', note: 'NOAA GMGSI と GFS をもとに加工したもので、元データそのものではありません' },
+  wind: { title: '今の風', note: 'NOAA GFS' },
+};
+
+// 地球の回転と地域ビューを順に見せる。操作すると終わり、元のモードと視点へ戻す
+function initDemo(
+  globe: ReturnType<typeof initGlobe>,
+  modes: { get(): MapMode; apply(mode: MapMode): void },
+  views: { get(): GlobeView; show(view: GlobeView): void },
+): void {
+  const start = el<HTMLButtonElement>('start-demo');
+  const caption = el('demo-caption');
+  const hint = el('demo-hint');
+  let restore: { mode: MapMode; view: GlobeView } | null = null;
+  let timer = 0;
+  let hintTimer = 0;
+  let step = 0;
+  const next = { day: 0, night: 0 };
+
+  function showCaption(title: string, note: string): void {
+    el('demo-caption-title').textContent = title;
+    el('demo-caption-note').textContent = note;
+  }
+
+  function runScene(): void {
+    const scene = DEMO_SCENES[step % DEMO_SCENES.length];
+    step++;
+    modes.apply(scene.mode);
+    views.show(scene.view);
+    if (scene.view === 'globe') {
+      globe.demoGlobe(scene.dayside);
+      showCaption(DEMO_MODE_CAPTION[scene.mode].title, DEMO_MODE_CAPTION[scene.mode].note);
+    } else {
+      const home = el('clock-place-name').textContent ?? '';
+      if (scene.place === 'home' && home) {
+        globe.demoRegion();
+        showCaption(home, '設定した地点');
+      } else {
+        const kind = scene.place === 'night' ? 'night' : 'day';
+        const picked = pickDemoPlace(kind, globe.sunLonLat(), next[kind]);
+        next[kind] = picked.next;
+        globe.demoRegion(picked.place);
+        showCaption(picked.place.name, '地表と街明かりは合成画像で、今の様子ではありません');
+      }
+    }
+    const scale = (window as unknown as { __weatherNewsDebug: { demoTimeScale: number } }).__weatherNewsDebug.demoTimeScale;
+    timer = window.setTimeout(runScene, scene.seconds * 1000 * scale);
+  }
+
+  function wake(): void {
+    document.body.classList.remove('demo-idle');
+    hint.hidden = false;
+    window.clearTimeout(hintTimer);
+    hintTimer = window.setTimeout(() => {
+      document.body.classList.add('demo-idle');
+      hint.hidden = true;
+    }, DEMO_HINT_MS);
+  }
+
+  function stop(): void {
+    if (!restore) return;
+    const { mode, view } = restore;
+    restore = null;
+    window.clearTimeout(timer);
+    window.clearTimeout(hintTimer);
+    window.removeEventListener('pointerdown', onInput, true);
+    window.removeEventListener('wheel', onInput, true);
+    window.removeEventListener('keydown', onInput, true);
+    window.removeEventListener('mousemove', wake);
+    document.body.classList.remove('demo', 'demo-idle');
+    caption.hidden = true;
+    hint.hidden = true;
+    globe.setDemoMotion(false);
+    modes.apply(mode);
+    views.show(view);
+    if (view === 'region') globe.setView('region');
+    else globe.demoGlobe();
+    globe.returnToLocation();
+  }
+
+  // 終了の操作が、その下のボタンや地球の操作として働かないようにする。スクリーンショットでは終わらない
+  function onInput(event: Event): void {
+    if (event instanceof KeyboardEvent && event.key === 'F12') return;
+    event.preventDefault();
+    event.stopPropagation();
+    stop();
+  }
+
+  start.addEventListener('click', () => {
+    if (restore) return;
+    restore = { mode: modes.get(), view: views.get() };
+    step = 0;
+    start.blur();
+    document.body.classList.add('demo');
+    caption.hidden = false;
+    globe.setDemoMotion(true);
+    window.addEventListener('pointerdown', onInput, true);
+    window.addEventListener('wheel', onInput, { capture: true, passive: false });
+    window.addEventListener('keydown', onInput, true);
+    window.addEventListener('mousemove', wake);
+    wake();
+    runScene();
+  });
+}
+
 async function init(): Promise<void> {
   initClock();
   initScreenshotToast();
@@ -1458,11 +1601,13 @@ async function init(): Promise<void> {
     document.querySelectorAll<HTMLButtonElement>('#view-switch button'),
   );
 
-  function showView(view: GlobeView): void {
+  let view: GlobeView = 'globe';
+  function showView(next: GlobeView): void {
+    view = next;
     for (const button of viewButtons) {
-      button.setAttribute('aria-pressed', String(button.dataset.view === view));
+      button.setAttribute('aria-pressed', String(button.dataset.view === next));
     }
-    el('view-hint').hidden = view !== 'region';
+    el('view-hint').hidden = next !== 'region';
   }
 
   for (const button of viewButtons) {
@@ -1550,6 +1695,11 @@ async function init(): Promise<void> {
   });
   el('open-settings').addEventListener('click', () => void settingsDialog.open());
   el('return-home').addEventListener('click', () => globe.returnToLocation());
+  initDemo(
+    globe,
+    { get: () => mode, apply: applyMode },
+    { get: () => view, show: showView },
+  );
 
   try {
     const settings = await window.weatherApi.getSettings();

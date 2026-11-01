@@ -400,6 +400,52 @@ a:hover {
   background: var(--panel-strong);
 }
 
+/* デモの間はパネルを隠して、地球だけを見せる */
+body.demo #top-left,
+body.demo #top-right,
+body.demo #panels,
+body.demo #layer-info {
+  display: none;
+}
+
+body.demo-idle * {
+  cursor: none !important;
+}
+
+#demo-caption {
+  position: fixed;
+  left: 32px;
+  bottom: 28px;
+  pointer-events: none;
+  text-shadow: 0 1px 8px rgba(4, 7, 11, 0.9);
+}
+
+#demo-caption-title {
+  font-size: 32px;
+  font-weight: 200;
+}
+
+#demo-caption-note {
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
+#demo-hint {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  padding: 4px 12px;
+  color: var(--text-2);
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  backdrop-filter: var(--glass);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
 /* 地球を画面の中央に置き、左右の空きにパネルを置く */
 #panels {
   display: contents;
