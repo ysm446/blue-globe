@@ -655,12 +655,14 @@ a:hover {
 
 /* ------------------------------------------------ 設定 */
 
+/* タブを切り替えても大きさが変わらないよう、高さを固定する。中身があふれたらパネルだけスクロールする */
 #settings {
-  width: 520px;
+  width: 560px;
   max-width: calc(100vw - 32px);
+  height: 460px;
   max-height: calc(100vh - 48px);
   padding: 16px 20px;
-  overflow-y: auto;
+  overflow: hidden;
   color: var(--text);
   background: var(--panel-solid);
   border: 1px solid var(--line);
@@ -682,15 +684,43 @@ a:hover {
   font-size: 16px;
 }
 
-#settings h3 {
-  margin: 0 0 8px;
-  font-size: 14px;
+#settings[open] {
+  display: flex;
+  flex-direction: column;
 }
 
-#settings section {
-  margin-top: 14px;
-  padding-top: 14px;
-  border-top: 1px solid var(--line);
+.settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  flex: none;
+  gap: 2px;
+  margin-top: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.settings-tabs button {
+  min-height: 34px;
+  padding: 3px 12px;
+  color: var(--text-2);
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+}
+
+.settings-tabs button[aria-selected='true'] {
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--accent);
+}
+
+.settings-panels {
+  flex: 1;
+  min-height: 0;
+  padding: 14px 2px 2px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(157, 180, 214, 0.28) transparent;
 }
 
 .field-row {
@@ -704,17 +734,6 @@ a:hover {
   align-items: center;
   gap: 6px 12px;
   margin-bottom: 8px;
-}
-
-.section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-#settings .section-head h3 {
-  margin: 0;
 }
 
 .check-line {
@@ -738,8 +757,18 @@ a:hover {
   border-color: transparent;
 }
 
+.reset-all {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0 0 auto;
+  color: var(--text-2);
+  font-size: 13px;
+}
+
 /* 既定のままの項目は押せないことが分かるよう薄くする。位置は動かさない */
-.reset-button:disabled {
+.reset-button:disabled,
+.reset-all:disabled {
   opacity: 0.3;
 }
 
@@ -747,13 +776,36 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 10px;
-  min-height: 32px;
 }
 
 .range-row input {
   flex: 1;
   min-width: 0;
-  accent-color: var(--accent);
+  height: 16px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  appearance: none;
+}
+
+/* --fill はつまみの左側の割合。main.ts の showSlider が決める */
+.range-row input::-webkit-slider-runnable-track {
+  height: 3px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fill, 0%),
+    rgba(157, 180, 214, 0.28) var(--fill, 0%)
+  );
+  border-radius: 2px;
+}
+
+.range-row input::-webkit-slider-thumb {
+  width: 11px;
+  height: 11px;
+  margin-top: -4px;
+  background: var(--accent);
+  border-radius: 50%;
+  appearance: none;
 }
 
 .range-row output {
@@ -828,9 +880,13 @@ select option {
 }
 
 .settings-credit {
-  margin: 14px 0 0;
-  color: var(--text-3);
-  font-size: 12px;
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.settings-credit p {
+  margin: 0;
 }
 
 @media (max-width: 900px) {

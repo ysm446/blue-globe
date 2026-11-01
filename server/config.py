@@ -24,6 +24,7 @@ DEFAULT_SETTINGS = {
         "star_brightness": 1.0,
         "cloud_shadow": 0.55,
         "region_bloom": 0.5,
+        "glint_strength": 1.3,  # 1 が地球の写真に合わせた強さ
         "region_detail": True,
     },
     "models_dir": r"D:\ai-models\llm",

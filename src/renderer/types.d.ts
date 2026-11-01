@@ -36,6 +36,7 @@ interface GraphicsSettings {
   show_map_lines: boolean; // 海岸線と国境線 (通常・天気モード。風速モードでは常に描く)
   star_brightness: number; // 星全体の明るさの倍率
   cloud_shadow: number; // 雲の影の濃さ (0〜1)
+  glint_strength: number; // 海の太陽の反射の強さ。1 が地球の写真に合わせた強さ (0〜3)
   region_bloom: number; // 地域ビューの光のにじみの強さ。地球ビューを 1 とした倍率 (0〜1)
   region_detail: boolean; // 地域ビューで高解像度の画像を取得して使う
 }

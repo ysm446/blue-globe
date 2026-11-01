@@ -53,6 +53,7 @@ uniform sampler2D uWater;
 uniform float uShadowAmount;
 uniform float uCloudAltitude;
 uniform float uShadowStrength;
+uniform float uGlintStrength;
 uniform float uHaze;
 uniform vec3 uSunDir;
 uniform float uRegion;
@@ -136,7 +137,7 @@ void main() {
   // 太陽が低いと式の値が昼の数十倍になる。実際に光を弱める大気や波の陰は描かないので、なめらかに抑える。
   // 分布を掛ける前に抑え、光が平らに頭打ちにならないようにする
   glintPeak = ${GLINT_MAX.toFixed(1)} * (1.0 - exp(-glintPeak / ${GLINT_MAX.toFixed(1)}));
-  float glint = glintPeak * exp(-tanSq / ${WAVE_SLOPE_VARIANCE.toFixed(3)});
+  float glint = uGlintStrength * glintPeak * exp(-tanSq / ${WAVE_SLOPE_VARIANCE.toFixed(3)});
   color += vec3(1.0, 0.92, 0.8) * glint * ocean * (1.0 - shadow) * dayMask;
 
   // 街明かりは夜側だけ
@@ -282,6 +283,7 @@ export class RealisticEarth {
         uShadowAmount: { value: 0 },
         uCloudAltitude: { value: CLOUD_ALTITUDE },
         uShadowStrength: { value: DEFAULT_CLOUD_SHADOW },
+        uGlintStrength: { value: 1 },
         uHaze: this.haze,
         uRegion: { value: 0 },
         uHasDetail: { value: 0 },
@@ -351,6 +353,11 @@ export class RealisticEarth {
     this.haze.value = THREE.MathUtils.lerp(1, REGION_HAZE, blend);
     this.atmosphereThinness.value = THREE.MathUtils.lerp(1, REGION_ATMOSPHERE_THINNESS, blend);
     this.material.uniforms.uRegion.value = blend;
+  }
+
+  // 1 は NASA EPIC の地球の写真に合わせた強さ
+  setGlintStrength(strength: number): void {
+    this.material.uniforms.uGlintStrength.value = strength;
   }
 
   setCloudShadow(strength: number): void {

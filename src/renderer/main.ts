@@ -619,6 +619,7 @@ function initGlobe() {
     hdr.setBloomEnabled(graphics.bloom);
     sky.setStarBrightness(graphics.star_brightness);
     earth.setCloudShadow(graphics.cloud_shadow);
+    earth.setGlintStrength(graphics.glint_strength);
     regionBloom = graphics.region_bloom;
     regionDetailEnabled = graphics.region_detail;
     if (!regionDetailEnabled) stopRegionDetail();
@@ -944,6 +945,37 @@ function initSettingsDialog(
     modelChanged = false;
   });
 
+  // 開いていたタブは、次に開いたときもそのままにする
+  const tabs = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
+
+  function selectTab(selected: HTMLButtonElement): void {
+    for (const tab of tabs) {
+      const active = tab === selected;
+      tab.setAttribute('aria-selected', String(active));
+      tab.tabIndex = active ? 0 : -1;
+      el(tab.getAttribute('aria-controls') as string).hidden = !active;
+    }
+  }
+
+  for (const tab of tabs) {
+    tab.addEventListener('click', () => selectTab(tab));
+    tab.addEventListener('keydown', (event) => {
+      const index = tabs.indexOf(tab);
+      const nextIndex: Record<string, number> = {
+        ArrowLeft: (index - 1 + tabs.length) % tabs.length,
+        ArrowRight: (index + 1) % tabs.length,
+        Home: 0,
+        End: tabs.length - 1,
+      };
+      if (!Object.hasOwn(nextIndex, event.key)) return;
+      event.preventDefault();
+      const next = tabs[nextIndex[event.key]];
+      selectTab(next);
+      next.focus();
+    });
+  }
+  selectTab(tabs[0]);
+
   function setStatus(target: HTMLElement, message: string, isError = false): void {
     target.textContent = message;
     target.classList.toggle('error', isError);
@@ -1060,6 +1092,7 @@ function initSettingsDialog(
   const starSlider = el<HTMLInputElement>('star-brightness');
   const shadowSlider = el<HTMLInputElement>('cloud-shadow');
   const regionBloomSlider = el<HTMLInputElement>('region-bloom');
+  const glintSlider = el<HTMLInputElement>('glint-strength');
   const regionDetailToggle = el<HTMLInputElement>('region-detail-toggle');
 
   function showCloudShadow(): void {
@@ -1075,6 +1108,24 @@ function initSettingsDialog(
     el('star-brightness-value').textContent = `×${(2 ** Number(starSlider.value)).toFixed(2)}`;
   }
 
+  function showGlintStrength(): void {
+    el('glint-strength-value').textContent = `${glintSlider.value}%`;
+  }
+
+  const sliders: Array<[HTMLInputElement, () => void]> = [
+    [starSlider, showStarBrightness],
+    [shadowSlider, showCloudShadow],
+    [regionBloomSlider, showRegionBloom],
+    [glintSlider, showGlintStrength],
+  ];
+
+  // 値の表示と、つまみの左側の色を合わせる
+  function showSlider(slider: HTMLInputElement, show: () => void): void {
+    show();
+    const [min, max] = [Number(slider.min), Number(slider.max)];
+    slider.style.setProperty('--fill', `${((Number(slider.value) - min) / (max - min)) * 100}%`);
+  }
+
   function readGraphics(): GraphicsSettings {
     return {
       fps_limit: Number(fpsSelect.value),
@@ -1086,6 +1137,7 @@ function initSettingsDialog(
       star_brightness: 2 ** Number(starSlider.value),
       cloud_shadow: Number(shadowSlider.value) / 100,
       region_bloom: Number(regionBloomSlider.value) / 100,
+      glint_strength: Number(glintSlider.value) / 100,
       region_detail: regionDetailToggle.checked,
     };
   }
@@ -1099,11 +1151,10 @@ function initSettingsDialog(
     mapLinesToggle.checked = graphics.show_map_lines;
     regionDetailToggle.checked = graphics.region_detail;
     starSlider.value = String(Math.log2(graphics.star_brightness));
-    showStarBrightness();
     shadowSlider.value = String(Math.round(graphics.cloud_shadow * 100));
-    showCloudShadow();
     regionBloomSlider.value = String(Math.round(graphics.region_bloom * 100));
-    showRegionBloom();
+    glintSlider.value = String(Math.round(graphics.glint_strength * 100));
+    for (const [slider, show] of sliders) showSlider(slider, show);
   }
 
   // 変更はすぐ画面に反映し、そのあと保存する。保存は順番に行い、最後の操作が必ず残るようにする
@@ -1122,19 +1173,14 @@ function initSettingsDialog(
       .catch((err) => setStatus(status, errorMessage(err), true));
   }
   // スライダーは動かしている間も画面に反映し、離したときに保存する
-  const sliders: Array<[HTMLInputElement, () => void]> = [
-    [starSlider, showStarBrightness],
-    [shadowSlider, showCloudShadow],
-    [regionBloomSlider, showRegionBloom],
-  ];
   for (const [slider, show] of sliders) {
     slider.addEventListener('input', () => {
-      show();
+      showSlider(slider, show);
       onGraphicsChange(readGraphics());
       syncResetButtons();
     });
   }
-  for (const control of [fpsSelect, scaleSelect, bloomToggle, exposureToggle, mapLinesToggle, regionDetailToggle, fpsToggle, starSlider, shadowSlider, regionBloomSlider]) {
+  for (const control of [fpsSelect, scaleSelect, bloomToggle, exposureToggle, mapLinesToggle, regionDetailToggle, fpsToggle, starSlider, shadowSlider, regionBloomSlider, glintSlider]) {
     control.addEventListener('change', commitGraphics);
   }
 
@@ -1168,7 +1214,8 @@ function initSettingsDialog(
     commitGraphics();
   }
 
-  for (const button of [...resetButtons, ...sectionResetButtons]) button.innerHTML = RESET_ICON;
+  for (const button of resetButtons) button.innerHTML = RESET_ICON;
+  for (const button of sectionResetButtons) button.insertAdjacentHTML('afterbegin', RESET_ICON);
   for (const button of resetButtons) button.addEventListener('click', () => resetGraphics([button]));
   for (const button of sectionResetButtons) {
     button.addEventListener('click', () => resetGraphics(rowsOfSection(button)));
@@ -1179,6 +1226,7 @@ function initSettingsDialog(
     dirInput.value = settings.models_dir;
     showCurrentLocation();
     if (settings.graphics) showGraphics(settings.graphics);
+    if (!settings.location) selectTab(tabs[0]); // 地点が未設定のときは、最初にそれを選んでもらう
     if (!graphicsDefaults) {
       graphicsDefaults = await window.weatherApi.getGraphicsDefaults().catch((err) => {
         console.error('graphics defaults load failed', err);

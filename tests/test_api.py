@@ -49,6 +49,7 @@ class SettingsApiTest(unittest.TestCase):
         "star_brightness": 2.0,
         "cloud_shadow": 0.8,
         "region_bloom": 0.3,
+        "glint_strength": 2.0,
         "region_detail": False,
     }
 
@@ -61,6 +62,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["cloud_shadow"], 0.55)
         self.assertTrue(graphics["region_detail"])
         self.assertEqual(graphics["region_bloom"], 0.5)
+        self.assertEqual(graphics["glint_strength"], 1.3)
 
     def test_graphics_defaults_do_not_change_with_saved_values(self):
         self.client.put("/settings/graphics", json=self.GRAPHICS)
@@ -83,6 +85,8 @@ class SettingsApiTest(unittest.TestCase):
             {"cloud_shadow": -0.1},
             {"region_bloom": 1.5},
             {"region_bloom": -0.1},
+            {"glint_strength": 3.5},
+            {"glint_strength": -0.1},
         ):
             response = self.client.put("/settings/graphics", json={**self.GRAPHICS, **change})
             self.assertEqual(response.status_code, 422)
@@ -98,6 +102,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["cloud_shadow"], 0.55)
         self.assertTrue(graphics["region_detail"])
         self.assertEqual(graphics["region_bloom"], 0.5)
+        self.assertEqual(graphics["glint_strength"], 1.3)
 
     def test_other_settings_keep_graphics(self):
         self.client.put("/settings/graphics", json=self.GRAPHICS)
