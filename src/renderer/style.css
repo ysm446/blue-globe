@@ -156,7 +156,8 @@ a:hover {
   gap: 8px;
 }
 
-#mode-switch {
+#mode-switch,
+#view-switch {
   display: flex;
   padding: 3px;
   gap: 2px;
@@ -165,29 +166,42 @@ a:hover {
   border-radius: 8px;
 }
 
-#mode-switch button {
+#mode-switch button,
+#view-switch button {
   min-width: 64px;
   background: transparent;
   border-color: transparent;
 }
 
-#mode-switch button:hover {
+#mode-switch button:hover,
+#view-switch button:hover:not(:disabled) {
   background: rgba(157, 180, 214, 0.14);
 }
 
-#mode-switch button[aria-pressed='true'] {
+#mode-switch button[aria-pressed='true'],
+#view-switch button[aria-pressed='true'] {
   color: var(--text);
   font-weight: 600;
   background: rgba(157, 180, 214, 0.26);
   border-color: var(--line);
 }
 
-#mode-switch button[aria-pressed='false'] {
+#mode-switch button[aria-pressed='false'],
+#view-switch button[aria-pressed='false']:not(:disabled) {
   color: var(--text-2);
 }
 
 #return-home {
   background: var(--panel);
+}
+
+#view-hint {
+  padding: 2px 8px;
+  color: var(--text-2);
+  font-size: 13px;
+  background: var(--panel);
+  border-radius: 4px;
+  pointer-events: none;
 }
 
 #fps-counter {

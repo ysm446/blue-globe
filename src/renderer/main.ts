@@ -12,6 +12,22 @@ import { adaptExposure, earthClearance, screenPresence, targetExposure } from '.
 import { HdrPipeline } from './hdr';
 import { Sky } from './sky';
 import { streamParagraphs } from './stream';
+import {
+  approachDistance,
+  clampRegionDistance,
+  clampRegionView,
+  coastRegionView,
+  interpolateRegionView,
+  lonLatOf,
+  panRegionView,
+  REGION_DISTANCE,
+  REGION_STILL,
+  REGION_TILT,
+  regionPose,
+  type LonLat,
+  type RegionVelocity,
+  type RegionView,
+} from './region-camera';
 
 const COLORS = {
   ocean: '#0c1422',
@@ -49,6 +65,21 @@ const EARTH_VIEW_DIST = 3.3; // 通常・天気モードは地球全体が見え
 const OVERVIEW_DIST = 4.6;
 const FLY_SECONDS = 2.8;
 const PANEL_OVERLAP_WIDTH = 900; // これより狭い画面ではパネルを下に置く
+
+const EARTH_SURFACE_RADIUS = GLOBE_RADIUS * 1.0005;
+const COASTLINE_RADIUS = GLOBE_RADIUS * 1.0015;
+const BORDER_RADIUS = GLOBE_RADIUS * 1.0014;
+const REGION_LINE_RADIUS = GLOBE_RADIUS * 1.0007; // 斜めに見ると線が地表からずれるので、地域ビューでは地表へ寄せる
+const CAMERA_NEAR_MAX = 0.1;
+const CAMERA_NEAR_MIN = 0.005;
+const CLOUD_TOP = 0.012; // 雲の層の最も高い位置。カメラの手前の範囲はこれより内側に保つ
+const REGION_BLEND_SECONDS = 0.5;
+const WHEEL_ZOOM_RATE = 0.0012;
+const ROTATE_DEGREES_PER_HEIGHT = 180; // 右ドラッグで画面の高さぶん動かしたときの回転
+const TILT_DEGREES_PER_HEIGHT = 90;
+const VELOCITY_SMOOTHING = 0.5;
+const VELOCITY_MIN_INTERVAL_MS = 16; // 間隔の詰まったイベントで速さを過大に見積もらない
+const FLING_MAX_IDLE_MS = 80; // 止まってから指を離したら慣性を付けない
 
 const NEWS_REFRESH_MS = 15 * 60_000; // Open-Meteo の現在値は 15 分刻み
 const LAYER_REFRESH_MS = 60 * 60_000; // 地図のデータの取得元は 3 時間刻みで、結果もキャッシュされる
@@ -108,7 +139,7 @@ function initGlobe() {
   );
   scene.add(flatGlobe.group);
 
-  const earth = new RealisticEarth(GLOBE_RADIUS * 1.0005);
+  const earth = new RealisticEarth(EARTH_SURFACE_RADIUS);
   earth.group.visible = false;
   scene.add(earth.group);
   let earthReady = false;
@@ -118,10 +149,10 @@ function initGlobe() {
   const spaceBackground = createSpaceBackground();
 
   // ベクター海岸線・国境線 (LOD 付き)。地表より少し浮かせて Z ファイティングを避ける
-  const coastlines = createCoastlines(GLOBE_RADIUS * 1.0015);
+  const coastlines = createCoastlines(COASTLINE_RADIUS);
   coastlines.setColor(COLORS.coastline);
   coastlines.setOpacity(COASTLINE_OPACITY);
-  const borders = createBorders(GLOBE_RADIUS * 1.0014);
+  const borders = createBorders(BORDER_RADIUS);
   scene.add(coastlines.group, borders.group);
 
   const overlay = new SpeedOverlay(GLOBE_RADIUS * 1.0008);
@@ -237,19 +268,190 @@ function initGlobe() {
   let markerNormal: THREE.Vector3 | null = null;
   let focused: WeatherLocation | null = null;
 
-  renderer.domElement.addEventListener('pointerdown', () => {
+  // 地域ビュー。null の間は地球ビューで、OrbitControls がカメラを動かす
+  let regionView: RegionView | null = null;
+  let regionFlight: { from: RegionView; to: RegionView; elapsed: number; leaving: boolean } | null = null;
+  let regionVelocity: RegionVelocity = REGION_STILL;
+  let regionDistanceGoal = REGION_DISTANCE;
+  let regionBlend = 0;
+  let regionDrag: { button: number; grabbed: LonLat | null; x: number; y: number; time: number } | null = null;
+  const pointerRay = new THREE.Raycaster();
+  const pointerNdc = new THREE.Vector2();
+  const earthSphere = new THREE.Sphere(new THREE.Vector3(), EARTH_SURFACE_RADIUS);
+  const pointerHit = new THREE.Vector3();
+
+  function applyRegionPose(view: RegionView): void {
+    const { position, target, up } = regionPose(view);
+    camera.position.set(...position);
+    camera.up.set(...up);
+    camera.lookAt(...target);
+    camera.updateMatrixWorld();
+  }
+
+  function groundUnderPointer(event: PointerEvent): LonLat | null {
+    pointerNdc.set((event.clientX / window.innerWidth) * 2 - 1, 1 - (event.clientY / window.innerHeight) * 2);
+    pointerRay.setFromCamera(pointerNdc, camera);
+    const hit = pointerRay.ray.intersectSphere(earthSphere, pointerHit);
+    return hit ? lonLatOf([hit.x, hit.y, hit.z]) : null;
+  }
+
+  function flyRegion(to: RegionView, leaving: boolean): void {
+    if (!regionView) return;
+    regionFlight = { from: regionView, to, elapsed: 0, leaving };
+    regionVelocity = REGION_STILL;
+    regionDrag = null;
+  }
+
+  // 真上から見た地球ビューの姿勢から続けて、傾きながら地点へ寄る
+  function regionHomeOf(from: LonLat): RegionView {
+    return {
+      lat: focused?.latitude ?? from.lat,
+      lon: focused?.longitude ?? from.lon,
+      heading: 0,
+      tilt: REGION_TILT,
+      distance: REGION_DISTANCE,
+    };
+  }
+
+  function enterRegion(): void {
+    if (mode === 'wind' || (regionView && !regionFlight?.leaving)) return;
     flight = null;
-  });
-  renderer.domElement.addEventListener('wheel', () => {
+    controls.enabled = false;
+    regionView ??= {
+      ...lonLatOf([camera.position.x, camera.position.y, camera.position.z]),
+      heading: 0,
+      tilt: 0,
+      distance: camera.position.length() - GLOBE_RADIUS,
+    };
+    flyRegion(regionHomeOf(regionView), false);
+  }
+
+  // 真上から見た姿勢まで戻してから、地球ビューの操作へ引き渡す
+  function leaveRegion(distance: number): void {
+    if (!regionView) return;
+    flyRegion({ ...regionView, heading: 0, tilt: 0, distance: distance - GLOBE_RADIUS }, true);
+  }
+
+  function updateRegion(dt: number): void {
+    if (!regionView) return;
+    if (regionFlight) {
+      regionFlight.elapsed = Math.min(FLY_SECONDS, regionFlight.elapsed + dt);
+      const t = regionFlight.elapsed / FLY_SECONDS;
+      regionView = interpolateRegionView(regionFlight.from, regionFlight.to, t * t * (3 - 2 * t));
+      regionDistanceGoal = clampRegionDistance(regionView.distance);
+      if (regionFlight.elapsed >= FLY_SECONDS) {
+        const { leaving } = regionFlight;
+        regionFlight = null;
+        if (leaving) {
+          applyRegionPose(regionView);
+          regionView = null;
+          camera.up.set(0, 1, 0);
+          camera.lookAt(0, 0, 0);
+          controls.enabled = true;
+          return;
+        }
+      }
+    } else {
+      if (!regionDrag) {
+        ({ view: regionView, velocity: regionVelocity } = coastRegionView(regionView, regionVelocity, dt));
+      }
+      regionView = clampRegionView({
+        ...regionView,
+        distance: approachDistance(regionView.distance, regionDistanceGoal, dt),
+      });
+    }
+    applyRegionPose(regionView);
+  }
+
+  renderer.domElement.addEventListener('pointerdown', (event) => {
     flight = null;
+    if (!regionView || regionFlight?.leaving) return;
+    regionFlight = null;
+    regionVelocity = REGION_STILL;
+    regionDrag = {
+      button: event.button,
+      grabbed: event.button === 0 ? groundUnderPointer(event) : null,
+      x: event.clientX,
+      y: event.clientY,
+      time: event.timeStamp,
+    };
+    renderer.domElement.setPointerCapture(event.pointerId);
   });
+  renderer.domElement.addEventListener('pointermove', (event) => {
+    if (!regionView || !regionDrag) return;
+    const before = regionView;
+    if (regionDrag.button === 0) {
+      const current = groundUnderPointer(event);
+      if (current && !regionDrag.grabbed) regionDrag.grabbed = current; // 空からドラッグして地面に入ったとき
+      if (current && regionDrag.grabbed) regionView = panRegionView(regionView, regionDrag.grabbed, current);
+    } else if (regionDrag.button === 2) {
+      regionView = clampRegionView({
+        ...regionView,
+        heading: regionView.heading + ((event.clientX - regionDrag.x) / window.innerHeight) * ROTATE_DEGREES_PER_HEIGHT,
+        tilt: regionView.tilt - ((event.clientY - regionDrag.y) / window.innerHeight) * TILT_DEGREES_PER_HEIGHT,
+      });
+    }
+    applyRegionPose(regionView);
+    // 指を離したあとの慣性のために、動く速さをならして覚えておく
+    const seconds = Math.max(event.timeStamp - regionDrag.time, VELOCITY_MIN_INTERVAL_MS) / 1000;
+    const after = regionView;
+    const speed = (delta: number): number => (delta / seconds) * VELOCITY_SMOOTHING;
+    const carried = (old: number, delta: number): number => old * (1 - VELOCITY_SMOOTHING) + speed(delta);
+    const wrapped = (delta: number): number => ((delta + 540) % 360) - 180;
+    regionVelocity = {
+      lat: carried(regionVelocity.lat, after.lat - before.lat),
+      lon: carried(regionVelocity.lon, wrapped(after.lon - before.lon)),
+      heading: carried(regionVelocity.heading, wrapped(after.heading - before.heading)),
+      tilt: carried(regionVelocity.tilt, after.tilt - before.tilt),
+    };
+    regionDrag.x = event.clientX;
+    regionDrag.y = event.clientY;
+    regionDrag.time = event.timeStamp;
+  });
+  const endRegionDrag = (event: PointerEvent): void => {
+    if (!regionDrag) return;
+    if (event.timeStamp - regionDrag.time > FLING_MAX_IDLE_MS) regionVelocity = REGION_STILL;
+    regionDrag = null;
+  };
+  renderer.domElement.addEventListener('pointerup', endRegionDrag);
+  renderer.domElement.addEventListener('pointercancel', endRegionDrag);
+  renderer.domElement.addEventListener('wheel', (event) => {
+    flight = null;
+    if (!regionView || regionFlight?.leaving) return;
+    regionFlight = null;
+    regionDistanceGoal = clampRegionDistance(regionDistanceGoal * Math.exp(event.deltaY * WHEEL_ZOOM_RATE));
+  });
+
+  // 地表へ近づいても欠けないよう、カメラの手前の描画範囲は高度に合わせる
+  function updateNearPlane(): void {
+    const altitude = camera.position.length() - GLOBE_RADIUS;
+    const near = THREE.MathUtils.clamp((altitude - CLOUD_TOP) * 0.5, CAMERA_NEAR_MIN, CAMERA_NEAR_MAX);
+    if (near === camera.near) return;
+    camera.near = near;
+    camera.updateProjectionMatrix();
+  }
+
+  function updateRegionBlend(dt: number): void {
+    const goal = regionView && !regionFlight?.leaving ? 1 : 0;
+    regionBlend += (goal - regionBlend) * (1 - Math.exp(-dt / REGION_BLEND_SECONDS));
+    earth.setRegionBlend(regionBlend);
+    // 風速モードでは粒子の面より上に線を置く必要があるので、元の高さのまま
+    const lineRadius = (radius: number): number =>
+      THREE.MathUtils.lerp(radius, mode === 'wind' ? radius : REGION_LINE_RADIUS, regionBlend) / radius;
+    coastlines.group.scale.setScalar(lineRadius(COASTLINE_RADIUS));
+    borders.group.scale.setScalar(lineRadius(BORDER_RADIUS));
+  }
 
   function focusLocation(location: WeatherLocation): void {
     focused = location;
     el('marker-label').textContent = location.name;
-    lonLatToVector3(location.longitude, location.latitude, PARTICLE_RADIUS, markerPos);
+    lonLatToVector3(location.longitude, location.latitude, EARTH_SURFACE_RADIUS, markerPos);
     markerNormal = markerPos.clone().normalize();
     marker.hidden = false;
+    if (regionView) {
+      if (!regionFlight?.leaving) flyRegion(regionHomeOf(regionView), false);
+      return;
+    }
     flight = {
       from: camera.position.clone(),
       to: markerNormal.clone().multiplyScalar(mode === 'wind' ? FOCUS_DIST : EARTH_VIEW_DIST),
@@ -274,6 +476,10 @@ function initGlobe() {
     const crossesWind = (mode === 'wind') !== (next === 'wind');
     setMode(next);
     if (!crossesWind) return;
+    if (regionView) {
+      leaveRegion(next === 'wind' ? FOCUS_DIST : EARTH_VIEW_DIST); // 風速モードに地域ビューはない
+      return;
+    }
     flight = {
       from: camera.position.clone(),
       to: camera.position.clone().setLength(next === 'wind' ? FOCUS_DIST : EARTH_VIEW_DIST),
@@ -315,10 +521,11 @@ function initGlobe() {
     if (!markerNormal) return;
     // 地球の裏側にあるときは隠す
     const facing = markerNormal.dot(camera.position.clone().normalize());
-    const visible = facing > GLOBE_RADIUS / camera.position.length();
+    projected.copy(markerPos).project(camera);
+    // 斜めの視点では、地平線より手前でもカメラの後ろにあることがある (このとき z は 1 を超える)
+    const visible = facing > GLOBE_RADIUS / camera.position.length() && projected.z < 1;
     marker.style.visibility = visible ? 'visible' : 'hidden';
     if (!visible) return;
-    projected.copy(markerPos).project(camera);
     const x = ((projected.x + 1) / 2) * window.innerWidth;
     const y = ((1 - projected.y) / 2) * window.innerHeight;
     marker.style.transform = `translate(${x}px, ${y}px)`;
@@ -338,10 +545,10 @@ function initGlobe() {
   let autoExposure = true;
   const toSun = new THREE.Vector3();
   const sunNdc = new THREE.Vector3();
+  const cameraForward = new THREE.Vector3();
   function updateExposure(dt: number): void {
     toSun.copy(sky.sunPosition).sub(camera.position).normalize();
-    // カメラは常に地球の中心を向くので、太陽が手前側にあるかは位置だけで分かる
-    const inFront = toSun.dot(camera.position) < 0;
+    const inFront = toSun.dot(camera.getWorldDirection(cameraForward)) > 0;
     sunNdc.copy(sky.sunPosition).project(camera);
     const visibility =
       screenPresence(sunNdc.x, sunNdc.y, inFront) *
@@ -397,7 +604,10 @@ function initGlobe() {
       fpsWindowFrames = 0;
     }
 
-    updateFlight(dt);
+    if (regionView) updateRegion(dt);
+    else updateFlight(dt);
+    updateNearPlane();
+    updateRegionBlend(dt);
     coastlines.update(camera.position.length());
     borders.update(camera.position.length());
     // 粒子は風速モードのときだけ動かす (他のモードでは GPU を使わない)。
@@ -430,6 +640,8 @@ function initGlobe() {
     cloudProgress: () => earth.cloudProgress,
     camera,
     sky,
+    earth,
+    regionView: () => regionView,
     mapLinesVisible: () => [coastlines.group.visible, borders.group.visible],
     stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),
     peekAt(body: 'sun' | 'moon' | 'dayside' | 'sunrise'): void {
@@ -452,6 +664,10 @@ function initGlobe() {
     focusLocation,
     startFromOverview,
     returnToLocation,
+    setView(next: GlobeView): void {
+      if (next === 'region') enterRegion();
+      else leaveRegion(EARTH_VIEW_DIST);
+    },
   };
 }
 
@@ -955,11 +1171,34 @@ async function init(): Promise<void> {
   const modeButtons = Array.from(
     document.querySelectorAll<HTMLButtonElement>('#mode-switch button'),
   );
+  const viewButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('#view-switch button'),
+  );
+
+  function showView(view: GlobeView): void {
+    for (const button of viewButtons) {
+      button.setAttribute('aria-pressed', String(button.dataset.view === view));
+    }
+    el('view-hint').hidden = view !== 'region';
+  }
+
+  for (const button of viewButtons) {
+    button.addEventListener('click', () => {
+      const next = button.dataset.view as GlobeView;
+      showView(next);
+      globe.setView(next);
+    });
+  }
 
   function applyMode(next: MapMode): void {
     mode = next;
     for (const button of modeButtons) {
       button.setAttribute('aria-pressed', String(button.dataset.mode === next));
+    }
+    // 風速モードは地球ビューだけ。カメラは changeMode が戻す
+    if (next === 'wind') showView('globe');
+    for (const button of viewButtons) {
+      if (button.dataset.view === 'region') button.disabled = next === 'wind';
     }
     globe.changeMode(next);
     renderLayerInfo();

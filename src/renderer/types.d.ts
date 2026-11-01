@@ -14,6 +14,8 @@ interface CloudResult {
 
 type MapMode = 'normal' | 'weather' | 'wind';
 
+type GlobeView = 'globe' | 'region';
+
 interface WeatherLocation {
   name: string;
   admin1: string | null;

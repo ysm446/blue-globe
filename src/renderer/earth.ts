@@ -5,6 +5,9 @@ import * as THREE from 'three';
 import { easeFade, stepFade } from './fade';
 
 const CLOUD_ALTITUDE = 0.012; // 実際より高い。視差が見える程度に誇張している
+const REGION_CLOUD_ALTITUDE = 0.002; // 斜めに見ると誇張した分だけ雲が地面からずれるので、地域ビューでは実際に近づける
+const REGION_HAZE = 0.3; // 縁の青は地球全体を見るためのもので、斜めの視点では画面の大半に乗ってしまう
+const REGION_ATMOSPHERE_THINNESS = 3; // 大気の層も地球全体を見るために厚い。そのままだと空全体が青くなる
 
 const VS = /* glsl */ `
 varying vec3 vPos;
@@ -35,6 +38,8 @@ precision highp float;
 uniform sampler2D uDay;
 uniform sampler2D uNight;
 uniform float uShadowAmount;
+uniform float uCloudAltitude;
+uniform float uHaze;
 uniform vec3 uSunDir;
 varying vec3 vPos;
 varying vec2 vUv;
@@ -54,7 +59,7 @@ void main() {
   if (uShadowAmount > 0.0 && dayMask > 0.0) {
     vec3 toSun = normalize(uSunDir - n * ndl + vec3(1e-5));
     float sinZenith = sqrt(max(1.0 - ndl * ndl, 0.0));
-    float reach = min(${CLOUD_ALTITUDE.toFixed(4)} * sinZenith / max(ndl, 0.12), 0.08);
+    float reach = min(uCloudAltitude * sinZenith / max(ndl, 0.12), 0.08);
     float caster = cloudAt(normalize(n + toSun * reach), dFdx(vUv), dFdy(vUv));
     shadow = smoothstep(0.15, 0.75, caster) * 0.55 * uShadowAmount;
   }
@@ -74,8 +79,8 @@ void main() {
 
   // 地表から見える大気 (縁ほど青い)。昼側だけ
   float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.2);
-  color += vec3(0.22, 0.48, 1.0) * fresnel * smoothstep(-0.15, 0.45, ndl) * 1.2;
-  color += vec3(0.07, 0.16, 0.34) * light * 0.35;
+  color += vec3(0.22, 0.48, 1.0) * fresnel * smoothstep(-0.15, 0.45, ndl) * 1.2 * uHaze;
+  color += vec3(0.07, 0.16, 0.34) * light * 0.35 * uHaze;
 
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
@@ -84,6 +89,7 @@ void main() {
 
 const CLOUD_FS = /* glsl */ `
 precision highp float;
+uniform float uHaze;
 uniform vec3 uSunDir;
 uniform float uFade;
 varying vec3 vPos;
@@ -154,7 +160,7 @@ void main() {
 
   // 縁の雲にも大気の青を重ねる
   float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.2);
-  color += vec3(0.16, 0.36, 0.8) * fresnel * smoothstep(-0.15, 0.45, ndl) * 0.7;
+  color += vec3(0.16, 0.36, 0.8) * fresnel * smoothstep(-0.15, 0.45, ndl) * 0.7 * uHaze;
 
   gl_FragColor = vec4(color, alpha);
   #include <colorspace_fragment>
@@ -165,11 +171,17 @@ void main() {
 const ATMOSPHERE_FS = /* glsl */ `
 precision highp float;
 uniform vec3 uSunDir;
+uniform float uThinness;
 varying vec3 vPos;
 void main() {
   vec3 n = normalize(vPos);
-  vec3 view = normalize(cameraPosition - vPos);
-  float inner = smoothstep(0.0, 0.38, -dot(n, view));
+  vec3 ray = normalize(vPos - cameraPosition);
+  // 視線が地球の中心に最も近づく高さで濃さを決める。大気の中から上を向く視線では、カメラの高さになる
+  float along = dot(cameraPosition, ray);
+  float closest = along < 0.0 ? sqrt(max(dot(cameraPosition, cameraPosition) - along * along, 0.0)) : length(cameraPosition);
+  closest = 1.0 + (closest - 1.0) * uThinness;
+  float exitAngle = sqrt(max(1.0 - pow(closest / length(vPos), 2.0), 0.0));
+  float inner = smoothstep(0.0, 0.38, exitAngle);
   float lit = smoothstep(-0.25, 0.55, dot(n, uSunDir));
   float a = pow(inner, 2.6) * lit * 0.9;
   gl_FragColor = vec4(vec3(0.27, 0.55, 1.0) * a, a);
@@ -186,14 +198,18 @@ export class RealisticEarth {
   private cloudTexture: THREE.DataTexture | null = null;
   private cloudsWanted = false;
   private cloudFade = 0;
+  private readonly haze = { value: 1 };
+  private readonly atmosphereThinness = { value: 1 };
 
-  constructor(radius: number) {
+  constructor(private readonly radius: number) {
     this.material = new THREE.ShaderMaterial({
       uniforms: {
         uDay: { value: null },
         uNight: { value: null },
         uCloud: { value: null },
         uShadowAmount: { value: 0 },
+        uCloudAltitude: { value: CLOUD_ALTITUDE },
+        uHaze: this.haze,
         uSunDir: { value: this.sunDir },
       },
       vertexShader: VS,
@@ -206,6 +222,7 @@ export class RealisticEarth {
         uCloud: { value: null },
         uSunDir: { value: this.sunDir },
         uFade: { value: 0 },
+        uHaze: this.haze,
       },
       vertexShader: VS,
       fragmentShader: CLOUD_FS,
@@ -224,7 +241,7 @@ export class RealisticEarth {
       new THREE.Mesh(
         new THREE.SphereGeometry(radius * 1.07, 128, 96),
         new THREE.ShaderMaterial({
-          uniforms: { uSunDir: { value: this.sunDir } },
+          uniforms: { uSunDir: { value: this.sunDir }, uThinness: this.atmosphereThinness },
           vertexShader: VS,
           fragmentShader: ATMOSPHERE_FS,
           side: THREE.BackSide,
@@ -243,6 +260,15 @@ export class RealisticEarth {
 
   setSunDirection(direction: THREE.Vector3): void {
     this.sunDir.copy(direction);
+  }
+
+  // blend は 0 が地球ビュー、1 が地域ビュー
+  setRegionBlend(blend: number): void {
+    const altitude = THREE.MathUtils.lerp(CLOUD_ALTITUDE, REGION_CLOUD_ALTITUDE, blend);
+    this.material.uniforms.uCloudAltitude.value = altitude;
+    this.cloudMesh.scale.setScalar((this.radius + altitude) / (this.radius + CLOUD_ALTITUDE));
+    this.haze.value = THREE.MathUtils.lerp(1, REGION_HAZE, blend);
+    this.atmosphereThinness.value = THREE.MathUtils.lerp(1, REGION_ATMOSPHERE_THINNESS, blend);
   }
 
   // data は 1 画素 1 バイトの雲の濃さ。1 行目が北端、左端が経度 -180 度

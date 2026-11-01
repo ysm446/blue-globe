@@ -36,7 +36,12 @@
         <button type="button" data-mode="weather" aria-pressed="false">天気</button>
         <button type="button" data-mode="wind" aria-pressed="false">風速</button>
       </div>
+      <div id="view-switch" role="group" aria-label="視点">
+        <button type="button" data-view="globe" aria-pressed="true">地球</button>
+        <button type="button" data-view="region" aria-pressed="false">地域</button>
+      </div>
       <button id="return-home" type="button">地点へ戻る</button>
+      <div id="view-hint" hidden>左ドラッグで移動、右ドラッグで回転と傾き、ホイールで拡大縮小</div>
       <div id="fps-counter" hidden></div>
     </div>
 
