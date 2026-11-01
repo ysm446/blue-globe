@@ -23,6 +23,7 @@ DEFAULT_SETTINGS = {
         "show_map_lines": True,
         "star_brightness": 1.0,
         "cloud_shadow": 0.55,
+        "region_bloom": 0.5,
         "region_detail": True,
     },
     "models_dir": r"D:\ai-models\llm",

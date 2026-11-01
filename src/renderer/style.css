@@ -700,10 +700,47 @@ a:hover {
 
 .field-grid {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: 9.5em 1fr auto;
   align-items: center;
   gap: 6px 12px;
   margin-bottom: 8px;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+#settings .section-head h3 {
+  margin: 0;
+}
+
+.check-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reset-button {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  color: var(--text-2);
+  background: transparent;
+  border-color: transparent;
+}
+
+/* 既定のままの項目は押せないことが分かるよう薄くする。位置は動かさない */
+.reset-button:disabled {
+  opacity: 0.3;
 }
 
 .range-row {

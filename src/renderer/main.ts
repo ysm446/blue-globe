@@ -324,6 +324,7 @@ function initGlobe() {
   let regionRelief: THREE.Texture | null = null;
   let regionReliefRequested = false;
   let regionDetailEnabled = true;
+  let regionBloom = 1;
   const viewStatus = el('view-status');
 
   function startRegionDetail(): void {
@@ -626,7 +627,7 @@ function initGlobe() {
       );
     const facing = camera.position.clone().normalize().dot(sky.sunDir);
     exposure = adaptExposure(exposure, autoExposure ? targetExposure(facing, visibility) : 1, dt);
-    hdr.setExposure(exposure, autoExposure ? visibility : 0);
+    hdr.setExposure(exposure, autoExposure ? visibility : 0, THREE.MathUtils.lerp(1, regionBloom, regionBlend));
   }
 
   let fpsLimit = 0;
@@ -637,6 +638,7 @@ function initGlobe() {
     hdr.setBloomEnabled(graphics.bloom);
     sky.setStarBrightness(graphics.star_brightness);
     earth.setCloudShadow(graphics.cloud_shadow);
+    regionBloom = graphics.region_bloom;
     regionDetailEnabled = graphics.region_detail;
     if (!regionDetailEnabled) stopRegionDetail();
     else if (regionView && !regionFlight?.leaving) startRegionDetail();
@@ -939,6 +941,9 @@ function renderNews(news: NewsReport): void {
   ]);
 }
 
+const RESET_ICON =
+  '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>';
+
 function initSettingsDialog(
   onLocationChange: (settings: AppSettings) => void,
   onModelChange: () => void,
@@ -1073,10 +1078,15 @@ function initSettingsDialog(
   const mapLinesToggle = el<HTMLInputElement>('map-lines-toggle');
   const starSlider = el<HTMLInputElement>('star-brightness');
   const shadowSlider = el<HTMLInputElement>('cloud-shadow');
+  const regionBloomSlider = el<HTMLInputElement>('region-bloom');
   const regionDetailToggle = el<HTMLInputElement>('region-detail-toggle');
 
   function showCloudShadow(): void {
     el('cloud-shadow-value').textContent = `${shadowSlider.value}%`;
+  }
+
+  function showRegionBloom(): void {
+    el('region-bloom-value').textContent = `${regionBloomSlider.value}%`;
   }
 
   // スライダーは対数にして、1 目盛りごとに同じ比率で変わるようにする
@@ -1094,6 +1104,7 @@ function initSettingsDialog(
       show_map_lines: mapLinesToggle.checked,
       star_brightness: 2 ** Number(starSlider.value),
       cloud_shadow: Number(shadowSlider.value) / 100,
+      region_bloom: Number(regionBloomSlider.value) / 100,
       region_detail: regionDetailToggle.checked,
     };
   }
@@ -1110,32 +1121,76 @@ function initSettingsDialog(
     showStarBrightness();
     shadowSlider.value = String(Math.round(graphics.cloud_shadow * 100));
     showCloudShadow();
+    regionBloomSlider.value = String(Math.round(graphics.region_bloom * 100));
+    showRegionBloom();
   }
 
   // 変更はすぐ画面に反映し、そのあと保存する。保存は順番に行い、最後の操作が必ず残るようにする
   let graphicsSave: Promise<unknown> = Promise.resolve();
+  function commitGraphics(): void {
+    const graphics = readGraphics();
+    onGraphicsChange(graphics);
+    syncResetButtons();
+    const status = el('graphics-status');
+    graphicsSave = graphicsSave
+      .then(() => window.weatherApi.setGraphics(graphics))
+      .then((saved) => {
+        settings = saved;
+        setStatus(status, '');
+      })
+      .catch((err) => setStatus(status, errorMessage(err), true));
+  }
   // スライダーは動かしている間も画面に反映し、離したときに保存する
-  starSlider.addEventListener('input', () => {
-    showStarBrightness();
-    onGraphicsChange(readGraphics());
-  });
-  shadowSlider.addEventListener('input', () => {
-    showCloudShadow();
-    onGraphicsChange(readGraphics());
-  });
-  for (const control of [fpsSelect, scaleSelect, bloomToggle, exposureToggle, mapLinesToggle, regionDetailToggle, fpsToggle, starSlider, shadowSlider]) {
-    control.addEventListener('change', () => {
-      const graphics = readGraphics();
-      onGraphicsChange(graphics);
-      const status = el('graphics-status');
-      graphicsSave = graphicsSave
-        .then(() => window.weatherApi.setGraphics(graphics))
-        .then((saved) => {
-          settings = saved;
-          setStatus(status, '');
-        })
-        .catch((err) => setStatus(status, errorMessage(err), true));
+  const sliders: Array<[HTMLInputElement, () => void]> = [
+    [starSlider, showStarBrightness],
+    [shadowSlider, showCloudShadow],
+    [regionBloomSlider, showRegionBloom],
+  ];
+  for (const [slider, show] of sliders) {
+    slider.addEventListener('input', () => {
+      show();
+      onGraphicsChange(readGraphics());
+      syncResetButtons();
     });
+  }
+  for (const control of [fpsSelect, scaleSelect, bloomToggle, exposureToggle, mapLinesToggle, regionDetailToggle, fpsToggle, starSlider, shadowSlider, regionBloomSlider]) {
+    control.addEventListener('change', commitGraphics);
+  }
+
+  // 既定値はサーバーの設定を元にする。取得できない間はボタンを押せないままにする
+  let graphicsDefaults: GraphicsSettings | null = null;
+  const resetButtons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[data-reset]'));
+  const sectionResetButtons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[data-reset-section]'));
+
+  const resetKey = (button: HTMLButtonElement): keyof GraphicsSettings =>
+    button.dataset.reset as keyof GraphicsSettings;
+  const rowsOfSection = (button: HTMLButtonElement): HTMLButtonElement[] =>
+    resetButtons.filter((row) => row.closest('section') === button.closest('section'));
+
+  function syncResetButtons(): void {
+    const current = readGraphics();
+    for (const button of resetButtons) {
+      const key = resetKey(button);
+      // スライダーは目盛りに丸められるので、わずかな差は同じ値として扱う
+      button.disabled = !graphicsDefaults || Math.abs(Number(current[key]) - Number(graphicsDefaults[key])) < 1e-6;
+    }
+    for (const button of sectionResetButtons) {
+      button.disabled = rowsOfSection(button).every((row) => row.disabled);
+    }
+  }
+
+  function resetGraphics(rows: HTMLButtonElement[]): void {
+    if (!graphicsDefaults) return;
+    const defaults = graphicsDefaults;
+    const entries = rows.map((row) => [resetKey(row), defaults[resetKey(row)]]);
+    showGraphics({ ...readGraphics(), ...Object.fromEntries(entries) });
+    commitGraphics();
+  }
+
+  for (const button of [...resetButtons, ...sectionResetButtons]) button.innerHTML = RESET_ICON;
+  for (const button of resetButtons) button.addEventListener('click', () => resetGraphics([button]));
+  for (const button of sectionResetButtons) {
+    button.addEventListener('click', () => resetGraphics(rowsOfSection(button)));
   }
 
   async function open(): Promise<void> {
@@ -1143,6 +1198,13 @@ function initSettingsDialog(
     dirInput.value = settings.models_dir;
     showCurrentLocation();
     if (settings.graphics) showGraphics(settings.graphics);
+    if (!graphicsDefaults) {
+      graphicsDefaults = await window.weatherApi.getGraphicsDefaults().catch((err) => {
+        console.error('graphics defaults load failed', err);
+        return null;
+      });
+    }
+    syncResetButtons();
     dialog.showModal();
     await loadModels();
   }

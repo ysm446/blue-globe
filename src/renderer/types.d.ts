@@ -36,6 +36,7 @@ interface GraphicsSettings {
   show_map_lines: boolean; // 海岸線と国境線 (通常・天気モード。風速モードでは常に描く)
   star_brightness: number; // 星全体の明るさの倍率
   cloud_shadow: number; // 雲の影の濃さ (0〜1)
+  region_bloom: number; // 地域ビューの光のにじみの強さ。地球ビューを 1 とした倍率 (0〜1)
   region_detail: boolean; // 地域ビューで高解像度の画像を取得して使う
 }
 
@@ -108,6 +109,7 @@ interface Window {
     getClouds(): Promise<CloudResult | null>;
     setMode(mode: MapMode): Promise<unknown>;
     setGraphics(graphics: GraphicsSettings): Promise<AppSettings>;
+    getGraphicsDefaults(): Promise<GraphicsSettings>;
     getTexture(name: 'earth-day' | 'earth-night' | 'earth-relief' | 'earth-water'): Promise<Uint8Array>;
     getEarthTile(layer: EarthTileLayer, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null
     getNews(): Promise<NewsReport>;

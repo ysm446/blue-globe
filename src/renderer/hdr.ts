@@ -71,9 +71,10 @@ export class HdrPipeline {
   }
 
   // exposure は画面全体の明るさの倍率、sunVisibility は太陽の見えている割合 (0〜1)
-  setExposure(exposure: number, sunVisibility: number): void {
+  // bloomScale はにじみの強さの倍率。地域ビューの強さは設定で変えられる
+  setExposure(exposure: number, sunVisibility: number, bloomScale = 1): void {
     this.finalPass.uniforms.uExposure.value = exposure;
-    this.bloom.strength = BLOOM_STRENGTH * (1 + SUN_BLOOM_BOOST * sunVisibility);
+    this.bloom.strength = BLOOM_STRENGTH * (1 + SUN_BLOOM_BOOST * sunVisibility) * bloomScale;
   }
 
   setBloomEnabled(enabled: boolean): void {

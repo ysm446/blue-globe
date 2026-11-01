@@ -8,7 +8,6 @@ import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
 
 const CLOUD_ALTITUDE = 0.012; // 実際より高い。視差が見える程度に誇張している
 const DEFAULT_CLOUD_SHADOW = 0.55;
-const REGION_LIGHTS = 1.8; // にじませず、都市の中の濃淡が残る明るさ
 const REGION_CLOUD_ALTITUDE = 0.002; // 斜めに見ると誇張した分だけ雲が地面からずれるので、地域ビューでは実際に近づける
 const REGION_HAZE = 0.3; // 縁の青は地球全体を見るためのもので、斜めの視点では画面の大半に乗ってしまう
 const REGION_ATMOSPHERE_THINNESS = 3; // 大気の層も地球全体を見るために厚い。そのままだと空全体が青くなる
@@ -117,8 +116,7 @@ void main() {
 
   // 街明かりは夜側だけ
   float lights = pow(smoothstep(0.1, 1.0, night), 1.4) * (1.0 - dayMask);
-  // 画面の白より明るくして、にじませる。地域ビューは街の形が見えるよう、にじまない明るさに抑える
-  color += vec3(1.0, 0.6, 0.26) * lights * mix(4.5, ${REGION_LIGHTS.toFixed(1)}, uRegion);
+  color += vec3(1.0, 0.6, 0.26) * lights * 4.5; // 画面の白より明るくして、にじませる
 
   // 回して触ったときに場所が分かるよう、夜側でも陸と海がうっすら見える光を残す。
   // 地域ビューの画像は海が明るいので、海を特に暗くする

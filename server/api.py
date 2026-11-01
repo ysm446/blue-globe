@@ -12,7 +12,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from . import clouds, news, sources
-from .config import load_settings, update_settings
+from .config import DEFAULT_SETTINGS, load_settings, update_settings
 from .llm import LlamaServer, LlmError, list_models
 
 HOURLY_STEP = 3
@@ -68,6 +68,7 @@ class GraphicsUpdate(BaseModel):
     show_map_lines: bool
     star_brightness: float = Field(ge=0.125, le=8)
     cloud_shadow: float = Field(ge=0, le=1)
+    region_bloom: float = Field(ge=0, le=1)
     region_detail: bool
 
 
@@ -102,6 +103,11 @@ def put_mode(update: ModeUpdate) -> dict:
 @app.put("/settings/graphics")
 def put_graphics(update: GraphicsUpdate) -> dict:
     return update_settings({"graphics": update.model_dump()})
+
+
+@app.get("/settings/graphics/defaults")
+def get_graphics_defaults() -> dict:
+    return DEFAULT_SETTINGS["graphics"]
 
 
 @app.get("/clouds/satellite")

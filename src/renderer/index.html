@@ -158,7 +158,10 @@
         </p>
       </section>
       <section>
-        <h3>描画</h3>
+        <div class="section-head">
+          <h3>パフォーマンス</h3>
+          <button class="reset-button" data-reset-section type="button" aria-label="パフォーマンスをすべて既定に戻す" title="すべて既定に戻す"></button>
+        </div>
         <div class="field-grid">
           <label for="fps-limit">FPS 上限</label>
           <select id="fps-limit">
@@ -167,28 +170,61 @@
             <option value="60">60</option>
             <option value="30">30</option>
           </select>
+          <button class="reset-button" data-reset="fps_limit" type="button" aria-label="FPS 上限を既定に戻す" title="既定に戻す"></button>
           <label for="render-scale">描画解像度</label>
           <select id="render-scale">
             <option value="100">100%(鮮明)</option>
             <option value="75">75%</option>
             <option value="50">50%(軽い)</option>
           </select>
+          <button class="reset-button" data-reset="render_scale" type="button" aria-label="描画解像度を既定に戻す" title="既定に戻す"></button>
+        </div>
+        <div class="check-line">
+          <label class="check-row"><input id="region-detail-toggle" type="checkbox" />地域ビューの高解像度の画像(NASA から取得)</label>
+          <button class="reset-button" data-reset="region_detail" type="button" aria-label="地域ビューの高解像度の画像を既定に戻す" title="既定に戻す"></button>
+        </div>
+        <div class="check-line">
+          <label class="check-row"><input id="fps-toggle" type="checkbox" />FPS を表示</label>
+          <button class="reset-button" data-reset="show_fps" type="button" aria-label="FPS の表示を既定に戻す" title="既定に戻す"></button>
+        </div>
+      </section>
+      <section>
+        <div class="section-head">
+          <h3>グラフィックス</h3>
+          <button class="reset-button" data-reset-section type="button" aria-label="グラフィックスをすべて既定に戻す" title="すべて既定に戻す"></button>
+        </div>
+        <div class="field-grid">
           <label for="star-brightness">星の明るさ</label>
           <div class="range-row">
             <input id="star-brightness" type="range" min="-3" max="3" step="0.25" />
             <output id="star-brightness-value" for="star-brightness"></output>
           </div>
+          <button class="reset-button" data-reset="star_brightness" type="button" aria-label="星の明るさを既定に戻す" title="既定に戻す"></button>
           <label for="cloud-shadow">雲の影の濃さ</label>
           <div class="range-row">
             <input id="cloud-shadow" type="range" min="0" max="100" step="5" />
             <output id="cloud-shadow-value" for="cloud-shadow"></output>
           </div>
+          <button class="reset-button" data-reset="cloud_shadow" type="button" aria-label="雲の影の濃さを既定に戻す" title="既定に戻す"></button>
+          <label for="region-bloom">地域ビューのにじみ</label>
+          <div class="range-row">
+            <input id="region-bloom" type="range" min="0" max="100" step="5" />
+            <output id="region-bloom-value" for="region-bloom"></output>
+          </div>
+          <button class="reset-button" data-reset="region_bloom" type="button" aria-label="地域ビューのにじみを既定に戻す" title="既定に戻す"></button>
         </div>
-        <label class="check-row"><input id="bloom-toggle" type="checkbox" />光のにじみ(通常・天気モード)</label>
-        <label class="check-row"><input id="exposure-toggle" type="checkbox" />自動露出(通常・天気モード)</label>
-        <label class="check-row"><input id="map-lines-toggle" type="checkbox" />海岸線と国境線を表示(通常・天気モード)</label>
-        <label class="check-row"><input id="region-detail-toggle" type="checkbox" />地域ビューの高解像度の画像(NASA から取得)</label>
-        <label class="check-row"><input id="fps-toggle" type="checkbox" />FPS を表示</label>
+        <div class="check-line">
+          <label class="check-row"><input id="bloom-toggle" type="checkbox" />光のにじみ(通常・天気モード)</label>
+          <button class="reset-button" data-reset="bloom" type="button" aria-label="光のにじみを既定に戻す" title="既定に戻す"></button>
+        </div>
+        <div class="check-line">
+          <label class="check-row"><input id="exposure-toggle" type="checkbox" />自動露出(通常・天気モード)</label>
+          <button class="reset-button" data-reset="auto_exposure" type="button" aria-label="自動露出を既定に戻す" title="既定に戻す"></button>
+        </div>
+        <div class="check-line">
+          <label class="check-row"><input id="map-lines-toggle" type="checkbox" />海岸線と国境線を表示(通常・天気モード)</label>
+          <button class="reset-button" data-reset="show_map_lines" type="button" aria-label="海岸線と国境線の表示を既定に戻す" title="既定に戻す"></button>
+        </div>
         <p id="graphics-status" class="settings-help" role="status"></p>
       </section>
       <p class="settings-credit">
