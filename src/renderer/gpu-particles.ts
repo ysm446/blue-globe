@@ -505,6 +505,7 @@ export class GpuParticleSystem {
   }
 
   resize(): void {
+    this.pointsMat.uniforms.uPointSize.value = Math.max(1, this.renderer.getPixelRatio());
     this.trailRead.dispose();
     this.trailWrite.dispose();
     const { trailA, trailB } = this.makeTrailTargets();

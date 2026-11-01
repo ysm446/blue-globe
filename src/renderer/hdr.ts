@@ -76,6 +76,14 @@ export class HdrPipeline {
     this.bloom.strength = BLOOM_STRENGTH * (1 + SUN_BLOOM_BOOST * sunVisibility);
   }
 
+  setBloomEnabled(enabled: boolean): void {
+    this.bloom.enabled = enabled;
+  }
+
+  setPixelRatio(pixelRatio: number): void {
+    this.composer.setPixelRatio(pixelRatio);
+  }
+
   render(): void {
     this.composer.render();
   }

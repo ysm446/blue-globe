@@ -9,10 +9,10 @@ from typing import Literal
 
 import httpx
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from . import clouds, news, sources
-from .config import load_settings, save_settings
+from .config import load_settings, update_settings
 from .llm import LlamaServer, LlmError, list_models
 
 HOURLY_STEP = 3
@@ -59,6 +59,15 @@ class ModeUpdate(BaseModel):
     mode: Literal["normal", "weather", "wind"]
 
 
+class GraphicsUpdate(BaseModel):
+    fps_limit: Literal[0, 30, 60, 120]
+    render_scale: Literal[50, 75, 100]
+    bloom: bool
+    auto_exposure: bool
+    show_fps: bool
+    star_brightness: float = Field(ge=0.125, le=8)
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -78,17 +87,18 @@ def put_settings(update: SettingsUpdate) -> dict:
             raise HTTPException(400, str(e)) from e
         if update.model not in available:
             raise HTTPException(400, f"フォルダ内にないモデルは選べません: {update.model}")
-    settings = {**load_settings(), **update.model_dump()}
-    save_settings(settings)
-    return settings
+    return update_settings(update.model_dump())
 
 
 # モデルの検証を通さず、モードだけを保存する (モデルが消えていても切り替えられるように)
 @app.put("/settings/mode")
 def put_mode(update: ModeUpdate) -> dict:
-    settings = {**load_settings(), "mode": update.mode}
-    save_settings(settings)
-    return settings
+    return update_settings({"mode": update.mode})
+
+
+@app.put("/settings/graphics")
+def put_graphics(update: GraphicsUpdate) -> dict:
+    return update_settings({"graphics": update.model_dump()})
 
 
 @app.get("/clouds/satellite")

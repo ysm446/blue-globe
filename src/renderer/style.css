@@ -190,6 +190,15 @@ a:hover {
   background: var(--panel);
 }
 
+#fps-counter {
+  padding: 2px 8px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  background: var(--panel);
+  border-radius: 4px;
+}
+
 #return-home:hover {
   background: var(--panel-solid);
 }
@@ -238,6 +247,7 @@ a:hover {
 
 #clock-time {
   display: block;
+  width: fit-content;
   font-size: 44px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -245,7 +255,9 @@ a:hover {
 }
 
 #clock-date {
+  width: fit-content;
   color: var(--text-2);
+  white-space: nowrap;
   font-size: 16px;
 }
 
@@ -619,6 +631,42 @@ a:hover {
 .field-row {
   display: flex;
   gap: 6px;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 6px 12px;
+  margin-bottom: 8px;
+}
+
+.range-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.range-row input {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.range-row output {
+  min-width: 42px;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  cursor: pointer;
 }
 
 .field-label {

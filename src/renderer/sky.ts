@@ -1,7 +1,7 @@
 // 実際の星、太陽、月。方向は本物で、太陽と月の大きさは見やすさのために誇張している
 import * as THREE from 'three';
 import { lonLatToVector3 } from './globe';
-import { siderealDegrees, sublunarPoint, subsolarPoint } from './astro';
+import { siderealDegrees, starIntensity, sublunarPoint, subsolarPoint } from './astro';
 import starCatalog from './data/stars.json';
 
 const STAR_DISTANCE = 90;
@@ -13,18 +13,33 @@ const MOON_RADIUS = 0.8; // 実際の約 3 倍
 // [赤経, 赤緯, 等級, B-V 色指数] の配列 (Hipparcos 由来、6 等星まで)
 const STARS = starCatalog as unknown as Array<[number, number, number, number]>;
 
+// 明るさは等級どおりの比で計算する。明るい星は中心が白く飽和し、飽和した範囲の大きさと周りの光で差が出る。
+// 値をブルームのしきい値より低く抑える。ブルームに通すと明るい点が四角くにじむので、周りの光はここで丸く描く
+const STAR_SHARPNESS_RADIUS = 0.5; // 中心の広がり (CSS ピクセル)。小さいほど鋭い
+const STAR_FADE_LEVEL = 0.002; // ここまで暗くなる範囲を描く
+const STAR_PEAK = 1.9; // 中心の上限
+const STAR_MAX_HALO = 0.6; // 周りの光の上限。中心との合計がブルームのしきい値 (2.6) を超えない値にする
+
 const STAR_VS = /* glsl */ `
 attribute vec3 starColor;
-attribute float mag;
+attribute float intensity;
 uniform float uPixelRatio;
+uniform float uBrightness;
 varying vec3 vColor;
-varying float vAlpha;
+varying float vIntensity;
+varying float vSigma;
+varying float vPointSize;
+varying float vHalo;
+varying float vHaloRadius;
 void main() {
   vColor = starColor;
-  float flux = pow(10.0, -0.4 * mag); // 等級から実際の明るさの比へ
-  // 明るい星は画面の白を超える値にして、にじませる
-  vAlpha = clamp(0.5 + 0.5 * pow(flux, 0.25), 0.0, 1.0) * (1.0 + 3.0 * pow(flux, 0.5));
-  gl_PointSize = uPixelRatio * clamp(1.5 + 3.6 * pow(flux, 0.33), 1.5, 9.0);
+  vIntensity = intensity * uBrightness;
+  vSigma = ${STAR_SHARPNESS_RADIUS.toFixed(2)} * uPixelRatio;
+  float coreRadius = vSigma * sqrt(2.0 * log(max(vIntensity / ${STAR_FADE_LEVEL.toFixed(3)}, 1.5)));
+  vHalo = min(vIntensity * 0.05, ${STAR_MAX_HALO.toFixed(2)});
+  vHaloRadius = vSigma * (2.0 + 9.0 * clamp(log(max(vIntensity, 1.0)) / log(30.0), 0.0, 1.0));
+  vPointSize = 2.0 * max(coreRadius, vHaloRadius) + 2.0;
+  gl_PointSize = vPointSize;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
@@ -32,11 +47,17 @@ void main() {
 const STAR_FS = /* glsl */ `
 precision highp float;
 varying vec3 vColor;
-varying float vAlpha;
+varying float vIntensity;
+varying float vSigma;
+varying float vPointSize;
+varying float vHalo;
+varying float vHaloRadius;
 void main() {
-  float d = length(gl_PointCoord - 0.5) * 2.0;
-  float a = smoothstep(1.0, 0.25, d) * vAlpha;
-  gl_FragColor = vec4(vColor * a, a);
+  float r = length(gl_PointCoord - 0.5) * vPointSize;
+  float core = min(vIntensity * exp(-r * r / (2.0 * vSigma * vSigma)), ${STAR_PEAK.toFixed(1)});
+  float t = clamp(1.0 - r / vHaloRadius, 0.0, 1.0);
+  float halo = vHalo * t * t / (1.0 + r * r / (4.0 * vSigma * vSigma));
+  gl_FragColor = vec4(vColor * (core + halo), 1.0); // 加算合成は透明度を掛けるので 1 にする
   #include <colorspace_fragment>
 }
 `;
@@ -79,7 +100,7 @@ void main() {
   float maria = smoothstep(0.42, 0.62, fbm(n * 3.2 + 4.0));
   float albedo = mix(0.82, 0.42, maria) * (0.88 + 0.24 * fbm(n * 22.0));
   float shade = pow(max(dot(n, uSunDir), 0.0), 0.7);
-  gl_FragColor = vec4(vec3(albedo) * shade * 2.4 + vec3(0.006, 0.007, 0.011), 1.0);
+  gl_FragColor = vec4(vec3(albedo) * shade * 1.3 + vec3(0.006, 0.007, 0.011), 1.0);
   #include <colorspace_fragment>
 }
 `;
@@ -113,24 +134,29 @@ void main() {
 function createStars(pixelRatio: number): THREE.Points {
   const positions = new Float32Array(STARS.length * 3);
   const colors = new Float32Array(STARS.length * 3);
-  const mags = new Float32Array(STARS.length);
+  const intensities = new Float32Array(STARS.length);
   const position = new THREE.Vector3();
   const color = new THREE.Color();
   STARS.forEach(([ra, dec, mag, bv], i) => {
     // 恒星時 0 の配置で置き、時刻の分は回転で与える
     lonLatToVector3(ra, dec, STAR_DISTANCE, position).toArray(positions, i * 3);
     const warm = Math.min(1, Math.max(0, (bv + 0.3) / 1.8));
-    color.setRGB(0.72 + warm * 0.28, 0.82 + warm * 0.02, 1 - warm * 0.5).toArray(colors, i * 3);
-    mags[i] = mag;
+    // 色で明るさが変わらないよう、輝度を 1 に揃える
+    const r = 0.72 + warm * 0.28;
+    const g = 0.82 + warm * 0.02;
+    const b = 1 - warm * 0.5;
+    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    color.setRGB(r / luminance, g / luminance, b / luminance).toArray(colors, i * 3);
+    intensities[i] = starIntensity(mag);
   });
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geometry.setAttribute('starColor', new THREE.BufferAttribute(colors, 3));
-  geometry.setAttribute('mag', new THREE.BufferAttribute(mags, 1));
+  geometry.setAttribute('intensity', new THREE.BufferAttribute(intensities, 1));
   const points = new THREE.Points(
     geometry,
     new THREE.ShaderMaterial({
-      uniforms: { uPixelRatio: { value: pixelRatio } },
+      uniforms: { uPixelRatio: { value: pixelRatio }, uBrightness: { value: 1 } },
       vertexShader: STAR_VS,
       fragmentShader: STAR_FS,
       transparent: true,
@@ -177,6 +203,15 @@ export class Sky {
       }),
     );
     this.group.add(this.stars, this.sun, this.moon);
+  }
+
+  setPixelRatio(pixelRatio: number): void {
+    (this.stars.material as THREE.ShaderMaterial).uniforms.uPixelRatio.value = pixelRatio;
+  }
+
+  // 全ての星に同じ倍率を掛ける。星同士の明るさの比は変わらない
+  setStarBrightness(brightness: number): void {
+    (this.stars.material as THREE.ShaderMaterial).uniforms.uBrightness.value = brightness;
   }
 
   setTime(date: Date): void {

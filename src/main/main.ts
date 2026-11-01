@@ -129,6 +129,9 @@ ipcMain.handle('settings:set', (_event, settings: unknown) =>
 ipcMain.handle('mode:set', (_event, mode: string) =>
   backendRequest('/settings/mode', jsonPut({ mode })),
 );
+ipcMain.handle('graphics:set', (_event, graphics: unknown) =>
+  backendRequest('/settings/graphics', jsonPut(graphics)),
+);
 ipcMain.handle('locations:search', (_event, query: string) =>
   backendRequest(`/locations?q=${encodeURIComponent(query)}`),
 );

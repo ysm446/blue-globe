@@ -58,6 +58,14 @@ export function sublunarPoint(date: Date): LonLat {
   return equatorialToLonLat(Math.atan2(y, x) / DEG, Math.asin(z) / DEG, date);
 }
 
+// 0 等星の明るさ (画面の白を 1 とした値)。6 等星がかろうじて見える程度に合わせた表示上の倍率
+const ZERO_MAGNITUDE_INTENSITY = 12;
+
+// 等級から明るさへ。5 等級差でちょうど 100 倍 (ポグソンの式)
+export function starIntensity(magnitude: number): number {
+  return ZERO_MAGNITUDE_INTENSITY * 10 ** (-0.4 * magnitude);
+}
+
 export function separationDegrees(a: LonLat, b: LonLat): number {
   const cosine =
     Math.sin(a.lat * DEG) * Math.sin(b.lat * DEG) +

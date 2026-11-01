@@ -37,6 +37,7 @@
         <button type="button" data-mode="wind" aria-pressed="false">風速</button>
       </div>
       <button id="return-home" type="button">地点へ戻る</button>
+      <div id="fps-counter" hidden></div>
     </div>
 
     <aside id="news">
@@ -151,6 +152,33 @@
         <p class="settings-help">
           気象庁の文を1文にまとめる必要があるときだけ読み込み、しばらく使わないと VRAM を解放します。
         </p>
+      </section>
+      <section>
+        <h3>描画</h3>
+        <div class="field-grid">
+          <label for="fps-limit">FPS 上限</label>
+          <select id="fps-limit">
+            <option value="0">モニターに合わせる</option>
+            <option value="120">120</option>
+            <option value="60">60</option>
+            <option value="30">30</option>
+          </select>
+          <label for="render-scale">描画解像度</label>
+          <select id="render-scale">
+            <option value="100">100%(鮮明)</option>
+            <option value="75">75%</option>
+            <option value="50">50%(軽い)</option>
+          </select>
+          <label for="star-brightness">星の明るさ</label>
+          <div class="range-row">
+            <input id="star-brightness" type="range" min="-3" max="3" step="0.25" />
+            <output id="star-brightness-value" for="star-brightness"></output>
+          </div>
+        </div>
+        <label class="check-row"><input id="bloom-toggle" type="checkbox" />光のにじみ(通常・天気モード)</label>
+        <label class="check-row"><input id="exposure-toggle" type="checkbox" />自動露出(通常・天気モード)</label>
+        <label class="check-row"><input id="fps-toggle" type="checkbox" />FPS を表示</label>
+        <p id="graphics-status" class="settings-help" role="status"></p>
       </section>
       <p class="settings-credit">
         地名検索: 国土地理院、Open-Meteo<br />

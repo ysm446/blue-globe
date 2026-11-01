@@ -1,6 +1,7 @@
 """パスと設定ファイルの読み書き。"""
 import json
 import os
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -13,9 +14,20 @@ LLAMA_SERVER = ROOT / "runtime" / "llama.cpp" / "llama-server.exe"
 DEFAULT_SETTINGS = {
     "location": None,
     "mode": "normal",
+    "graphics": {
+        "fps_limit": 0,  # 0 はモニターのリフレッシュレートに合わせる
+        "render_scale": 100,
+        "bloom": True,
+        "auto_exposure": True,
+        "show_fps": False,
+        "star_brightness": 1.0,
+    },
     "models_dir": r"D:\ai-models\llm",
     "model": r"lmstudio-community\gemma-4-E4B-it-GGUF\gemma-4-E4B-it-Q4_K_M.gguf",
 }
+
+
+_settings_lock = threading.Lock()
 
 
 def load_settings() -> dict:
@@ -23,7 +35,9 @@ def load_settings() -> dict:
         saved = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         saved = {}
-    return {**DEFAULT_SETTINGS, **saved}
+    # 項目を増やしても以前の設定ファイルが読めるよう、描画の設定は項目ごとに既定値で補う
+    graphics = {**DEFAULT_SETTINGS["graphics"], **saved.get("graphics", {})}
+    return {**DEFAULT_SETTINGS, **saved, "graphics": graphics}
 
 
 def save_settings(settings: dict) -> None:
@@ -31,3 +45,15 @@ def save_settings(settings: dict) -> None:
     tmp = SETTINGS_FILE.with_suffix(".tmp")
     tmp.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(SETTINGS_FILE)
+
+
+def update_settings(changes: dict) -> dict:
+    """設定の一部を変えて保存する。
+
+    API は複数のスレッドで動くので、読み込みから保存までを 1 つずつ行う。
+    同時に書くと一時ファイルが壊れたり、片方の変更が失われたりする。
+    """
+    with _settings_lock:
+        settings = {**load_settings(), **changes}
+        save_settings(settings)
+        return settings

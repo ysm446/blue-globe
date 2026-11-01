@@ -1,9 +1,11 @@
 // 太陽と月の位置の検証。実行: node --test tests/astro.test.ts
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
   separationDegrees,
   siderealDegrees,
+  starIntensity,
   sublunarPoint,
   subsolarPoint,
   sunElevation,
@@ -59,6 +61,29 @@ test('日食のとき月は太陽とほぼ同じ方向にある', () => {
 test('月食のとき月は太陽のほぼ反対側にある', () => {
   assert.ok(sunMoonSeparation('2026-03-03T11:33Z') > 178.5); // 皆既月食
   assert.ok(sunMoonSeparation('2026-08-28T04:13Z') > 178.5); // 部分月食
+});
+
+test('星の明るさは 5 等級差で 100 倍になる', () => {
+  assert.ok(Math.abs(starIntensity(1) / starIntensity(6) - 100) < 1e-9);
+  assert.ok(Math.abs(starIntensity(0) / starIntensity(1) - 2.512) < 0.001);
+});
+
+test('シリウス (-1.44 等) はベガ (0.03 等) の約 3.9 倍明るい', () => {
+  assert.ok(Math.abs(starIntensity(-1.44) / starIntensity(0.03) - 3.87) < 0.02);
+});
+
+test('明るい星同士がごく近くに重ならない', () => {
+  // 重なると光が足されてブルームのしきい値を超え、四角くにじむ
+  const stars = JSON.parse(readFileSync('src/renderer/data/stars.json', 'utf8')) as number[][];
+  const bright = stars.filter((s) => s[2] < 5);
+  assert.ok(bright.length > 1000);
+  for (let i = 0; i < bright.length; i++) {
+    for (let j = i + 1; j < bright.length; j++) {
+      const a = { lon: bright[i][0], lat: bright[i][1] };
+      const b = { lon: bright[j][0], lat: bright[j][1] };
+      assert.ok(separationDegrees(a, b) >= 0.2, `${bright[i]} / ${bright[j]}`);
+    }
+  }
 });
 
 test('星の座標変換は太陽と同じ座標系になる', () => {

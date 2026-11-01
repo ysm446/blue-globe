@@ -23,11 +23,21 @@ interface WeatherLocation {
   longitude: number;
 }
 
+interface GraphicsSettings {
+  fps_limit: number; // 0 はモニターのリフレッシュレートに合わせる
+  render_scale: number; // 描画解像度 (%)
+  bloom: boolean;
+  auto_exposure: boolean;
+  show_fps: boolean;
+  star_brightness: number; // 星全体の明るさの倍率
+}
+
 interface AppSettings {
   location: WeatherLocation | null;
   models_dir: string;
   model: string | null;
   mode?: MapMode;
+  graphics?: GraphicsSettings;
 }
 
 interface ModelEntry {
@@ -90,6 +100,7 @@ interface Window {
     getWind(): Promise<WindResult>;
     getClouds(): Promise<CloudResult | null>;
     setMode(mode: MapMode): Promise<unknown>;
+    setGraphics(graphics: GraphicsSettings): Promise<AppSettings>;
     getTexture(name: 'earth-day' | 'earth-night'): Promise<Uint8Array>;
     getNews(): Promise<NewsReport>;
     getSettings(): Promise<AppSettings>;

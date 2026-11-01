@@ -36,6 +36,11 @@ const BORDER_OPACITY = 0.3;
 const EARTH_BORDER_OPACITY = 0.04;
 const SKY_UPDATE_MS = 60_000; // 太陽も星も 1 分で 0.25° しか動かない
 
+const REFERENCE_HZ = 120; // 粒子の移動量と軌跡の長さ、カメラの慣性はこの更新回数を基準に合わせてある
+const MAX_PARTICLE_STEPS = 6; // 1 フレームで進める粒子の更新回数の上限
+const FRAME_TOLERANCE_MS = 1; // 垂直同期のゆらぎで 1 回分飛ばさないよう、少し早めに通す
+const DAMPING_AT_REFERENCE = 0.08;
+
 const MIN_DIST = 1.2;
 const MAX_DIST = 8;
 const FOCUS_DIST = 2.15; // 風速モードで地点に寄ったときのカメラ距離
@@ -88,7 +93,7 @@ function initGlobe() {
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
+  controls.dampingFactor = DAMPING_AT_REFERENCE;
   controls.enablePan = false;
   controls.minDistance = MIN_DIST;
   controls.maxDistance = MAX_DIST;
@@ -270,6 +275,8 @@ function initGlobe() {
       // 寄るほどゆっくり回し、触ったときに地表が指に付いてくる感覚に近づける
       const altitude = camera.position.length() - GLOBE_RADIUS;
       controls.rotateSpeed = THREE.MathUtils.clamp(altitude * 0.32, 0.05, 0.6);
+      // 慣性はフレームごとに減衰するので、FPS によらず同じ時間で止まるように換算する
+      controls.dampingFactor = 1 - Math.pow(1 - DAMPING_AT_REFERENCE, dt * REFERENCE_HZ);
       controls.update();
       return;
     }
@@ -317,6 +324,7 @@ function initGlobe() {
 
   // 太陽の見え方から露出を決める。風速モードでは使わない
   let exposure = 1;
+  let autoExposure = true;
   const toSun = new THREE.Vector3();
   const sunNdc = new THREE.Vector3();
   function updateExposure(dt: number): void {
@@ -332,21 +340,64 @@ function initGlobe() {
         GLOBE_RADIUS,
       );
     const facing = camera.position.clone().normalize().dot(sky.sunDir);
-    exposure = adaptExposure(exposure, targetExposure(facing, visibility), dt);
-    hdr.setExposure(exposure, visibility);
+    exposure = adaptExposure(exposure, autoExposure ? targetExposure(facing, visibility) : 1, dt);
+    hdr.setExposure(exposure, autoExposure ? visibility : 0);
+  }
+
+  let fpsLimit = 0;
+  const fpsCounter = el('fps-counter');
+  function applyGraphics(graphics: GraphicsSettings): void {
+    fpsLimit = graphics.fps_limit;
+    autoExposure = graphics.auto_exposure;
+    hdr.setBloomEnabled(graphics.bloom);
+    sky.setStarBrightness(graphics.star_brightness);
+    fpsCounter.hidden = !graphics.show_fps;
+    const ratio = (Math.min(window.devicePixelRatio, 2) * graphics.render_scale) / 100;
+    if (ratio !== renderer.getPixelRatio()) {
+      renderer.setPixelRatio(ratio);
+      hdr.setPixelRatio(ratio);
+      sky.setPixelRatio(ratio);
+      gpuParticles?.resize();
+    }
   }
 
   let lastFrameTime = 0;
+  let nextFrameTime = 0;
+  let particleClock = 0;
+  let particleSteps = 0;
+  let renderedFrames = 0;
+  let fpsWindowStart = 0;
+  let fpsWindowFrames = 0;
   renderer.setAnimationLoop((time: number) => {
+    if (time < nextFrameTime - FRAME_TOLERANCE_MS) return;
+    // 余りを持ち越し、リフレッシュレートが上限の整数倍でなくても平均を上限に合わせる
+    const interval = fpsLimit > 0 ? 1000 / fpsLimit : 0;
+    nextFrameTime = interval > 0 ? Math.max(nextFrameTime + interval, time + interval / 2) : 0;
     const dt = lastFrameTime === 0 ? 0.016 : Math.min(0.1, (time - lastFrameTime) / 1000);
     lastFrameTime = time;
+
+    renderedFrames++;
+    fpsWindowFrames++;
+    if (time - fpsWindowStart >= 1000) {
+      fpsCounter.textContent = `${Math.round((fpsWindowFrames * 1000) / (time - fpsWindowStart))} FPS`;
+      fpsWindowStart = time;
+      fpsWindowFrames = 0;
+    }
+
     updateFlight(dt);
     coastlines.update(camera.position.length());
     borders.update(camera.position.length());
-    // 粒子は風速モードのときだけ動かす (他のモードでは GPU を使わない)
+    // 粒子は風速モードのときだけ動かす (他のモードでは GPU を使わない)。
+    // 1 回の更新で動く量は一定なので、FPS によらず同じ速さになるよう回数を時間で決める
     if (mode === 'wind') {
-      gpuParticles?.update(camera);
-      cpuParticles?.update();
+      particleClock += dt * REFERENCE_HZ;
+      const steps = Math.min(MAX_PARTICLE_STEPS, Math.floor(particleClock + 1e-3));
+      particleClock = steps === MAX_PARTICLE_STEPS ? 0 : particleClock - steps;
+      for (let i = 0; i < steps; i++) {
+        gpuParticles?.update(camera);
+        cpuParticles?.update();
+      }
+      particleSteps += steps;
     }
     // 風速モードは元の見た目のまま、HDR の処理を通さず画面へ直接描く
     if (mode !== 'wind' && earthReady) {
@@ -362,6 +413,9 @@ function initGlobe() {
   // 動作検証用: 太陽や月が地球の横に見える位置へカメラを動かす
   (window as unknown as Record<string, unknown>).__weatherNewsDebug = {
     exposure: () => exposure,
+    camera,
+    sky,
+    stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),
     peekAt(body: 'sun' | 'moon' | 'dayside' | 'sunrise'): void {
       flight = null;
       if (body === 'dayside') {
@@ -375,6 +429,7 @@ function initGlobe() {
   };
 
   return {
+    applyGraphics,
     changeMode,
     setWind,
     setClouds: earth.setCloudData.bind(earth),
@@ -578,6 +633,7 @@ function renderNews(news: NewsReport): void {
 function initSettingsDialog(
   onLocationChange: (settings: AppSettings) => void,
   onModelChange: () => void,
+  onGraphicsChange: (graphics: GraphicsSettings) => void,
 ) {
   const dialog = el<HTMLDialogElement>('settings');
   const dirInput = el<HTMLInputElement>('models-dir');
@@ -700,10 +756,66 @@ function initSettingsDialog(
     }
   });
 
+  const fpsSelect = el<HTMLSelectElement>('fps-limit');
+  const scaleSelect = el<HTMLSelectElement>('render-scale');
+  const bloomToggle = el<HTMLInputElement>('bloom-toggle');
+  const exposureToggle = el<HTMLInputElement>('exposure-toggle');
+  const fpsToggle = el<HTMLInputElement>('fps-toggle');
+  const starSlider = el<HTMLInputElement>('star-brightness');
+
+  // スライダーは対数にして、1 目盛りごとに同じ比率で変わるようにする
+  function showStarBrightness(): void {
+    el('star-brightness-value').textContent = `×${(2 ** Number(starSlider.value)).toFixed(2)}`;
+  }
+
+  function readGraphics(): GraphicsSettings {
+    return {
+      fps_limit: Number(fpsSelect.value),
+      render_scale: Number(scaleSelect.value),
+      bloom: bloomToggle.checked,
+      auto_exposure: exposureToggle.checked,
+      show_fps: fpsToggle.checked,
+      star_brightness: 2 ** Number(starSlider.value),
+    };
+  }
+
+  function showGraphics(graphics: GraphicsSettings): void {
+    fpsSelect.value = String(graphics.fps_limit);
+    scaleSelect.value = String(graphics.render_scale);
+    bloomToggle.checked = graphics.bloom;
+    exposureToggle.checked = graphics.auto_exposure;
+    fpsToggle.checked = graphics.show_fps;
+    starSlider.value = String(Math.log2(graphics.star_brightness));
+    showStarBrightness();
+  }
+
+  // 変更はすぐ画面に反映し、そのあと保存する。保存は順番に行い、最後の操作が必ず残るようにする
+  let graphicsSave: Promise<unknown> = Promise.resolve();
+  // スライダーは動かしている間も画面に反映し、離したときに保存する
+  starSlider.addEventListener('input', () => {
+    showStarBrightness();
+    onGraphicsChange(readGraphics());
+  });
+  for (const control of [fpsSelect, scaleSelect, bloomToggle, exposureToggle, fpsToggle, starSlider]) {
+    control.addEventListener('change', () => {
+      const graphics = readGraphics();
+      onGraphicsChange(graphics);
+      const status = el('graphics-status');
+      graphicsSave = graphicsSave
+        .then(() => window.weatherApi.setGraphics(graphics))
+        .then((saved) => {
+          settings = saved;
+          setStatus(status, '');
+        })
+        .catch((err) => setStatus(status, errorMessage(err), true));
+    });
+  }
+
   async function open(): Promise<void> {
     settings = await window.weatherApi.getSettings();
     dirInput.value = settings.models_dir;
     showCurrentLocation();
+    if (settings.graphics) showGraphics(settings.graphics);
     dialog.showModal();
     await loadModels();
   }
@@ -715,6 +827,13 @@ function initSettingsDialog(
 function initClock(): void {
   const timeEl = el('clock-time');
   const dateEl = el('clock-date');
+  // 日付の文字数は月日で変わるので、文字の大きさを変えて時刻と同じ幅に揃える
+  const fitDate = (): void => {
+    dateEl.style.fontSize = '';
+    const base = parseFloat(getComputedStyle(dateEl).fontSize);
+    const ratio = timeEl.getBoundingClientRect().width / dateEl.getBoundingClientRect().width;
+    dateEl.style.fontSize = `${base * ratio}px`;
+  };
   const update = (): void => {
     const now = new Date();
     const time = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
@@ -724,10 +843,14 @@ function initClock(): void {
       weekday: 'short',
     });
     if (timeEl.textContent !== time) timeEl.textContent = time;
-    if (dateEl.textContent !== date) dateEl.textContent = date;
+    if (dateEl.textContent !== date) {
+      dateEl.textContent = date;
+      fitDate();
+    }
   };
   update();
   window.setInterval(update, 1000);
+  void document.fonts.ready.then(fitDate);
 }
 
 async function init(): Promise<void> {
@@ -835,6 +958,7 @@ async function init(): Promise<void> {
     () => {
       if (hasLocation) void refreshNews();
     },
+    (graphics) => globe.applyGraphics(graphics),
   );
 
   refreshBtn.addEventListener('click', () => {
@@ -847,6 +971,7 @@ async function init(): Promise<void> {
   try {
     const settings = await window.weatherApi.getSettings();
     hasLocation = settings.location !== null;
+    if (settings.graphics) globe.applyGraphics(settings.graphics);
     applyMode(settings.mode ?? 'normal');
     if (settings.location) {
       globe.startFromOverview(settings.location);
