@@ -6,7 +6,7 @@ import starCatalog from './data/stars.json';
 
 const STAR_DISTANCE = 90;
 const SUN_DISTANCE = 85;
-const SUN_SPRITE_SIZE = 40;
+const SUN_HALF_SIZE = 22;
 const MOON_DISTANCE = 60;
 const MOON_RADIUS = 0.8; // 実際の約 3 倍
 
@@ -22,7 +22,8 @@ varying float vAlpha;
 void main() {
   vColor = starColor;
   float flux = pow(10.0, -0.4 * mag); // 等級から実際の明るさの比へ
-  vAlpha = clamp(0.5 + 0.5 * pow(flux, 0.25), 0.0, 1.0);
+  // 明るい星は画面の白を超える値にして、にじませる
+  vAlpha = clamp(0.5 + 0.5 * pow(flux, 0.25), 0.0, 1.0) * (1.0 + 3.0 * pow(flux, 0.5));
   gl_PointSize = uPixelRatio * clamp(1.5 + 3.6 * pow(flux, 0.33), 1.5, 9.0);
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
@@ -78,7 +79,33 @@ void main() {
   float maria = smoothstep(0.42, 0.62, fbm(n * 3.2 + 4.0));
   float albedo = mix(0.82, 0.42, maria) * (0.88 + 0.24 * fbm(n * 22.0));
   float shade = pow(max(dot(n, uSunDir), 0.0), 0.7);
-  gl_FragColor = vec4(vec3(albedo) * shade + vec3(0.006, 0.007, 0.011), 1.0);
+  gl_FragColor = vec4(vec3(albedo) * shade * 2.4 + vec3(0.006, 0.007, 0.011), 1.0);
+  #include <colorspace_fragment>
+}
+`;
+
+// 太陽は常にカメラを向く板に、計算で光を描く。画像だと暗い部分の階調が足りず、
+// 明るさを上げたときに同心円や点の模様が出る
+const SUN_VS = /* glsl */ `
+varying vec2 vOffset;
+void main() {
+  vOffset = position.xy;
+  vec4 center = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+  center.xy += position.xy * ${SUN_HALF_SIZE.toFixed(1)};
+  gl_Position = projectionMatrix * center;
+}
+`;
+
+const SUN_FS = /* glsl */ `
+precision highp float;
+varying vec2 vOffset;
+void main() {
+  float d = length(vOffset);
+  // 明るい部分を広げるとブルームの処理で四角くにじむので、中心だけを小さく明るくする。
+  // 周りの光はここで丸く描く
+  float core = smoothstep(0.02, 0.012, d) * 4.0;
+  float glow = (0.0009 / (d * d + 0.0009) * 1.5 + 0.012 / (d + 0.03) * 0.35) * smoothstep(1.0, 0.2, d);
+  gl_FragColor = vec4(vec3(1.0, 0.97, 0.9) * core + vec3(1.0, 0.84, 0.62) * glow, 1.0);
   #include <colorspace_fragment>
 }
 `;
@@ -115,37 +142,28 @@ function createStars(pixelRatio: number): THREE.Points {
   return points;
 }
 
-function createSunSprite(): THREE.Sprite {
-  const canvas = document.createElement('canvas');
-  canvas.width = 512;
-  canvas.height = 512;
-  const ctx = canvas.getContext('2d')!;
-  const gradient = ctx.createRadialGradient(256, 256, 0, 256, 256, 256);
-  gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
-  gradient.addColorStop(0.035, 'rgba(255, 250, 235, 1)');
-  gradient.addColorStop(0.09, 'rgba(255, 225, 170, 0.45)');
-  gradient.addColorStop(0.35, 'rgba(255, 190, 120, 0.07)');
-  gradient.addColorStop(1, 'rgba(255, 170, 90, 0)');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 512, 512);
-  const sprite = new THREE.Sprite(
-    new THREE.SpriteMaterial({
-      map: new THREE.CanvasTexture(canvas),
+function createSun(): THREE.Mesh {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 2),
+    new THREE.ShaderMaterial({
+      vertexShader: SUN_VS,
+      fragmentShader: SUN_FS,
+      transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      transparent: true,
     }),
   );
-  sprite.scale.setScalar(SUN_SPRITE_SIZE);
-  return sprite;
+  mesh.frustumCulled = false;
+  return mesh;
 }
 
 export class Sky {
   readonly group = new THREE.Group();
   readonly sunDir = new THREE.Vector3(1, 0, 0);
   readonly moonDir = new THREE.Vector3(0, 0, 1);
+  readonly sunPosition = new THREE.Vector3(1, 0, 0);
   private readonly stars: THREE.Points;
-  private readonly sun = createSunSprite();
+  private readonly sun = createSun();
   private readonly moon: THREE.Mesh;
 
   constructor(pixelRatio: number) {
@@ -166,7 +184,8 @@ export class Sky {
     this.stars.rotation.y = THREE.MathUtils.degToRad(-siderealDegrees(date) % 360);
     const sun = subsolarPoint(date);
     lonLatToVector3(sun.lon, sun.lat, 1, this.sunDir);
-    this.sun.position.copy(this.sunDir).multiplyScalar(SUN_DISTANCE);
+    this.sunPosition.copy(this.sunDir).multiplyScalar(SUN_DISTANCE);
+    this.sun.position.copy(this.sunPosition);
     const moon = sublunarPoint(date);
     lonLatToVector3(moon.lon, moon.lat, 1, this.moonDir);
     this.moon.position.copy(this.moonDir).multiplyScalar(MOON_DISTANCE);

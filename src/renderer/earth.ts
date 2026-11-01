@@ -38,9 +38,6 @@ uniform vec3 uSunDir;
 varying vec3 vPos;
 varying vec2 vUv;
 ${CLOUD_SAMPLING_GLSL}
-vec3 aces(vec3 x) {
-  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
-}
 void main() {
   vec3 n = normalize(vPos);
   vec3 view = normalize(cameraPosition - vPos);
@@ -54,7 +51,7 @@ void main() {
   // 雲の影。太陽が低いほど長く伸びる
   float shadow = 0.0;
   if (uShadowAmount > 0.0 && dayMask > 0.0) {
-    vec3 toSun = normalize(uSunDir - n * ndl);
+    vec3 toSun = normalize(uSunDir - n * ndl + vec3(1e-5));
     float sinZenith = sqrt(max(1.0 - ndl * ndl, 0.0));
     float reach = min(${CLOUD_ALTITUDE.toFixed(4)} * sinZenith / max(ndl, 0.12), 0.08);
     float caster = cloudAt(normalize(n + toSun * reach), dFdx(vUv), dFdy(vUv));
@@ -65,11 +62,11 @@ void main() {
 
   // 太陽の映り込み (海だけ)
   vec3 halfway = normalize(uSunDir + view);
-  color += vec3(1.0, 0.92, 0.8) * pow(max(dot(n, halfway), 0.0), 90.0) * 0.55 * ocean * (1.0 - shadow) * dayMask;
+  color += vec3(1.0, 0.92, 0.8) * pow(max(dot(n, halfway), 0.0), 90.0) * 4.0 * ocean * (1.0 - shadow) * dayMask;
 
   // 街明かりは夜側だけ
   float lights = pow(smoothstep(0.1, 1.0, texture2D(uNight, vUv).r), 1.4) * (1.0 - dayMask);
-  color += vec3(1.0, 0.6, 0.26) * lights * 0.6;
+  color += vec3(1.0, 0.6, 0.26) * lights * 4.5; // 画面の白より明るくして、にじませる
 
   // 回して触ったときに場所が分かるよう、夜側でも陸と海がうっすら見える光を残す
   color += (day * vec3(0.22, 0.27, 0.4) + vec3(0.003, 0.006, 0.014)) * (1.0 - dayMask);
@@ -79,7 +76,7 @@ void main() {
   color += vec3(0.22, 0.48, 1.0) * fresnel * smoothstep(-0.15, 0.45, ndl) * 1.2;
   color += vec3(0.07, 0.16, 0.34) * light * 0.35;
 
-  gl_FragColor = vec4(aces(color), 1.0);
+  gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
 }
 `;
@@ -110,9 +107,6 @@ float fbm(vec3 p) {
   }
   return v;
 }
-vec3 aces(vec3 x) {
-  return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
-}
 void main() {
   vec3 n = normalize(vPos);
   vec3 view = normalize(cameraPosition - vPos);
@@ -121,19 +115,24 @@ void main() {
   float base = textureGrad(uCloud, vec2(vUv.x, 1.0 - vUv.y), dx, dy).r;
   if (base < 0.01) discard;
 
-  // 細部。薄いところほど崩して巻雲のような縁にし、厚いところは元データの形を保つ
+  // 細部。厚いところは元データの形を保つ。ごく薄いところはノイズを濃さに比例させ、
+  // ノイズだけで白い塊ができないようにする
   vec3 warp = vec3(fbm(n * 9.0 + 1.3), fbm(n * 9.0 + 7.1), 0.0) - 0.5;
   float detail = fbm(n * 38.0 + warp * 1.6);
-  float d = clamp(base + (detail - 0.5) * 0.6 * (1.0 - smoothstep(0.3, 0.9, base)), 0.0, 1.0);
+  float noiseAmount = min(base * 1.6, 0.6) * (1.0 - smoothstep(0.45, 0.95, base));
+  float d = clamp(base + (detail - 0.5) * noiseAmount, 0.0, 1.0);
 
   // 半透明。光の通りにくさは厚みに対して指数的で、縁では視線が雲を長く通るので濃くなる
   float pathLength = 1.0 / max(dot(n, view), 0.25);
-  float opticalDepth = d * 2.3 * mix(1.0, pathLength, 0.45);
-  float alpha = (1.0 - exp(-opticalDepth)) * smoothstep(0.015, 0.1, d);
+  float opticalDepth = d * d * 1.2 + d * 0.75;
+  opticalDepth *= mix(1.0, pathLength, 0.45);
+  // 縁はぼかす。ここで切れると、地球の輪郭が雲の形でギザギザになる
+  float limb = smoothstep(0.0, 0.14, dot(n, view));
+  float alpha = (1.0 - exp(-opticalDepth)) * smoothstep(0.015, 0.1, d) * limb;
 
   // 立体感。太陽の方向へ数点たどり、手前にある雲に遮られた分だけ暗くする
   float ndl = dot(n, uSunDir);
-  vec3 toSun = normalize(uSunDir - n * ndl);
+  vec3 toSun = normalize(uSunDir - n * ndl + vec3(1e-5));
   float blocked = 0.0;
   blocked += cloudAt(normalize(n + toSun * 0.005), dx, dy) * 0.4;
   blocked += cloudAt(normalize(n + toSun * 0.012), dx, dy) * 0.3;
@@ -147,14 +146,14 @@ void main() {
   float dusk = smoothstep(-0.08, 0.02, ndl) * (1.0 - smoothstep(0.02, 0.28, ndl));
   vec3 sunColor = mix(vec3(1.0, 0.99, 0.97), vec3(1.0, 0.6, 0.36), dusk * 0.8);
   // 影の部分は黒くせず、空の光を受けた青灰色にする
-  vec3 lit = mix(vec3(0.42, 0.5, 0.66), vec3(1.05), transmit);
+  vec3 lit = mix(vec3(0.3, 0.36, 0.48), vec3(0.88), transmit);
   vec3 color = lit * sunColor * light + vec3(0.016, 0.021, 0.036);
 
   // 縁の雲にも大気の青を重ねる
   float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.2);
   color += vec3(0.16, 0.36, 0.8) * fresnel * smoothstep(-0.15, 0.45, ndl) * 0.7;
 
-  gl_FragColor = vec4(aces(color), alpha);
+  gl_FragColor = vec4(color, alpha);
   #include <colorspace_fragment>
 }
 `;

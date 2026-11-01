@@ -8,6 +8,8 @@ import { SpeedOverlay } from './overlay';
 import { RAMP_MAX_SPEED } from './wind-texture';
 import { weatherIcon } from './icons';
 import { RealisticEarth } from './earth';
+import { adaptExposure, earthClearance, screenPresence, targetExposure } from './exposure';
+import { HdrPipeline } from './hdr';
 import { Sky } from './sky';
 
 const COLORS = {
@@ -29,9 +31,9 @@ const TRAIL_FADE = 0.953;
 const PARTICLE_BRIGHTNESS = 0.7; // 海岸線が風に埋もれないよう控えめにする
 const OVERLAY_OPACITY = 0.2;
 const COASTLINE_OPACITY = 0.9; // 風速モード
-const EARTH_COASTLINE_OPACITY = 0.3; // 写実的な地球の上では控えめにする
+const EARTH_COASTLINE_OPACITY = 0.1; // 写実的な地球の上では控えめにする
 const BORDER_OPACITY = 0.3;
-const EARTH_BORDER_OPACITY = 0.12;
+const EARTH_BORDER_OPACITY = 0.04;
 const SKY_UPDATE_MS = 60_000; // 太陽も星も 1 分で 0.25° しか動かない
 
 const MIN_DIST = 1.2;
@@ -105,6 +107,7 @@ function initGlobe() {
   scene.add(earth.group);
   let earthReady = false;
 
+  const hdr = new HdrPipeline(renderer, scene, camera);
   const flatBackground = new THREE.Color(COLORS.background);
   const spaceBackground = createSpaceBackground();
 
@@ -308,8 +311,30 @@ function initGlobe() {
     applyViewOffset();
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
+    hdr.setSize(window.innerWidth, window.innerHeight);
     gpuParticles?.resize();
   });
+
+  // 太陽の見え方から露出を決める。風速モードでは使わない
+  let exposure = 1;
+  const toSun = new THREE.Vector3();
+  const sunNdc = new THREE.Vector3();
+  function updateExposure(dt: number): void {
+    toSun.copy(sky.sunPosition).sub(camera.position).normalize();
+    // カメラは常に地球の中心を向くので、太陽が手前側にあるかは位置だけで分かる
+    const inFront = toSun.dot(camera.position) < 0;
+    sunNdc.copy(sky.sunPosition).project(camera);
+    const visibility =
+      screenPresence(sunNdc.x, sunNdc.y, inFront) *
+      earthClearance(
+        [camera.position.x, camera.position.y, camera.position.z],
+        [toSun.x, toSun.y, toSun.z],
+        GLOBE_RADIUS,
+      );
+    const facing = camera.position.clone().normalize().dot(sky.sunDir);
+    exposure = adaptExposure(exposure, targetExposure(facing, visibility), dt);
+    hdr.setExposure(exposure, visibility);
+  }
 
   let lastFrameTime = 0;
   renderer.setAnimationLoop((time: number) => {
@@ -323,18 +348,29 @@ function initGlobe() {
       gpuParticles?.update(camera);
       cpuParticles?.update();
     }
-    renderer.render(scene, camera);
+    // 風速モードは元の見た目のまま、HDR の処理を通さず画面へ直接描く
+    if (mode !== 'wind' && earthReady) {
+      updateExposure(dt);
+      hdr.render();
+    } else {
+      renderer.render(scene, camera);
+    }
     if (mode === 'wind') gpuParticles?.composite();
     updateMarker();
   });
 
   // 動作検証用: 太陽や月が地球の横に見える位置へカメラを動かす
   (window as unknown as Record<string, unknown>).__weatherNewsDebug = {
-    peekAt(body: 'sun' | 'moon'): void {
+    exposure: () => exposure,
+    peekAt(body: 'sun' | 'moon' | 'dayside' | 'sunrise'): void {
       flight = null;
-      const target = body === 'sun' ? sky.sunDir : sky.moonDir;
+      if (body === 'dayside') {
+        camera.position.copy(sky.sunDir).multiplyScalar(EARTH_VIEW_DIST);
+        return;
+      }
+      const target = body === 'moon' ? sky.moonDir : sky.sunDir;
       const side = new THREE.Vector3(0, 1, 0).cross(target).normalize();
-      camera.position.copy(target).multiplyScalar(-4).addScaledVector(side, -1.6);
+      camera.position.copy(target).multiplyScalar(-4).addScaledVector(side, body === 'sunrise' ? -1.03 : -1.6);
     },
   };
 

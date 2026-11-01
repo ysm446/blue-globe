@@ -25,7 +25,7 @@ HEIGHT = 2048
 # 赤外の値を雲の濃さへ直す範囲。2026-11-01 の実測: 晴れた海 76、砂漠 83、台風の中心 205
 IR_CLEAR = 110.0
 IR_THICK = 215.0
-LOW_CLOUD_VEIL = 0.16  # GFS を薄い層として足す割合
+LOW_CLOUD_VEIL = 0.11  # GFS を薄い層として足す割合。格子が粗いので、濃いと陸の上で模様に見える
 POLE_FADE_START = 68.0  # 衛星のある範囲 (約 ±72.7°) の内側から GFS へ切り替える
 POLE_FADE_END = 72.0
 POLE_COVER = 0.75
