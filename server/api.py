@@ -5,12 +5,13 @@ import threading
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from . import news, sources
+from . import clouds, news, sources
 from .config import load_settings, save_settings
 from .llm import LlamaServer, LlmError, list_models
 
@@ -54,6 +55,10 @@ class SettingsUpdate(BaseModel):
     model: str | None = None
 
 
+class ModeUpdate(BaseModel):
+    mode: Literal["normal", "weather", "wind"]
+
+
 @app.get("/health")
 def health() -> dict:
     return {"status": "ok"}
@@ -73,9 +78,25 @@ def put_settings(update: SettingsUpdate) -> dict:
             raise HTTPException(400, str(e)) from e
         if update.model not in available:
             raise HTTPException(400, f"フォルダ内にないモデルは選べません: {update.model}")
-    settings = update.model_dump()
+    settings = {**load_settings(), **update.model_dump()}
     save_settings(settings)
     return settings
+
+
+# モデルの検証を通さず、モードだけを保存する (モデルが消えていても切り替えられるように)
+@app.put("/settings/mode")
+def put_mode(update: ModeUpdate) -> dict:
+    settings = {**load_settings(), "mode": update.mode}
+    save_settings(settings)
+    return settings
+
+
+@app.get("/clouds/satellite")
+def get_satellite_clouds() -> dict:
+    try:
+        return clouds.update_satellite_map()
+    except clouds.CloudError as e:
+        raise HTTPException(502, str(e)) from e
 
 
 @app.get("/models")

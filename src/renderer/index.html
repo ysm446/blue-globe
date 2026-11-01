@@ -17,18 +17,26 @@
       <span id="marker-label" class="marker-label"></span>
     </div>
 
-    <div id="clock">
-      <div>
-        <time id="clock-time"></time>
-        <div id="clock-date"></div>
-      </div>
-      <div id="clock-weather" hidden>
-        <span id="clock-icon"></span>
+    <div id="top-left">
+      <div id="clock">
         <div>
-          <div id="clock-temperature"></div>
-          <div id="clock-condition"></div>
+          <time id="clock-time"></time>
+          <div id="clock-date"></div>
+        </div>
+        <div id="clock-weather" hidden>
+          <span id="clock-icon"></span>
+          <div>
+            <div id="clock-temperature"></div>
+            <div id="clock-condition"></div>
+          </div>
         </div>
       </div>
+      <div id="mode-switch" role="group" aria-label="地図の表示モード">
+        <button type="button" data-mode="normal" aria-pressed="false">通常</button>
+        <button type="button" data-mode="weather" aria-pressed="false">天気</button>
+        <button type="button" data-mode="wind" aria-pressed="false">風速</button>
+      </div>
+      <button id="return-home" type="button">地点へ戻る</button>
     </div>
 
     <aside id="news">
@@ -107,10 +115,10 @@
       </footer>
     </aside>
 
-    <div id="wind-info">
+    <div id="layer-info" hidden>
       <div class="legend-bar" id="legend-bar"></div>
-      <div class="legend-scale"><span>0</span><span>風速 m/s</span><span>35</span></div>
-      <div id="wind-source"></div>
+      <div class="legend-scale"><span id="legend-min"></span><span id="legend-label"></span><span id="legend-max"></span></div>
+      <div id="layer-source"></div>
     </div>
 
     <dialog id="settings">
@@ -144,7 +152,13 @@
           気象庁の文を1文にまとめる必要があるときだけ読み込み、しばらく使わないと VRAM を解放します。
         </p>
       </section>
-      <p class="settings-credit">地名検索: 国土地理院、Open-Meteo</p>
+      <p class="settings-credit">
+        地名検索: 国土地理院、Open-Meteo<br />
+        雲: NOAA GMGSI(衛星の全球合成画像)と NOAA GFS をもとに加工したもので、元データそのものではありません<br />
+        星: Hipparcos カタログ(d3-celestial より)<br />
+        We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS),
+        part of NASA's Earth Science Data and Information System (ESDIS).
+      </p>
     </dialog>
 
     <script type="module" src="./main.ts"></script>

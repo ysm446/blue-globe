@@ -7,6 +7,8 @@ import { GpuParticleSystem } from './gpu-particles';
 import { SpeedOverlay } from './overlay';
 import { RAMP_MAX_SPEED } from './wind-texture';
 import { weatherIcon } from './icons';
+import { RealisticEarth } from './earth';
+import { Sky } from './sky';
 
 const COLORS = {
   ocean: '#0c1422',
@@ -26,17 +28,22 @@ const PARTICLE_SPEED = 0.1;
 const TRAIL_FADE = 0.953;
 const PARTICLE_BRIGHTNESS = 0.7; // 海岸線が風に埋もれないよう控えめにする
 const OVERLAY_OPACITY = 0.2;
-const COASTLINE_OPACITY = 0.9;
+const COASTLINE_OPACITY = 0.9; // 風速モード
+const EARTH_COASTLINE_OPACITY = 0.3; // 写実的な地球の上では控えめにする
+const BORDER_OPACITY = 0.3;
+const EARTH_BORDER_OPACITY = 0.12;
+const SKY_UPDATE_MS = 60_000; // 太陽も星も 1 分で 0.25° しか動かない
 
 const MIN_DIST = 1.2;
 const MAX_DIST = 8;
-const FOCUS_DIST = 2.15; // 地点に寄ったときのカメラ距離
-const OVERVIEW_DIST = 3.8;
+const FOCUS_DIST = 2.15; // 風速モードで地点に寄ったときのカメラ距離
+const EARTH_VIEW_DIST = 3.3; // 通常・天気モードは地球全体が見える距離にする
+const OVERVIEW_DIST = 4.6;
 const FLY_SECONDS = 2.8;
 const PANEL_OVERLAP_WIDTH = 900; // これより狭い画面ではパネルを下に置く
 
 const NEWS_REFRESH_MS = 15 * 60_000; // Open-Meteo の現在値は 15 分刻み
-const WIND_REFRESH_MS = 60 * 60_000;
+const LAYER_REFRESH_MS = 60 * 60_000; // 地図のデータの取得元は 3 時間刻みで、結果もキャッシュされる
 
 const METHOD_LABEL: Record<NewsOutlook['method'], string> = {
   rule: '気象庁の文を整形',
@@ -83,15 +90,23 @@ function initGlobe() {
   controls.enablePan = false;
   controls.minDistance = MIN_DIST;
   controls.maxDistance = MAX_DIST;
-  controls.rotateSpeed = 0.5;
+  renderer.domElement.classList.add('globe-canvas');
 
-  scene.add(
-    new Globe(
-      GLOBE_RADIUS,
-      { ocean: COLORS.ocean, land: COLORS.land, graticule: COLORS.graticule },
-      COLORS.halo,
-    ).group,
+  // 風速モードの地球。写実的な地球の読み込みが終わるまでの代わりにも使う
+  const flatGlobe = new Globe(
+    GLOBE_RADIUS,
+    { ocean: COLORS.ocean, land: COLORS.land, graticule: COLORS.graticule },
+    COLORS.halo,
   );
+  scene.add(flatGlobe.group);
+
+  const earth = new RealisticEarth(GLOBE_RADIUS * 1.0005);
+  earth.group.visible = false;
+  scene.add(earth.group);
+  let earthReady = false;
+
+  const flatBackground = new THREE.Color(COLORS.background);
+  const spaceBackground = createSpaceBackground();
 
   // ベクター海岸線・国境線 (LOD 付き)。地表より少し浮かせて Z ファイティングを避ける
   const coastlines = createCoastlines(GLOBE_RADIUS * 1.0015);
@@ -103,10 +118,14 @@ function initGlobe() {
   const overlay = new SpeedOverlay(GLOBE_RADIUS * 1.0008);
   overlay.setColorStops(COLOR_STOPS);
   overlay.setOpacity(OVERLAY_OPACITY);
-  overlay.setEnabled(true);
   scene.add(overlay.mesh);
 
-  // 薄い星空
+  // 実際の星、太陽、月 (通常・天気モード)
+  const sky = new Sky(renderer.getPixelRatio());
+  scene.add(sky.group);
+
+  // 風速モードの薄い星空
+  let windStars: THREE.Points;
   {
     const starCount = 1200;
     const positions = new Float32Array(starCount * 3);
@@ -116,16 +135,48 @@ function initGlobe() {
     }
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    scene.add(
-      new THREE.Points(
-        geometry,
-        new THREE.PointsMaterial({ color: COLORS.stars, size: 0.06, sizeAttenuation: true }),
-      ),
+    windStars = new THREE.Points(
+      geometry,
+      new THREE.PointsMaterial({ color: COLORS.stars, size: 0.06, sizeAttenuation: true }),
     );
+    scene.add(windStars);
   }
 
   let gpuParticles: GpuParticleSystem | null = null;
   let cpuParticles: ParticleSystem | null = null;
+  let mode: MapMode = 'normal';
+
+  function updateSky(): void {
+    sky.setTime(new Date());
+    earth.setSunDirection(sky.sunDir);
+  }
+
+  function setMode(next: MapMode): void {
+    // 隠している間に古くなった軌跡を、戻ったときに見せない
+    if (next === 'wind' && mode !== 'wind') gpuParticles?.resize();
+    mode = next;
+    const wind = mode === 'wind';
+    overlay.setEnabled(wind);
+    if (cpuParticles) cpuParticles.object3d.visible = wind;
+    // 風速モードは昼夜も天体も描かず、風だけを見せる
+    earth.group.visible = !wind && earthReady;
+    flatGlobe.group.visible = wind || !earthReady;
+    earth.setCloudsEnabled(mode === 'weather');
+    sky.group.visible = !wind;
+    windStars.visible = wind;
+    scene.background = wind ? flatBackground : spaceBackground;
+    coastlines.setOpacity(wind ? COASTLINE_OPACITY : EARTH_COASTLINE_OPACITY);
+    borders.setOpacity(wind ? BORDER_OPACITY : EARTH_BORDER_OPACITY);
+  }
+  setMode(mode);
+
+  void Promise.all([loadEarthTexture('earth-day', renderer), loadEarthTexture('earth-night', renderer)])
+    .then(([day, night]) => {
+      earth.setTextures(day, night);
+      earthReady = true;
+      setMode(mode);
+    })
+    .catch((err) => console.error('earth texture load failed', err));
 
   function setWind(field: WindField): void {
     overlay.setWind(field);
@@ -151,9 +202,13 @@ function initGlobe() {
       cpuParticles.speedFactor = PARTICLE_SPEED;
       cpuParticles.brightness = PARTICLE_BRIGHTNESS;
       cpuParticles.colorStops = COLOR_STOPS;
+      cpuParticles.object3d.visible = mode === 'wind';
       scene.add(cpuParticles.object3d);
     }
   }
+
+  updateSky();
+  window.setInterval(updateSky, SKY_UPDATE_MS);
 
   // 地点へのカメラ移動。移動中は OrbitControls を止め、操作されたら打ち切る
   let flight: { from: THREE.Vector3; to: THREE.Vector3; elapsed: number } | null = null;
@@ -161,6 +216,7 @@ function initGlobe() {
   const markerPos = new THREE.Vector3();
   const projected = new THREE.Vector3();
   let markerNormal: THREE.Vector3 | null = null;
+  let focused: WeatherLocation | null = null;
 
   renderer.domElement.addEventListener('pointerdown', () => {
     flight = null;
@@ -170,13 +226,14 @@ function initGlobe() {
   });
 
   function focusLocation(location: WeatherLocation): void {
+    focused = location;
     el('marker-label').textContent = location.name;
     lonLatToVector3(location.longitude, location.latitude, PARTICLE_RADIUS, markerPos);
     markerNormal = markerPos.clone().normalize();
     marker.hidden = false;
     flight = {
       from: camera.position.clone(),
-      to: markerNormal.clone().multiplyScalar(FOCUS_DIST),
+      to: markerNormal.clone().multiplyScalar(mode === 'wind' ? FOCUS_DIST : EARTH_VIEW_DIST),
       elapsed: 0,
     };
   }
@@ -189,8 +246,27 @@ function initGlobe() {
     focusLocation(location);
   }
 
+  function returnToLocation(): void {
+    if (focused) focusLocation(focused);
+  }
+
+  // 風速モードと他のモードでは見やすい距離が違うので、向きは保ったまま距離だけ変える
+  function changeMode(next: MapMode): void {
+    const crossesWind = (mode === 'wind') !== (next === 'wind');
+    setMode(next);
+    if (!crossesWind) return;
+    flight = {
+      from: camera.position.clone(),
+      to: camera.position.clone().setLength(next === 'wind' ? FOCUS_DIST : EARTH_VIEW_DIST),
+      elapsed: 0,
+    };
+  }
+
   function updateFlight(dt: number): void {
     if (!flight) {
+      // 寄るほどゆっくり回し、触ったときに地表が指に付いてくる感覚に近づける
+      const altitude = camera.position.length() - GLOBE_RADIUS;
+      controls.rotateSpeed = THREE.MathUtils.clamp(altitude * 0.32, 0.05, 0.6);
       controls.update();
       return;
     }
@@ -242,42 +318,121 @@ function initGlobe() {
     updateFlight(dt);
     coastlines.update(camera.position.length());
     borders.update(camera.position.length());
-    gpuParticles?.update(camera);
-    cpuParticles?.update();
+    // 粒子は風速モードのときだけ動かす (他のモードでは GPU を使わない)
+    if (mode === 'wind') {
+      gpuParticles?.update(camera);
+      cpuParticles?.update();
+    }
     renderer.render(scene, camera);
-    gpuParticles?.composite();
+    if (mode === 'wind') gpuParticles?.composite();
     updateMarker();
   });
 
-  return { setWind, focusLocation, startFromOverview };
+  // 動作検証用: 太陽や月が地球の横に見える位置へカメラを動かす
+  (window as unknown as Record<string, unknown>).__weatherNewsDebug = {
+    peekAt(body: 'sun' | 'moon'): void {
+      flight = null;
+      const target = body === 'sun' ? sky.sunDir : sky.moonDir;
+      const side = new THREE.Vector3(0, 1, 0).cross(target).normalize();
+      camera.position.copy(target).multiplyScalar(-4).addScaledVector(side, -1.6);
+    },
+  };
+
+  return {
+    changeMode,
+    setWind,
+    setClouds: earth.setCloudData.bind(earth),
+    focusLocation,
+    startFromOverview,
+    returnToLocation,
+  };
 }
 
-async function loadWind(setWind: (field: WindField) => void): Promise<void> {
-  const sourceEl = el('wind-source');
+function createSpaceBackground(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024;
+  canvas.height = 1024;
+  const ctx = canvas.getContext('2d')!;
+  const gradient = ctx.createRadialGradient(440, 512, 60, 440, 512, 800);
+  gradient.addColorStop(0, '#0f2448');
+  gradient.addColorStop(0.45, '#07122b');
+  gradient.addColorStop(1, '#02040b');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 1024, 1024);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+// file:// の画像は WebGL で使えないので、メインプロセスから受け取ったバイト列を読み込む
+async function loadEarthTexture(
+  name: 'earth-day' | 'earth-night',
+  renderer: THREE.WebGLRenderer,
+): Promise<THREE.Texture> {
+  const bytes = await window.weatherApi.getTexture(name);
+  const bitmap = await createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' }), {
+    imageOrientation: 'flipY',
+  });
+  const texture = new THREE.Texture(bitmap);
+  texture.flipY = false;
+  if (name === 'earth-day') texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  texture.needsUpdate = true;
+  return texture;
+}
+
+interface LayerCaption {
+  text: string;
+  warn: boolean;
+}
+
+function validTimeLabel(refTime: string, forecastHours: number): string {
+  return new Date(new Date(refTime).getTime() + forecastHours * 3600_000).toLocaleString('ja-JP', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+async function loadWind(setWind: (field: WindField) => void): Promise<LayerCaption> {
   try {
     const result = await window.weatherApi.getWind();
     const field = WindField.fromGfsJson(result.records);
     if (!field) throw new Error('invalid wind data');
     setWind(field);
     if (result.source === 'sample') {
-      sourceEl.textContent = '最新の風を取得できず、サンプルデータ(2014年)を表示中';
-      sourceEl.className = 'warn';
-      return;
+      return { text: '最新の風を取得できず、サンプルデータ(2014年)を表示中', warn: true };
     }
-    const validMs = new Date(field.refTime!).getTime() + (field.forecastTime ?? 0) * 3600_000;
-    const label = new Date(validMs).toLocaleString('ja-JP', {
-      month: 'numeric',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-    sourceEl.textContent = `NOAA GFS ${label} 時点${result.source === 'stale' ? '(取得できず前回のデータ)' : ''}`;
-    sourceEl.className = result.source === 'stale' ? 'warn' : '';
+    const stale = result.source === 'stale';
+    const label = validTimeLabel(field.refTime!, field.forecastTime ?? 0);
+    return { text: `NOAA GFS ${label} 時点${stale ? '(取得できず前回のデータ)' : ''}`, warn: stale };
   } catch (err) {
     console.error('wind load failed', err);
     setWind(makeSyntheticWind());
-    sourceEl.textContent = '風データを読み込めず、合成データを表示中';
-    sourceEl.className = 'warn';
+    return { text: '風データを読み込めず、合成データを表示中', warn: true };
+  }
+}
+
+async function loadClouds(
+  setClouds: (nx: number, ny: number, data: Uint8Array) => void,
+): Promise<LayerCaption> {
+  try {
+    const result = await window.weatherApi.getClouds();
+    if (!result) return { text: '雲データを取得できませんでした', warn: true };
+    setClouds(result.nx, result.ny, result.data);
+    const label = validTimeLabel(result.validTime, 0);
+    if (result.source === 'gfs') {
+      return { text: `衛星画像を取得できず、NOAA GFS の予報 ${label} 時点を表示中`, warn: true };
+    }
+    return {
+      text: `NOAA GMGSI と GFS を加工 ${label} 時点${result.stale ? '(取得できず前回のデータ)' : ''}`,
+      warn: result.stale,
+    };
+  } catch (err) {
+    console.error('cloud load failed', err);
+    return { text: '雲データを読み込めませんでした', warn: true };
   }
 }
 
@@ -542,11 +697,68 @@ function initClock(): void {
 async function init(): Promise<void> {
   initClock();
   const globe = initGlobe();
-  el('legend-bar').style.background = `linear-gradient(to right, ${COLOR_STOPS.map(
+  const windLegend = `linear-gradient(to right, ${COLOR_STOPS.map(
     ([speed, [r, g, b]]) => `rgb(${r} ${g} ${b}) ${(speed / RAMP_MAX_SPEED) * 100}%`,
   ).join(', ')})`;
-  void loadWind(globe.setWind);
-  window.setInterval(() => void loadWind(globe.setWind), WIND_REFRESH_MS);
+  const cloudLegend = 'linear-gradient(to right, rgb(240 245 255 / 0.08), rgb(240 245 255))';
+
+  // データは、そのモードに入ったときに初めて取得する
+  type DataMode = Exclude<MapMode, 'normal'>;
+  const layers: Record<DataMode, { caption: LayerCaption | null; loadedAt: number; loading: boolean; load: () => Promise<LayerCaption> }> = {
+    weather: { caption: null, loadedAt: 0, loading: false, load: () => loadClouds(globe.setClouds) },
+    wind: { caption: null, loadedAt: 0, loading: false, load: () => loadWind(globe.setWind) },
+  };
+  let mode: MapMode = 'normal';
+
+  function renderLayerInfo(): void {
+    const info = el('layer-info');
+    info.hidden = mode === 'normal';
+    if (mode === 'normal') return;
+    el('legend-bar').style.background = mode === 'wind' ? windLegend : cloudLegend;
+    el('legend-min').textContent = mode === 'wind' ? '0' : '薄い';
+    el('legend-label').textContent = mode === 'wind' ? '風速 m/s' : '雲';
+    el('legend-max').textContent = mode === 'wind' ? String(RAMP_MAX_SPEED) : '厚い';
+    const caption = layers[mode].caption;
+    const source = el('layer-source');
+    source.textContent = caption?.text ?? 'データを取得しています…';
+    source.className = caption?.warn ? 'warn' : '';
+  }
+
+  async function loadLayer(target: MapMode): Promise<void> {
+    if (target === 'normal') return;
+    const layer = layers[target];
+    if (layer.loading || Date.now() - layer.loadedAt < LAYER_REFRESH_MS) return;
+    layer.loading = true;
+    layer.caption = await layer.load();
+    layer.loading = false;
+    layer.loadedAt = Date.now();
+    renderLayerInfo();
+  }
+
+  const modeButtons = Array.from(
+    document.querySelectorAll<HTMLButtonElement>('#mode-switch button'),
+  );
+
+  function applyMode(next: MapMode): void {
+    mode = next;
+    for (const button of modeButtons) {
+      button.setAttribute('aria-pressed', String(button.dataset.mode === next));
+    }
+    globe.changeMode(next);
+    renderLayerInfo();
+    void loadLayer(next);
+  }
+
+  for (const button of modeButtons) {
+    button.addEventListener('click', () => {
+      const next = button.dataset.mode as MapMode;
+      if (next === mode) return;
+      applyMode(next);
+      window.weatherApi.setMode(next).catch((err) => console.error('mode save failed', err));
+    });
+  }
+  applyMode('normal');
+  window.setInterval(() => void loadLayer(mode), LAYER_REFRESH_MS);
 
   const status = el('news-status');
   const refreshBtn = el<HTMLButtonElement>('refresh');
@@ -594,10 +806,12 @@ async function init(): Promise<void> {
     else void settingsDialog.open();
   });
   el('open-settings').addEventListener('click', () => void settingsDialog.open());
+  el('return-home').addEventListener('click', () => globe.returnToLocation());
 
   try {
     const settings = await window.weatherApi.getSettings();
     hasLocation = settings.location !== null;
+    applyMode(settings.mode ?? 'normal');
     if (settings.location) {
       globe.startFromOverview(settings.location);
       void refreshNews();

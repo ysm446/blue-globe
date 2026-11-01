@@ -10,6 +10,7 @@
 import { decodeGrib2, Grib2Message } from './grib2';
 
 const FILTER_BASE = 'https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_1p00.pl';
+const CLOUD_FILTER_BASE = 'https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl';
 const STEP_HOURS = 3; // gfs 1.00° の予報時間刻み
 const MAX_FORECAST_HOUR = 384;
 const PUBLISH_DELAY_HOURS = 5; // ランが NOMADS に並ぶまでのおおよその遅れ
@@ -124,13 +125,55 @@ export function gribMessageToRecord(msg: Grib2Message): GfsRecord {
   };
 }
 
+// ランの中で現在時刻に最も近い予報時間
+function nearestForecastHour(run: Date): number {
+  const hours = (Date.now() - run.getTime()) / 3600_000;
+  return Math.max(0, Math.min(MAX_FORECAST_HOUR, Math.round(hours / STEP_HOURS) * STEP_HOURS));
+}
+
+export interface GfsCloudResult {
+  nx: number;
+  ny: number;
+  refTime: string;
+  forecastTime: number;
+  data: Uint8Array; // 1 格子 1 バイトの雲量 (0〜255)。北端から南へ、経度 0 度から東へ
+}
+
+// 現在時刻に最も近い全層雲量を 0.25° 格子 (約 1.7MB) で取得する
+export async function fetchCurrentGfsCloud(signal?: AbortSignal): Promise<GfsCloudResult> {
+  for (const run of candidateRuns()) {
+    const yyyymmdd = run.toISOString().slice(0, 10).replace(/-/g, '');
+    const hh = String(run.getUTCHours()).padStart(2, '0');
+    const fff = String(nearestForecastHour(run)).padStart(3, '0');
+    const params = new URLSearchParams({
+      file: `gfs.t${hh}z.pgrb2.0p25.f${fff}`,
+      var_TCDC: 'on',
+      lev_entire_atmosphere: 'on',
+      dir: `/gfs.${yyyymmdd}/${hh}/atmos`,
+    });
+    const bytes = await fetchBinary(`${CLOUD_FILTER_BASE}?${params.toString()}`, undefined, signal);
+    if (signal?.aborted) throw new Error('cancelled');
+    if (!bytes || !isGrib(bytes)) continue; // ラン未公開時は HTML エラーページが返る
+
+    const msg = decodeGrib2(bytes).find((m) => m.parameterCategory === 6 && m.parameterNumber === 1);
+    if (!msg) continue;
+    if (msg.scanMode !== 0 || msg.la1 !== 90 || msg.lo1 !== 0) {
+      throw new Error(`unexpected grid layout: scan=${msg.scanMode} la1=${msg.la1} lo1=${msg.lo1}`);
+    }
+    const data = new Uint8Array(msg.data.length);
+    for (let i = 0; i < data.length; i++) {
+      data[i] = Math.round(Math.max(0, Math.min(100, msg.data[i])) * 2.55);
+    }
+    return { nx: msg.nx, ny: msg.ny, refTime: msg.refTime, forecastTime: msg.forecastTime, data };
+  }
+  throw new Error('利用可能な GFS ランが NOMADS に見つかりませんでした');
+}
+
 // 最新の利用可能なランを探して、現在時刻に最も近い予報時間の地上10m風を取得する。
 // signal で中断できる (中断時は 'cancelled' を投げる)
 export async function fetchCurrentGfsWind(signal?: AbortSignal): Promise<GfsFetchResult> {
-  const now = Date.now();
   for (const run of candidateRuns()) {
-    const hours = (now - run.getTime()) / 3600_000;
-    const fh = Math.max(0, Math.min(MAX_FORECAST_HOUR, Math.round(hours / STEP_HOURS) * STEP_HOURS));
+    const fh = nearestForecastHour(run);
     const bytes = await fetchBinary(buildFilterUrl(run, fh), undefined, signal);
     if (signal?.aborted) throw new Error('cancelled');
     if (!bytes || !isGrib(bytes)) continue; // ラン未公開時は HTML エラーページが返る

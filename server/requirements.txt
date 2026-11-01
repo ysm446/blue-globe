@@ -1,3 +1,5 @@
 fastapi
 uvicorn
 httpx
+numpy
+h5py

@@ -18,7 +18,8 @@ LLM やモデルがなくても動きます。その場合、1文にまとめら
 
 1. 初回は設定が開くので、地名を検索して地点を選びます。
 2. 地球儀が地点へ寄り、右のパネルにニュースが表示されます。15分ごとに更新します。
-3. モデルは「設定」の一覧から選びます。「使わない」も選べます。
+3. 左上のボタンで地図の表示を切り替えます。「通常」は回して触れる地球と星、太陽、月、「天気」はそこに衛星画像をもとにした雲を重ねた表示、「風速」は風の流れです。ドラッグで回転、ホイールで拡大でき、「地点へ戻る」で設定地点に戻ります。
+4. モデルは「設定」の一覧から選びます。「使わない」も選べます。
 
 ## 開発
 
@@ -40,4 +41,7 @@ npm test        # ニュース文の単体テスト
 - 解説文: [気象庁](https://www.jma.go.jp/bosai/)
 - 地名検索: 国土地理院、Open-Meteo
 - 風: NOAA GFS
+- 雲: NOAA GMGSI(衛星の全球合成画像)と NOAA GFS をもとに加工したもの(元データそのものではありません)
 - 海岸線と国境線: Natural Earth
+- 地表と街明かりの画像: NASA Blue Marble / Black Marble。We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and Information System (ESDIS).
+- 星: Hipparcos カタログ由来のデータを [d3-celestial](https://github.com/ofrohn/d3-celestial) から変換(ライセンスは [assets/licenses/d3-celestial-LICENSE.txt](assets/licenses/d3-celestial-LICENSE.txt))

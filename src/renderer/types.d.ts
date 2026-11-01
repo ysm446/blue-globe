@@ -3,6 +3,17 @@ interface WindResult {
   records: unknown;
 }
 
+interface CloudResult {
+  source: 'satellite' | 'gfs';
+  nx: number;
+  ny: number;
+  validTime: string;
+  stale: boolean; // 取得に失敗して前回の衛星データを使っている
+  data: Uint8Array; // 1 行目が北端、左端が経度 -180 度
+}
+
+type MapMode = 'normal' | 'weather' | 'wind';
+
 interface WeatherLocation {
   name: string;
   admin1: string | null;
@@ -16,6 +27,7 @@ interface AppSettings {
   location: WeatherLocation | null;
   models_dir: string;
   model: string | null;
+  mode?: MapMode;
 }
 
 interface ModelEntry {
@@ -76,6 +88,9 @@ interface NewsReport {
 interface Window {
   weatherApi: {
     getWind(): Promise<WindResult>;
+    getClouds(): Promise<CloudResult | null>;
+    setMode(mode: MapMode): Promise<unknown>;
+    getTexture(name: 'earth-day' | 'earth-night'): Promise<Uint8Array>;
     getNews(): Promise<NewsReport>;
     getSettings(): Promise<AppSettings>;
     saveSettings(settings: AppSettings): Promise<AppSettings>;

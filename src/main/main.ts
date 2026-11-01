@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
-import { fetchCurrentGfsWind } from './nomads';
+import { fetchCurrentGfsCloud, fetchCurrentGfsWind } from './nomads';
 import { backendRequest, startBackend, stopBackend } from './backend';
 
 const WIND_MAX_AGE_MS = 3 * 3600_000; // GFS 1.0° は 3 時間刻み
@@ -43,6 +43,78 @@ ipcMain.handle('wind:get', async () => {
   };
 });
 
+// GFS の雲量を data/cloud-cache に用意する。新しいキャッシュ → NOMADS → 古いキャッシュの順に探す
+async function ensureGfsCloud(): Promise<boolean> {
+  const metaPath = path.join(dataDir(), 'cloud-cache', 'current-cloud.json');
+  const binPath = path.join(dataDir(), 'cloud-cache', 'current-cloud.bin');
+  const cached = fs.existsSync(metaPath) && fs.existsSync(binPath);
+  if (cached && Date.now() - fs.statSync(binPath).mtimeMs < WIND_MAX_AGE_MS) return true;
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WIND_FETCH_TIMEOUT_MS);
+  try {
+    const { data, ...meta } = await fetchCurrentGfsCloud(controller.signal);
+    fs.mkdirSync(path.dirname(binPath), { recursive: true });
+    fs.writeFileSync(binPath, data);
+    fs.writeFileSync(metaPath, JSON.stringify(meta));
+    return true;
+  } catch (err) {
+    console.error('cloud fetch failed', err);
+    return cached;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// 衛星の雲マップを取れないときは、GFS だけで表示する。経度 0 度始まりなので -180 度始まりへ回す
+function readGfsFallback(): unknown {
+  const meta = readJson(path.join(dataDir(), 'cloud-cache', 'current-cloud.json')) as {
+    nx: number;
+    ny: number;
+    refTime: string;
+    forecastTime: number;
+  };
+  const raw = fs.readFileSync(path.join(dataDir(), 'cloud-cache', 'current-cloud.bin'));
+  const data = new Uint8Array(raw.length);
+  const half = meta.nx / 2;
+  for (let y = 0; y < meta.ny; y++) {
+    const row = y * meta.nx;
+    data.set(raw.subarray(row + half, row + meta.nx), row);
+    data.set(raw.subarray(row, row + half), row + half);
+  }
+  const validMs = new Date(meta.refTime).getTime() + meta.forecastTime * 3600_000;
+  return { source: 'gfs', nx: meta.nx, ny: meta.ny, validTime: new Date(validMs).toISOString(), stale: false, data };
+}
+
+ipcMain.handle('clouds:get', async () => {
+  const hasGfs = await ensureGfsCloud();
+  try {
+    const sat = (await backendRequest('/clouds/satellite')) as {
+      nx: number;
+      ny: number;
+      valid_time: string;
+      stale: boolean;
+    };
+    const data = new Uint8Array(fs.readFileSync(path.join(dataDir(), 'cloud-cache', 'current-sat.bin')));
+    return { source: 'satellite', nx: sat.nx, ny: sat.ny, validTime: sat.valid_time, stale: sat.stale, data };
+  } catch (err) {
+    console.error('satellite cloud failed', err);
+  }
+  return hasGfs ? readGfsFallback() : null;
+});
+
+// 同梱の地球の画像。名前は固定の一覧からだけ受け付ける
+const TEXTURES: Record<string, string> = {
+  'earth-day': 'earth-day.jpg',
+  'earth-night': 'earth-night.jpg',
+};
+
+ipcMain.handle('texture:get', (_event, name: string) => {
+  const file = Object.hasOwn(TEXTURES, name) ? TEXTURES[name] : null;
+  if (!file) throw new Error(`unknown texture: ${name}`);
+  return new Uint8Array(fs.readFileSync(path.join(app.getAppPath(), 'assets', 'textures', file)));
+});
+
 const jsonPut = (body: unknown): RequestInit => ({
   method: 'PUT',
   headers: { 'Content-Type': 'application/json' },
@@ -53,6 +125,9 @@ ipcMain.handle('news:get', () => backendRequest('/news'));
 ipcMain.handle('settings:get', () => backendRequest('/settings'));
 ipcMain.handle('settings:set', (_event, settings: unknown) =>
   backendRequest('/settings', jsonPut(settings)),
+);
+ipcMain.handle('mode:set', (_event, mode: string) =>
+  backendRequest('/settings/mode', jsonPut({ mode })),
 );
 ipcMain.handle('locations:search', (_event, query: string) =>
   backendRequest(`/locations?q=${encodeURIComponent(query)}`),

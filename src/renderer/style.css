@@ -43,6 +43,14 @@ body {
   display: block;
 }
 
+.globe-canvas {
+  cursor: grab;
+}
+
+.globe-canvas:active {
+  cursor: grabbing;
+}
+
 button,
 input,
 select {
@@ -138,10 +146,55 @@ a:hover {
 
 /* ------------------------------------------------ 時計 */
 
-#clock {
+#top-left {
   position: fixed;
   top: 16px;
   left: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+#mode-switch {
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+#mode-switch button {
+  min-width: 64px;
+  background: transparent;
+  border-color: transparent;
+}
+
+#mode-switch button:hover {
+  background: rgba(157, 180, 214, 0.14);
+}
+
+#mode-switch button[aria-pressed='true'] {
+  color: var(--text);
+  font-weight: 600;
+  background: rgba(157, 180, 214, 0.26);
+  border-color: var(--line);
+}
+
+#mode-switch button[aria-pressed='false'] {
+  color: var(--text-2);
+}
+
+#return-home {
+  background: var(--panel);
+}
+
+#return-home:hover {
+  background: var(--panel-solid);
+}
+
+#clock {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -209,6 +262,7 @@ a:hover {
   padding: 14px 20px;
   overflow-y: auto;
   scrollbar-width: thin;
+  scrollbar-color: rgba(157, 180, 214, 0.28) transparent;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -257,7 +311,7 @@ a:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 12px 0 8px;
+  margin: 8px 0 6px;
 }
 
 #current-icon {
@@ -327,7 +381,7 @@ a:hover {
 .stats {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
-  margin: 14px 0;
+  margin: 12px 0;
   border-block: 1px solid var(--line);
 }
 
@@ -487,9 +541,9 @@ a:hover {
   color: var(--text-3);
 }
 
-/* ------------------------------------------------ 風の凡例 */
+/* ------------------------------------------------ 地図の凡例 */
 
-#wind-info {
+#layer-info {
   position: fixed;
   left: 16px;
   bottom: 16px;
@@ -514,11 +568,11 @@ a:hover {
   margin-top: 3px;
 }
 
-#wind-source {
+#layer-source {
   margin-top: 3px;
 }
 
-#wind-source.warn {
+#layer-source.warn {
   color: var(--warn);
 }
 
@@ -637,7 +691,7 @@ select option {
     max-height: 58vh;
   }
 
-  #wind-info {
+  #layer-info {
     display: none;
   }
 }

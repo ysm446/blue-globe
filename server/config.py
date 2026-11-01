@@ -12,6 +12,7 @@ LLAMA_SERVER = ROOT / "runtime" / "llama.cpp" / "llama-server.exe"
 
 DEFAULT_SETTINGS = {
     "location": None,
+    "mode": "normal",
     "models_dir": r"D:\ai-models\llm",
     "model": r"lmstudio-community\gemma-4-E4B-it-GGUF\gemma-4-E4B-it-Q4_K_M.gguf",
 }
