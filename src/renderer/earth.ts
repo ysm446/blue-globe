@@ -2,6 +2,7 @@
 // 雲は天気モードのときだけ表示し (setCloudsEnabled)、地表より少し高い別の球に載せる。
 // 回すと地面とずれて動くので、ボリューム雲を使わなくても高さが感じられる
 import * as THREE from 'three';
+import { easeFade, stepFade } from './fade';
 
 const CLOUD_ALTITUDE = 0.012; // 実際より高い。視差が見える程度に誇張している
 
@@ -84,6 +85,7 @@ void main() {
 const CLOUD_FS = /* glsl */ `
 precision highp float;
 uniform vec3 uSunDir;
+uniform float uFade;
 varying vec3 vPos;
 varying vec2 vUv;
 ${CLOUD_SAMPLING_GLSL}
@@ -125,7 +127,8 @@ void main() {
   // 半透明。光の通りにくさは厚みに対して指数的で、縁では視線が雲を長く通るので濃くなる
   float pathLength = 1.0 / max(dot(n, view), 0.25);
   float opticalDepth = d * d * 1.2 + d * 0.75;
-  opticalDepth *= mix(1.0, pathLength, 0.45);
+  // 厚みに掛けるので、厚い雲から先に見え始め、薄い雲が後から広がる
+  opticalDepth *= mix(1.0, pathLength, 0.45) * uFade;
   // 縁はぼかす。ここで切れると、地球の輪郭が雲の形でギザギザになる
   float limb = smoothstep(0.0, 0.14, dot(n, view));
   float alpha = (1.0 - exp(-opticalDepth)) * limb;
@@ -182,6 +185,7 @@ export class RealisticEarth {
   private readonly sunDir = new THREE.Vector3(1, 0, 0);
   private cloudTexture: THREE.DataTexture | null = null;
   private cloudsWanted = false;
+  private cloudFade = 0;
 
   constructor(radius: number) {
     this.material = new THREE.ShaderMaterial({
@@ -201,6 +205,7 @@ export class RealisticEarth {
       uniforms: {
         uCloud: { value: null },
         uSunDir: { value: this.sunDir },
+        uFade: { value: 0 },
       },
       vertexShader: VS,
       fragmentShader: CLOUD_FS,
@@ -258,17 +263,32 @@ export class RealisticEarth {
     this.cloudTexture = texture;
     this.material.uniforms.uCloud.value = texture;
     this.cloudMaterial.uniforms.uCloud.value = texture;
-    this.syncClouds();
   }
 
   setCloudsEnabled(enabled: boolean): void {
     this.cloudsWanted = enabled;
-    this.syncClouds();
   }
 
-  private syncClouds(): void {
-    const show = this.cloudsWanted && this.cloudTexture !== null;
-    this.cloudMesh.visible = show;
-    this.material.uniforms.uShadowAmount.value = show ? 1 : 0;
+  // 地球ごと隠すときは途中の状態を残さない。次に見せるときは最初から現れる
+  hideCloudsNow(): void {
+    this.cloudFade = 0;
+    this.applyCloudFade();
+  }
+
+  // 毎フレーム呼ぶ。データが届くまでは現れ始めない
+  updateClouds(dt: number): void {
+    this.cloudFade = stepFade(this.cloudFade, this.cloudsWanted && this.cloudTexture !== null, dt);
+    this.applyCloudFade();
+  }
+
+  get cloudProgress(): number {
+    return this.cloudFade;
+  }
+
+  private applyCloudFade(): void {
+    const amount = easeFade(this.cloudFade);
+    this.cloudMesh.visible = amount > 0;
+    this.cloudMaterial.uniforms.uFade.value = amount;
+    this.material.uniforms.uShadowAmount.value = amount;
   }
 }

@@ -178,6 +178,7 @@ function initGlobe() {
     earth.group.visible = !wind && earthReady;
     flatGlobe.group.visible = wind || !earthReady;
     earth.setCloudsEnabled(mode === 'weather');
+    if (wind) earth.hideCloudsNow();
     sky.group.visible = !wind;
     windStars.visible = wind;
     scene.background = wind ? flatBackground : spaceBackground;
@@ -412,6 +413,7 @@ function initGlobe() {
     }
     // 風速モードは元の見た目のまま、HDR の処理を通さず画面へ直接描く
     if (mode !== 'wind' && earthReady) {
+      earth.updateClouds(dt);
       updateExposure(dt);
       hdr.render();
     } else {
@@ -424,6 +426,7 @@ function initGlobe() {
   // 動作検証用: 太陽や月が地球の横に見える位置へカメラを動かす
   (window as unknown as Record<string, unknown>).__weatherNewsDebug = {
     exposure: () => exposure,
+    cloudProgress: () => earth.cloudProgress,
     camera,
     sky,
     mapLinesVisible: () => [coastlines.group.visible, borders.group.visible],
