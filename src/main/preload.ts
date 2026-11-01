@@ -12,4 +12,8 @@ contextBridge.exposeInMainWorld('weatherApi', {
   searchLocations: (query: string) => ipcRenderer.invoke('locations:search', query),
   listModels: (modelsDir: string) => ipcRenderer.invoke('models:list', modelsDir),
   pickFolder: (defaultPath: string) => ipcRenderer.invoke('dialog:pick-folder', defaultPath),
+  revealScreenshot: (filePath: string) => ipcRenderer.invoke('screenshot:reveal', filePath),
+  onScreenshot: (callback: (filePath: string | null) => void) => {
+    ipcRenderer.on('screenshot:done', (_event, filePath: string | null) => callback(filePath));
+  },
 });

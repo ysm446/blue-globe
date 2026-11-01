@@ -875,8 +875,44 @@ function initClock(): void {
   void document.fonts.ready.then(fitDate);
 }
 
+const SCREENSHOT_TOAST_MS = 6000; // クリックする余裕を持たせる
+
+function initScreenshotToast(): void {
+  const toast = el('screenshot-toast');
+  const open = el<HTMLButtonElement>('screenshot-toast-open');
+  const dialog = el<HTMLDialogElement>('settings');
+  let savedPath: string | null = null;
+  let timer = 0;
+  const hide = (): void => {
+    window.clearTimeout(timer);
+    toast.hidden = true;
+  };
+
+  window.weatherApi.onScreenshot((filePath) => {
+    savedPath = filePath;
+    el('screenshot-toast-title').textContent = filePath
+      ? 'スクリーンショットを保存しました'
+      : 'スクリーンショットを保存できませんでした';
+    el('screenshot-toast-file').textContent = filePath ? (filePath.split(/[\\/]/).pop() ?? '') : '';
+    el('screenshot-toast-hint').textContent = filePath ? 'クリックで保存先を開く' : '';
+    open.disabled = !filePath;
+    // 設定画面を開いている間は、その外の要素がクリックを受けないので中へ移す
+    (dialog.open ? dialog : document.body).append(toast);
+    toast.hidden = false;
+    window.clearTimeout(timer);
+    timer = window.setTimeout(hide, SCREENSHOT_TOAST_MS);
+  });
+  dialog.addEventListener('close', () => document.body.append(toast));
+  open.addEventListener('click', () => {
+    if (savedPath) void window.weatherApi.revealScreenshot(savedPath);
+    hide();
+  });
+  el('screenshot-toast-close').addEventListener('click', hide);
+}
+
 async function init(): Promise<void> {
   initClock();
+  initScreenshotToast();
   const globe = initGlobe();
   const windLegend = `linear-gradient(to right, ${COLOR_STOPS.map(
     ([speed, [r, g, b]]) => `rgb(${r} ${g} ${b}) ${(speed / RAMP_MAX_SPEED) * 100}%`,

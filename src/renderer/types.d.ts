@@ -109,5 +109,7 @@ interface Window {
     searchLocations(query: string): Promise<WeatherLocation[]>;
     listModels(modelsDir: string): Promise<ModelList>;
     pickFolder(defaultPath: string): Promise<string | null>;
+    revealScreenshot(filePath: string): Promise<void>;
+    onScreenshot(callback: (filePath: string | null) => void): void; // 保存に失敗したときは null
   };
 }

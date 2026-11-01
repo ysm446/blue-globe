@@ -149,6 +149,47 @@ ipcMain.handle('dialog:pick-folder', async (event, defaultPath: string) => {
   return result.canceled ? null : (result.filePaths[0] ?? null);
 });
 
+function screenshotDir(): string {
+  return path.join(dataDir(), 'screenshots');
+}
+
+// 通知のクリックから保存先を開く。スクリーンショットのフォルダの中だけ受け付ける
+ipcMain.handle('screenshot:reveal', (_event, filePath: string) => {
+  if (path.dirname(filePath) === screenshotDir() && fs.existsSync(filePath)) shell.showItemInFolder(filePath);
+});
+
+// 連続で撮っても前の通知が写らないよう、消えた画面が描かれるまで待つ
+const HIDE_TOAST_SCRIPT = `new Promise((resolve) => {
+  document.getElementById('screenshot-toast')?.setAttribute('hidden', '');
+  requestAnimationFrame(() => requestAnimationFrame(resolve));
+})`;
+
+// capturePage は物理ピクセルで撮る。logical (Shift+F12) のときはウィンドウの論理サイズへ縮め、
+// 表示倍率 100% で同じ大きさのウィンドウを撮ったときの画素数にする。構図は変わらない
+async function captureScreenshot(win: BrowserWindow, logical: boolean): Promise<void> {
+  let filePath: string | null = null;
+  try {
+    await win.webContents.executeJavaScript(HIDE_TOAST_SCRIPT);
+    let image = await win.webContents.capturePage();
+    if (logical) {
+      const [width, height] = win.getContentSize();
+      image = image.resize({ width, height, quality: 'best' });
+    }
+    const now = new Date();
+    const pad = (n: number): string => String(n).padStart(2, '0');
+    const stamp =
+      `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+      `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    fs.mkdirSync(screenshotDir(), { recursive: true });
+    filePath = path.join(screenshotDir(), `screenshot-${stamp}${logical ? '-100pct' : ''}.png`);
+    fs.writeFileSync(filePath, image.toPNG());
+  } catch (err) {
+    console.error('screenshot failed', err);
+    filePath = null;
+  }
+  if (!win.isDestroyed()) win.webContents.send('screenshot:done', filePath);
+}
+
 function createWindow(): void {
   const win = new BrowserWindow({
     width: 1440,
@@ -170,6 +211,13 @@ function createWindow(): void {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event) => event.preventDefault());
+
+  // F12 は物理ピクセルのまま、Shift+F12 は表示倍率 100% 相当の大きさで保存する
+  win.webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown' && input.key === 'F12' && !input.isAutoRepeat) {
+      void captureScreenshot(win, input.shift);
+    }
+  });
 }
 
 app.whenReady().then(() => {
