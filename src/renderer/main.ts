@@ -29,6 +29,7 @@ import {
   type RegionView,
 } from './region-camera';
 import { RegionDetail } from './region-detail';
+import { linePath, linePoints } from './hourly-chart';
 
 const COLORS = {
   ocean: '#0c1422',
@@ -65,7 +66,7 @@ const FOCUS_DIST = 2.15; // 風速モードで地点に寄ったときのカメ�
 const EARTH_VIEW_DIST = 3.3; // 通常・天気モードは地球全体が見える距離にする
 const OVERVIEW_DIST = 4.6;
 const FLY_SECONDS = 2.8;
-const PANEL_OVERLAP_WIDTH = 900; // これより狭い画面ではパネルを下に置く
+const PANEL_OVERLAP_WIDTH = 900; // これより狭い画面ではパネルを下に置く (style.css と合わせる)
 
 const EARTH_SURFACE_RADIUS = GLOBE_RADIUS * 1.0005;
 const COASTLINE_RADIUS = GLOBE_RADIUS * 1.0015;
@@ -115,15 +116,15 @@ function initGlobe() {
   const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
   camera.position.set(0, 1, 3.6);
 
-  // ニュースパネルに隠れないよう、地球儀を残りの領域の中央に寄せる
+  // 広い画面では地球儀を中央に置く。狭い画面ではパネルが下に並ぶので、残りの領域の中央に寄せる
   function applyViewOffset(): void {
     const w = window.innerWidth;
     const h = window.innerHeight;
-    const panel = el('news').offsetWidth;
-    if (w > PANEL_OVERLAP_WIDTH) camera.setViewOffset(w, h, (panel + 16) / 2, 0, w, h);
-    else camera.setViewOffset(w, h, 0, el('news').offsetHeight / 2, w, h);
+    if (w > PANEL_OVERLAP_WIDTH) camera.clearViewOffset();
+    else camera.setViewOffset(w, h, 0, el('panels').offsetHeight / 2, w, h);
   }
   applyViewOffset();
+  new ResizeObserver(applyViewOffset).observe(el('panels'));
 
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
@@ -699,6 +700,7 @@ function initGlobe() {
     earth,
     regionView: () => regionView,
     regionDetailProgress: () => regionDetail?.progress ?? null,
+    renderHourly,
     mapLinesVisible: () => [coastlines.group.visible, borders.group.visible],
     stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),
     peekAt(body: 'sun' | 'moon' | 'dayside' | 'sunrise'): void {
@@ -850,6 +852,69 @@ function rainText(rain: number | null): string {
   return rain === null ? '–' : `${rain}%`;
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const DROP_PATH = 'M5 0C5 0 0 6 0 9a5 5 0 0 0 10 0C10 6 5 0 5 0Z';
+const HOURLY_LINE_HEIGHT = 40;
+
+function svgElement<K extends keyof SVGElementTagNameMap>(
+  name: K,
+  attributes: Record<string, string | number>,
+): SVGElementTagNameMap[K] {
+  const element = document.createElementNS(SVG_NS, name);
+  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+  return element;
+}
+
+// 降水確率の分だけ下から満たした雫
+function rainDrop(rain: number, index: number): SVGSVGElement {
+  const svg = svgElement('svg', {
+    class: 'rain-drop',
+    viewBox: '0 0 10 14',
+    width: 9,
+    height: 13,
+    'aria-hidden': 'true',
+  });
+  const clipId = `rain-drop-${index}`;
+  const clip = svgElement('clipPath', { id: clipId });
+  clip.append(svgElement('rect', { x: 0, y: 14 * (1 - rain / 100), width: 10, height: 14 }));
+  svg.append(
+    clip,
+    svgElement('path', { d: DROP_PATH, fill: 'none', stroke: 'var(--icon-rain)', 'stroke-width': 1 }),
+    svgElement('path', { d: DROP_PATH, fill: 'var(--icon-rain)', 'clip-path': `url(#${clipId})` }),
+  );
+  return svg;
+}
+
+// 線の座標は実際の幅で計算する。伸縮させると印が楕円になる
+let hourlyShown: NewsReport['hourly'] = [];
+
+function drawHourlyLine(): void {
+  const cell = el<HTMLTableCellElement>('hourly-line-cell');
+  const width = cell.clientWidth;
+  cell.colSpan = Math.max(hourlyShown.length, 1);
+  if (width === 0 || hourlyShown.length === 0) return; // 閉じているときは、開いたときに描く
+  const points = linePoints(hourlyShown.map((hour) => hour.temperature), width, HOURLY_LINE_HEIGHT);
+  const svg = svgElement('svg', {
+    class: 'hourly-line',
+    width,
+    height: HOURLY_LINE_HEIGHT,
+    role: 'img',
+    'aria-label': `気温の変化: ${hourlyShown.map((hour) => `${hour.time} ${hour.temperature}度`).join('、')}`,
+  });
+  svg.append(svgElement('path', { d: linePath(points) }));
+  const column = width / points.length;
+  points.forEach((point, index) => {
+    const hour = hourlyShown[index];
+    // 印より大きい範囲で、カーソルを合わせた列の値を出す
+    const target = svgElement('rect', { x: column * index, y: 0, width: column, height: HOURLY_LINE_HEIGHT });
+    const title = svgElement('title', {});
+    title.textContent = `${hour.time} ${hour.temperature}° ${hour.weather} 降水 ${rainText(hour.rain)}`;
+    target.append(title);
+    svg.append(target, svgElement('circle', { cx: point.x, cy: point.y }));
+  });
+  cell.replaceChildren(svg);
+}
+
 function renderHourly(news: NewsReport): void {
   const textRow = (id: string, format: (h: NewsReport['hourly'][number]) => string): void =>
     fillRow(id, news.hourly, (cell, hour) => {
@@ -858,10 +923,17 @@ function renderHourly(news: NewsReport): void {
     });
   textRow('hourly-time', (h) => h.time);
   textRow('hourly-temperature', (h) => `${h.temperature}°`);
-  textRow('hourly-rain', (h) => rainText(h.rain));
-  fillRow('hourly-icon', news.hourly, (cell, hour) => {
-    cell.append(weatherIcon(hour.icon, hour.is_day, hour.weather, 24));
+  fillRow('hourly-rain', news.hourly, (cell, hour, index) => {
+    cell.title = hour.weather;
+    if (hour.rain !== null) cell.append(rainDrop(hour.rain, index));
+    cell.append(rainText(hour.rain));
   });
+  fillRow('hourly-icon', news.hourly, (cell, hour) => {
+    cell.append(weatherIcon(hour.icon, hour.is_day, hour.weather, 26));
+  });
+  hourlyShown = news.hourly;
+  el<HTMLTableCellElement>('hourly-line-cell').colSpan = news.hourly.length;
+  drawHourlyLine();
 }
 
 function renderWeekly(news: NewsReport): void {
@@ -880,16 +952,18 @@ function renderWeekly(news: NewsReport): void {
   });
 }
 
+// パネルを開いたときや幅が変わったときに描き直す
+new ResizeObserver(drawHourlyLine).observe(el('fold-hourly'));
+
 function renderNews(news: NewsReport): void {
   el('headline').textContent = news.headline;
   el('current-icon').replaceChildren(
     weatherIcon(news.current.icon, news.current.is_day, news.current.weather, 52),
   );
   el('clock-icon').replaceChildren(
-    weatherIcon(news.current.icon, news.current.is_day, news.current.weather, 48),
+    weatherIcon(news.current.icon, news.current.is_day, news.current.weather, 60),
   );
-  el('clock-temperature').textContent = `${news.current.temperature.toFixed(1)}℃`;
-  el('clock-condition').textContent = news.current.weather;
+  el('clock-temperature').textContent = `${Math.round(news.current.temperature)}°`;
   el('clock-weather').hidden = false;
   renderStat('stat-temperature', news.current.temperature.toFixed(1), '℃');
   renderStat('stat-apparent', news.current.apparent.toFixed(1), '℃');
@@ -916,6 +990,7 @@ function renderNews(news: NewsReport): void {
   }
   el('outlook-source').textContent = parts.join('・');
   el('news-body').hidden = false;
+  el('forecasts').hidden = false;
   streamParagraphs([
     [el('current-text'), news.current_text],
     [el('day-text'), news.day_text],
@@ -1244,14 +1319,6 @@ function initSettingsDialog(
 // PC の時刻を表示する。スリープ復帰後もすぐ合うよう、毎秒確かめて変わったときだけ書き換える
 function initClock(): void {
   const timeEl = el('clock-time');
-  const dateEl = el('clock-date');
-  // 日付の文字数は月日で変わるので、文字の大きさを変えて時刻と同じ幅に揃える
-  const fitDate = (): void => {
-    dateEl.style.fontSize = '';
-    const base = parseFloat(getComputedStyle(dateEl).fontSize);
-    const ratio = timeEl.getBoundingClientRect().width / dateEl.getBoundingClientRect().width;
-    dateEl.style.fontSize = `${base * ratio}px`;
-  };
   const update = (): void => {
     const now = new Date();
     const time = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
@@ -1260,15 +1327,16 @@ function initClock(): void {
       day: 'numeric',
       weekday: 'short',
     });
-    if (timeEl.textContent !== time) timeEl.textContent = time;
-    if (dateEl.textContent !== date) {
-      dateEl.textContent = date;
-      fitDate();
-    }
+    const text = `${date} ${time}`;
+    if (timeEl.textContent !== text) timeEl.textContent = text;
   };
   update();
   window.setInterval(update, 1000);
-  void document.fonts.ready.then(fitDate);
+}
+
+function showClockPlace(location: WeatherLocation | null): void {
+  el('clock-place-name').textContent = location?.name ?? '';
+  el('clock-place').hidden = !location;
 }
 
 const SCREENSHOT_TOAST_MS = 6000; // クリックする余裕を持たせる
@@ -1306,9 +1374,43 @@ function initScreenshotToast(): void {
   el('screenshot-toast-close').addEventListener('click', hide);
 }
 
+// パネルの開閉。閉じた状態は次に起動したときも残す
+function initPanelFolds(): (panels: PanelSettings) => void {
+  const folds: Record<keyof PanelSettings, HTMLDetailsElement> = {
+    news: el<HTMLDetailsElement>('fold-news'),
+    hourly: el<HTMLDetailsElement>('fold-hourly'),
+    weekly: el<HTMLDetailsElement>('fold-weekly'),
+  };
+  const read = (): PanelSettings => ({
+    news: folds.news.open,
+    hourly: folds.hourly.open,
+    weekly: folds.weekly.open,
+  });
+  let saved = JSON.stringify(read());
+  let saving: Promise<unknown> = Promise.resolve();
+  for (const fold of Object.values(folds)) {
+    fold.addEventListener('toggle', () => {
+      const panels = read();
+      // 起動時に保存された状態を反映したときも toggle が届く
+      if (JSON.stringify(panels) === saved) return;
+      saved = JSON.stringify(panels);
+      saving = saving
+        .then(() => window.weatherApi.setPanels(panels))
+        .catch((err) => console.error('panels save failed', err));
+    });
+  }
+  return (panels) => {
+    saved = JSON.stringify(panels);
+    folds.news.open = panels.news;
+    folds.hourly.open = panels.hourly;
+    folds.weekly.open = panels.weekly;
+  };
+}
+
 async function init(): Promise<void> {
   initClock();
   initScreenshotToast();
+  const applyPanels = initPanelFolds();
   const globe = initGlobe();
   const windLegend = `linear-gradient(to right, ${COLOR_STOPS.map(
     ([speed, [r, g, b]]) => `rgb(${r} ${g} ${b}) ${(speed / RAMP_MAX_SPEED) * 100}%`,
@@ -1426,8 +1528,10 @@ async function init(): Promise<void> {
   const settingsDialog = initSettingsDialog(
     (settings) => {
       hasLocation = settings.location !== null;
+      showClockPlace(settings.location);
       // 前の地点の文を、新しい地点のマーカーと並べて見せない
       el('news-body').hidden = true;
+      el('forecasts').hidden = true;
       el('clock-weather').hidden = true;
       if (settings.location) globe.focusLocation(settings.location);
       void refreshNews();
@@ -1448,7 +1552,9 @@ async function init(): Promise<void> {
   try {
     const settings = await window.weatherApi.getSettings();
     hasLocation = settings.location !== null;
+    showClockPlace(settings.location);
     if (settings.graphics) globe.applyGraphics(settings.graphics);
+    if (settings.panels) applyPanels(settings.panels);
     applyMode(settings.mode ?? 'normal');
     if (settings.location) {
       globe.startFromOverview(settings.location);

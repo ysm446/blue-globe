@@ -177,6 +177,9 @@ ipcMain.handle('graphics:set', (_event, graphics: unknown) =>
   backendRequest('/settings/graphics', jsonPut(graphics)),
 );
 ipcMain.handle('graphics:defaults', () => backendRequest('/settings/graphics/defaults'));
+ipcMain.handle('panels:set', (_event, panels: unknown) =>
+  backendRequest('/settings/panels', jsonPut(panels)),
+);
 ipcMain.handle('locations:search', (_event, query: string) =>
   backendRequest(`/locations?q=${encodeURIComponent(query)}`),
 );

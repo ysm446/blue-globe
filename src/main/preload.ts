@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('weatherApi', {
   setMode: (mode: string) => ipcRenderer.invoke('mode:set', mode),
   setGraphics: (graphics: unknown) => ipcRenderer.invoke('graphics:set', graphics),
   getGraphicsDefaults: () => ipcRenderer.invoke('graphics:defaults'),
+  setPanels: (panels: unknown) => ipcRenderer.invoke('panels:set', panels),
   getTexture: (name: string) => ipcRenderer.invoke('texture:get', name),
   getEarthTile: (layer: string, col: number, row: number) => ipcRenderer.invoke('earth-tile:get', layer, col, row),
   getNews: () => ipcRenderer.invoke('news:get'),

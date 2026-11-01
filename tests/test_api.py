@@ -104,6 +104,21 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["region_bloom"], 0.5)
         self.assertEqual(graphics["glint_strength"], 1.3)
 
+    def test_panels_default_to_open(self):
+        self.assertEqual(self.client.get("/settings").json()["panels"], {"news": True, "hourly": True, "weekly": True})
+
+    def test_panels_are_saved(self):
+        panels = {"news": True, "hourly": False, "weekly": False}
+        self.assertEqual(self.client.put("/settings/panels", json=panels).status_code, 200)
+        self.assertEqual(self.client.get("/settings").json()["panels"], panels)
+
+    def test_invalid_panels_are_rejected(self):
+        self.assertEqual(self.client.put("/settings/panels", json={"news": True}).status_code, 422)
+
+    def test_old_settings_file_gets_new_panels_defaults(self):
+        config.save_settings({"location": None, "panels": {"weekly": False}})
+        self.assertEqual(self.client.get("/settings").json()["panels"], {"news": True, "hourly": True, "weekly": False})
+
     def test_other_settings_keep_graphics(self):
         self.client.put("/settings/graphics", json=self.GRAPHICS)
         self.client.put("/settings/mode", json={"mode": "wind"})

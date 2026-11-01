@@ -27,6 +27,7 @@ DEFAULT_SETTINGS = {
         "glint_strength": 1.3,  # 1 が地球の写真に合わせた強さ
         "region_detail": True,
     },
+    "panels": {"news": True, "hourly": True, "weekly": True},  # True で開いている
     "models_dir": r"D:\ai-models\llm",
     "model": r"lmstudio-community\gemma-4-E4B-it-GGUF\gemma-4-E4B-it-Q4_K_M.gguf",
 }
@@ -40,9 +41,10 @@ def load_settings() -> dict:
         saved = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         saved = {}
-    # 項目を増やしても以前の設定ファイルが読めるよう、描画の設定は項目ごとに既定値で補う
+    # 項目を増やしても以前の設定ファイルが読めるよう、描画とパネルの設定は項目ごとに既定値で補う
     graphics = {**DEFAULT_SETTINGS["graphics"], **saved.get("graphics", {})}
-    return {**DEFAULT_SETTINGS, **saved, "graphics": graphics}
+    panels = {**DEFAULT_SETTINGS["panels"], **saved.get("panels", {})}
+    return {**DEFAULT_SETTINGS, **saved, "graphics": graphics, "panels": panels}
 
 
 def save_settings(settings: dict) -> None:

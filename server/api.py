@@ -59,6 +59,12 @@ class ModeUpdate(BaseModel):
     mode: Literal["normal", "weather", "wind"]
 
 
+class PanelsUpdate(BaseModel):
+    news: bool
+    hourly: bool
+    weekly: bool
+
+
 class GraphicsUpdate(BaseModel):
     fps_limit: Literal[0, 30, 60, 120]
     render_scale: Literal[50, 75, 100]
@@ -104,6 +110,11 @@ def put_mode(update: ModeUpdate) -> dict:
 @app.put("/settings/graphics")
 def put_graphics(update: GraphicsUpdate) -> dict:
     return update_settings({"graphics": update.model_dump()})
+
+
+@app.put("/settings/panels")
+def put_panels(update: PanelsUpdate) -> dict:
+    return update_settings({"panels": update.model_dump()})
 
 
 @app.get("/settings/graphics/defaults")

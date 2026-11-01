@@ -41,12 +41,19 @@ interface GraphicsSettings {
   region_detail: boolean; // 地域ビューで高解像度の画像を取得して使う
 }
 
+interface PanelSettings {
+  news: boolean; // true で開いている
+  hourly: boolean;
+  weekly: boolean;
+}
+
 interface AppSettings {
   location: WeatherLocation | null;
   models_dir: string;
   model: string | null;
   mode?: MapMode;
   graphics?: GraphicsSettings;
+  panels?: PanelSettings;
 }
 
 interface ModelEntry {
@@ -110,6 +117,7 @@ interface Window {
     getClouds(): Promise<CloudResult | null>;
     setMode(mode: MapMode): Promise<unknown>;
     setGraphics(graphics: GraphicsSettings): Promise<AppSettings>;
+    setPanels(panels: PanelSettings): Promise<AppSettings>;
     getGraphicsDefaults(): Promise<GraphicsSettings>;
     getTexture(name: 'earth-day' | 'earth-night' | 'earth-water'): Promise<Uint8Array>;
     getEarthTile(layer: EarthTileLayer, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null

@@ -19,16 +19,14 @@
 
     <div id="top-left">
       <div id="clock">
-        <div>
-          <time id="clock-time"></time>
-          <div id="clock-date"></div>
+        <div id="clock-place" hidden>
+          <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M12 2a8 8 0 0 0-8 8c0 5.4 6.2 11.2 7.3 11.8a1.3 1.3 0 0 0 1.4 0C13.8 21.2 20 15.4 20 10a8 8 0 0 0-8-8Zm0 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z" /></svg>
+          <span id="clock-place-name"></span>
         </div>
+        <time id="clock-time"></time>
         <div id="clock-weather" hidden>
           <span id="clock-icon"></span>
-          <div>
-            <div id="clock-temperature"></div>
-            <div id="clock-condition"></div>
-          </div>
+          <div id="clock-temperature"></div>
         </div>
       </div>
       <div id="mode-switch" role="group" aria-label="地図の表示モード">
@@ -46,17 +44,17 @@
       <div id="fps-counter" hidden></div>
     </div>
 
-    <aside id="news">
-      <header class="news-bar">
-        <span class="news-kicker">天気ニュース</span>
-        <span class="news-actions">
-          <button id="refresh" type="button">更新</button>
-          <button id="open-settings" type="button">設定</button>
-        </span>
-      </header>
+    <div id="top-right">
+      <button id="refresh" type="button" aria-label="天気を更新" title="天気を更新"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg></button>
+      <button id="open-settings" type="button" aria-label="設定" title="設定"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.17V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-2.82-1.12l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3.09 14H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.11-2.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 2.82 1.17l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg></button>
+    </div>
 
+    <div id="panels">
+    <aside id="news">
       <div id="news-status" class="news-status" role="status"></div>
 
+      <details id="fold-news" class="panel-fold" open>
+      <summary>天気ニュース</summary>
       <article id="news-body" hidden>
         <div class="news-head">
           <h1 id="headline"></h1>
@@ -74,27 +72,6 @@
           <div><dt>瞬間</dt><dd id="stat-gust"></dd></div>
         </dl>
 
-        <table class="forecast-table">
-          <caption>これから24時間</caption>
-          <tbody>
-            <tr id="hourly-time"><th scope="row">時刻</th></tr>
-            <tr id="hourly-icon"><th scope="row">天気</th></tr>
-            <tr id="hourly-temperature"><th scope="row">気温</th></tr>
-            <tr id="hourly-rain"><th scope="row">降水</th></tr>
-          </tbody>
-        </table>
-
-        <table class="forecast-table">
-          <caption>週間予報(今日はこのあとの予報)</caption>
-          <tbody>
-            <tr id="weekly-day"><th scope="row">日付</th></tr>
-            <tr id="weekly-icon"><th scope="row">天気</th></tr>
-            <tr id="weekly-high"><th scope="row">最高</th></tr>
-            <tr id="weekly-low"><th scope="row">最低</th></tr>
-            <tr id="weekly-rain"><th scope="row">降水</th></tr>
-          </tbody>
-        </table>
-
         <p id="outlook-note" class="news-note" hidden></p>
         <details id="original-box" hidden>
           <summary>気象庁の原文</summary>
@@ -109,7 +86,40 @@
           ・<a href="https://www.jma.go.jp/bosai/" target="_blank" rel="noreferrer">気象庁</a>
         </p>
       </footer>
+      </details>
     </aside>
+
+    <div id="forecasts" hidden>
+      <section class="forecast-panel">
+        <details id="fold-hourly" class="panel-fold" open>
+        <summary>これから24時間</summary>
+        <table class="forecast-table hourly-table">
+          <tbody>
+            <tr id="hourly-time" aria-label="時刻"></tr>
+            <tr id="hourly-icon" aria-label="天気"></tr>
+            <tr id="hourly-temperature" aria-label="気温"></tr>
+            <tr id="hourly-line" aria-label="気温の変化"><td id="hourly-line-cell"></td></tr>
+            <tr id="hourly-rain" aria-label="降水"></tr>
+          </tbody>
+        </table>
+        </details>
+      </section>
+      <section class="forecast-panel">
+        <details id="fold-weekly" class="panel-fold" open>
+        <summary>週間予報(今日はこのあとの予報)</summary>
+        <table class="forecast-table">
+          <tbody>
+            <tr id="weekly-day"><th scope="row">日付</th></tr>
+            <tr id="weekly-icon"><th scope="row">天気</th></tr>
+            <tr id="weekly-high"><th scope="row">最高</th></tr>
+            <tr id="weekly-low"><th scope="row">最低</th></tr>
+            <tr id="weekly-rain"><th scope="row">降水</th></tr>
+          </tbody>
+        </table>
+        </details>
+      </section>
+    </div>
+    </div>
 
     <div id="layer-info" hidden>
       <div class="legend-bar" id="legend-bar"></div>

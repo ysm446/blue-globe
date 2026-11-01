@@ -103,7 +103,9 @@ a:hover {
 #view-hint,
 #view-status,
 #fps-counter,
+#top-right button,
 #news,
+.forecast-panel,
 #layer-info,
 #screenshot-toast,
 #settings::before {
@@ -240,71 +242,97 @@ a:hover {
 }
 
 #clock {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 8px 16px 10px;
+  min-width: 220px;
+  padding: 10px 16px 8px;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
   pointer-events: none;
 }
 
-#clock-weather {
+#clock-place {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding-left: 16px;
-  border-left: 1px solid var(--line);
+  gap: 6px;
+  font-size: 20px;
+  line-height: 1.3;
+  white-space: nowrap;
 }
 
+#clock-place[hidden],
 #clock-weather[hidden] {
   display: none;
 }
 
-#clock-icon {
+#clock-place svg {
   flex: none;
-  height: 48px;
-}
-
-#clock-temperature {
-  font-size: 28px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-#clock-condition {
-  color: var(--text-2);
-  font-size: 14px;
-  white-space: nowrap;
 }
 
 #clock-time {
   display: block;
-  width: fit-content;
-  font-size: 44px;
-  font-weight: 600;
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
-  line-height: 1.15;
+  white-space: nowrap;
 }
 
-#clock-date {
-  width: fit-content;
-  color: var(--text-2);
+#clock-weather {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 2px;
+}
+
+#clock-icon {
+  flex: none;
+  height: 60px;
+}
+
+#clock-temperature {
+  font-size: 56px;
+  font-weight: 200;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
   white-space: nowrap;
-  font-size: 16px;
 }
 
 /* ------------------------------------------------ ニュースパネル */
 
-#news {
+#top-right {
   position: fixed;
   top: 16px;
   right: 16px;
-  bottom: 16px;
-  width: 432px;
+  display: flex;
+  gap: 6px;
+}
+
+#top-right button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  min-height: 0;
+  padding: 0;
+  background: var(--panel);
+}
+
+#top-right button:hover:not(:disabled) {
+  background: var(--panel-strong);
+}
+
+/* 地球を画面の中央に置き、左右の空きにパネルを置く */
+#panels {
+  display: contents;
+}
+
+#news {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  width: 360px;
+  max-height: calc(100vh - 76px);
   display: flex;
   flex-direction: column;
   padding: 14px 20px;
@@ -316,30 +344,75 @@ a:hover {
   border-radius: 8px;
 }
 
-.news-bar {
+#forecasts {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#forecasts[hidden] {
+  display: none;
+}
+
+.panel-fold > summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--line);
-}
-
-.news-kicker {
+  gap: 8px;
+  min-height: 22px;
   color: var(--text-2);
   font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  list-style: none;
+  cursor: pointer;
 }
 
-.news-actions {
-  display: flex;
-  gap: 6px;
+.panel-fold > summary::-webkit-details-marker {
+  display: none;
+}
+
+.panel-fold > summary:hover {
+  color: var(--text);
+}
+
+/* 開閉の向きを示す印 */
+.panel-fold > summary::after {
+  content: '';
+  flex: none;
+  width: 7px;
+  height: 7px;
+  margin-right: 3px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+}
+
+.panel-fold[open] > summary {
+  margin-bottom: 8px;
+}
+
+.panel-fold[open] > summary::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+
+.forecast-panel {
+  padding: 10px 16px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 
 .news-status {
-  margin-top: 16px;
   color: var(--text-2);
   line-height: 1.6;
+}
+
+.news-status:not(:empty) {
+  margin-bottom: 8px;
 }
 
 .news-status:empty {
@@ -359,7 +432,7 @@ a:hover {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin: 8px 0 6px;
+  margin: 0 0 6px;
 }
 
 #current-icon {
@@ -416,7 +489,7 @@ a:hover {
 #headline {
   margin: 0;
   font-size: 20px;
-  font-weight: 600;
+  font-weight: 300;
   line-height: 1.4;
 }
 
@@ -481,16 +554,6 @@ a:hover {
   font-variant-numeric: tabular-nums;
 }
 
-.forecast-table + .forecast-table {
-  margin-top: 14px;
-}
-
-.forecast-table caption {
-  margin-bottom: 6px;
-  color: var(--text-3);
-  text-align: left;
-}
-
 .forecast-table th {
   width: 34px;
   padding: 3px 0;
@@ -503,6 +566,57 @@ a:hover {
   padding: 3px 0;
   text-align: right;
   white-space: nowrap;
+}
+
+.hourly-table td {
+  padding: 2px 0;
+  text-align: center;
+}
+
+#hourly-temperature td {
+  font-size: 16px;
+}
+
+#hourly-line-cell {
+  height: 40px;
+  padding: 0;
+}
+
+.hourly-line {
+  display: block;
+  overflow: visible;
+}
+
+.hourly-line path {
+  fill: none;
+  stroke: var(--text);
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.hourly-line circle {
+  r: 4px;
+  fill: var(--text);
+  stroke: var(--panel-solid);
+  stroke-width: 2;
+}
+
+.hourly-line rect {
+  fill: transparent;
+}
+
+.hourly-line rect:hover + circle {
+  r: 5px;
+}
+
+#hourly-rain td {
+  color: var(--text-2);
+  font-size: 12px;
+}
+
+.rain-drop {
+  margin-right: 1px;
+  vertical-align: -2px;
 }
 
 .forecast-table td.today {
@@ -560,8 +674,9 @@ a:hover {
 
 #layer-info {
   position: fixed;
-  left: 16px;
+  left: 50%;
   bottom: 16px;
+  transform: translateX(-50%);
   width: 280px;
   padding: 10px 12px;
   color: var(--text-2);
@@ -915,12 +1030,55 @@ select option {
   margin: 0;
 }
 
-@media (max-width: 900px) {
-  #news {
-    top: auto;
-    left: 16px;
+/* 左下に置くと左上の操作部に重なる高さでは、右の列にまとめる */
+@media (min-width: 901px) and (max-height: 720px) {
+  #panels {
+    position: fixed;
+    top: 60px;
+    right: 16px;
+    bottom: 16px;
+    width: 360px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(157, 180, 214, 0.28) transparent;
+  }
+
+  #news,
+  #forecasts {
+    position: static;
+    flex: none;
     width: auto;
+    max-height: none;
+    overflow: visible;
+  }
+}
+
+/* 狭い画面では下にまとめ、地球を残りの領域の中央に寄せる (main.ts の PANEL_OVERLAP_WIDTH) */
+@media (max-width: 900px) {
+  #panels {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 16px;
     max-height: 58vh;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(157, 180, 214, 0.28) transparent;
+  }
+
+  #news,
+  #forecasts {
+    position: static;
+    flex: none;
+    width: auto;
+    max-height: none;
+    overflow: visible;
   }
 
   #layer-info {
