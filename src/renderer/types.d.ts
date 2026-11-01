@@ -16,7 +16,7 @@ type MapMode = 'normal' | 'weather' | 'wind';
 
 type GlobeView = 'globe' | 'region';
 
-type EarthTileLayer = 'day' | 'night';
+type EarthTileLayer = 'day' | 'night' | 'water';
 
 interface WeatherLocation {
   name: string;
@@ -108,7 +108,7 @@ interface Window {
     getClouds(): Promise<CloudResult | null>;
     setMode(mode: MapMode): Promise<unknown>;
     setGraphics(graphics: GraphicsSettings): Promise<AppSettings>;
-    getTexture(name: 'earth-day' | 'earth-night' | 'earth-relief'): Promise<Uint8Array>;
+    getTexture(name: 'earth-day' | 'earth-night' | 'earth-relief' | 'earth-water'): Promise<Uint8Array>;
     getEarthTile(layer: EarthTileLayer, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null
     getNews(): Promise<NewsReport>;
     getSettings(): Promise<AppSettings>;

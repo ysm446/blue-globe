@@ -41,6 +41,7 @@ const EARTH_FS = /* glsl */ `
 precision highp float;
 uniform sampler2D uDay;
 uniform sampler2D uNight;
+uniform sampler2D uWater;
 uniform float uShadowAmount;
 uniform float uCloudAltitude;
 uniform float uShadowStrength;
@@ -52,6 +53,7 @@ uniform float uHasDetail;
 uniform sampler2D uRelief;
 uniform sampler2D uDetailDay;
 uniform sampler2D uDetailNight;
+uniform sampler2D uDetailWater;
 uniform sampler2D uDetailMask;
 uniform vec2 uDetailCenter;
 varying vec3 vPos;
@@ -66,6 +68,7 @@ void main() {
 
   vec3 day = texture2D(uDay, vUv).rgb;
   float night = texture2D(uNight, vUv).r;
+  float waterMask = texture2D(uWater, vUv).r;
   if (uRegion > 0.0) {
     // 高解像度の画像と境目が出ないよう、地域ビューでは周囲も同じ種類の画像にする
     if (uHasRelief > 0.5) day = mix(day, texture2D(uRelief, vUv).rgb, uRegion);
@@ -84,12 +87,15 @@ void main() {
       vec2 detailUv = tile / ${WINDOW_TILES.toFixed(1)};
       vec2 dx = dFdx(detailUv);
       vec2 dy = dFdy(detailUv);
-      vec2 mask = texture2D(uDetailMask, detailUv).rg * inside * uRegion;
+      vec3 mask = texture2D(uDetailMask, detailUv).rgb * inside * uRegion;
       day = mix(day, textureGrad(uDetailDay, detailUv, dx, dy).rgb, mask.r);
       night = mix(night, textureGrad(uDetailNight, detailUv, dx, dy).r, mask.g);
+      waterMask = mix(waterMask, textureGrad(uDetailWater, detailUv, dx, dy).r, mask.b);
     }
   }
-  float ocean = smoothstep(0.02, 0.1, day.b - day.r);
+  // 水域はマスクで決める。凍った海はマスクでは水域なので、画像の白さで除く
+  float ice = smoothstep(0.25, 0.5, min(day.r, min(day.g, day.b)));
+  float ocean = smoothstep(0.25, 0.55, waterMask) * (1.0 - ice);
 
   // 雲の影。太陽が低いほど長く伸びる
   float shadow = 0.0;
@@ -103,9 +109,11 @@ void main() {
 
   vec3 color = day * 1.5 * light * (1.0 - shadow);
 
-  // 太陽の映り込み (海だけ)
+  // 太陽の映り込み (水域だけ)。波で散らばる広い光と、中心の強い光を重ねる
   vec3 halfway = normalize(uSunDir + view);
-  color += vec3(1.0, 0.92, 0.8) * pow(max(dot(n, halfway), 0.0), 90.0) * 4.0 * ocean * (1.0 - shadow) * dayMask;
+  float facingSun = max(dot(n, halfway), 0.0);
+  float glint = pow(facingSun, 250.0) * 0.35 + pow(facingSun, 2000.0) * 2.5;
+  color += vec3(1.0, 0.92, 0.8) * glint * ocean * (1.0 - shadow) * dayMask;
 
   // 街明かりは夜側だけ
   float lights = pow(smoothstep(0.1, 1.0, night), 1.4) * (1.0 - dayMask);
@@ -246,6 +254,7 @@ export class RealisticEarth {
       uniforms: {
         uDay: { value: null },
         uNight: { value: null },
+        uWater: { value: null },
         uCloud: { value: null },
         uShadowAmount: { value: 0 },
         uCloudAltitude: { value: CLOUD_ALTITUDE },
@@ -257,6 +266,7 @@ export class RealisticEarth {
         uRelief: { value: null },
         uDetailDay: { value: null },
         uDetailNight: { value: null },
+        uDetailWater: { value: null },
         uDetailMask: { value: null },
         uDetailCenter: { value: new THREE.Vector2() },
         uSunDir: { value: this.sunDir },
@@ -302,9 +312,10 @@ export class RealisticEarth {
     );
   }
 
-  setTextures(day: THREE.Texture, night: THREE.Texture): void {
+  setTextures(day: THREE.Texture, night: THREE.Texture, water: THREE.Texture): void {
     this.material.uniforms.uDay.value = day;
     this.material.uniforms.uNight.value = night;
+    this.material.uniforms.uWater.value = water;
   }
 
   setSunDirection(direction: THREE.Vector3): void {
@@ -333,8 +344,9 @@ export class RealisticEarth {
   setRegionDetail(detail: RegionDetail | null): void {
     const { uniforms } = this.material;
     uniforms.uHasDetail.value = detail ? 1 : 0;
-    uniforms.uDetailDay.value = detail?.day ?? null;
-    uniforms.uDetailNight.value = detail?.night ?? null;
+    uniforms.uDetailDay.value = detail?.atlases.day ?? null;
+    uniforms.uDetailNight.value = detail?.atlases.night ?? null;
+    uniforms.uDetailWater.value = detail?.atlases.water ?? null;
     uniforms.uDetailMask.value = detail?.mask ?? null;
     if (detail) uniforms.uDetailCenter.value = detail.center;
   }

@@ -222,9 +222,13 @@ function initGlobe() {
   }
   setMode(mode);
 
-  void Promise.all([loadEarthTexture('earth-day', renderer), loadEarthTexture('earth-night', renderer)])
-    .then(([day, night]) => {
-      earth.setTextures(day, night);
+  void Promise.all([
+    loadEarthTexture('earth-day', renderer),
+    loadEarthTexture('earth-night', renderer),
+    loadEarthTexture('earth-water', renderer),
+  ])
+    .then(([day, night, water]) => {
+      earth.setTextures(day, night, water);
       earthReady = true;
       setMode(mode);
     })
@@ -758,16 +762,17 @@ function createSpaceBackground(): THREE.CanvasTexture {
 
 // file:// の画像は WebGL で使えないので、メインプロセスから受け取ったバイト列を読み込む
 async function loadEarthTexture(
-  name: 'earth-day' | 'earth-night' | 'earth-relief',
+  name: 'earth-day' | 'earth-night' | 'earth-relief' | 'earth-water',
   renderer: THREE.WebGLRenderer,
 ): Promise<THREE.Texture> {
   const bytes = await window.weatherApi.getTexture(name);
-  const bitmap = await createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' }), {
+  const bitmap = await createImageBitmap(new Blob([bytes as Uint8Array<ArrayBuffer>]), {
     imageOrientation: 'flipY',
   });
   const texture = new THREE.Texture(bitmap);
   texture.flipY = false;
-  if (name !== 'earth-night') texture.colorSpace = THREE.SRGBColorSpace;
+  if (name === 'earth-water') texture.format = THREE.RedFormat; // 1 色だけなので、メモリを 4 分の 1 にする
+  if (name === 'earth-day' || name === 'earth-relief') texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
   texture.needsUpdate = true;

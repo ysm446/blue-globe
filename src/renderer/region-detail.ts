@@ -1,4 +1,4 @@
-// 地域ビューの高解像度の地表と街明かり。視点のまわりのタイルを 1 枚の大きな画像に並べ、順に読み込む。
+// 地域ビューの高解像度の地表、街明かり、水域。視点のまわりのタイルを 1 枚の大きな画像に並べ、順に読み込む。
 // 置き場所は列と行の余りで決まるので (tile-window.ts)、範囲が動いても残るタイルは読み直さない
 import * as THREE from 'three';
 import {
@@ -16,8 +16,9 @@ const UPLOADS_PER_FRAME = 2; // 1 枚約 1MB。まとめて送って描画が止
 const MIPMAP_INTERVAL_SECONDS = 0.25; // 全体の作り直しは重いので、毎回は行わない
 const FADE_SECONDS = 0.5;
 const RETRY_SECONDS = 30;
-const LAYERS: EarthTileLayer[] = ['day', 'night'];
-const MASK_CHANNEL: Record<EarthTileLayer, number> = { day: 0, night: 1 };
+const LAYERS: EarthTileLayer[] = ['day', 'night', 'water'];
+const MASK_CHANNEL: Record<EarthTileLayer, number> = { day: 0, night: 1, water: 2 };
+const MASK_STRIDE = 4;
 
 type TileState = 'queued' | 'loading' | 'decoded' | 'uploaded' | 'shown' | 'failed';
 
@@ -38,11 +39,10 @@ export interface RegionDetailProgress {
 export type TileLoader = (layer: EarthTileLayer, col: number, row: number) => Promise<Uint8Array | null>;
 
 export class RegionDetail {
-  readonly day: THREE.DataTexture;
-  readonly night: THREE.DataTexture;
-  readonly mask: THREE.DataTexture; // タイルごとの見え具合。R が昼、G が夜
+  readonly atlases: Record<EarthTileLayer, THREE.DataTexture>;
+  readonly mask: THREE.DataTexture; // タイルごとの見え具合。R が昼、G が夜、B が水域
   readonly center = new THREE.Vector2();
-  private readonly maskData = new Uint8Array(WINDOW_TILES * WINDOW_TILES * 2);
+  private readonly maskData = new Uint8Array(WINDOW_TILES * WINDOW_TILES * MASK_STRIDE);
   private readonly gl: WebGL2RenderingContext;
   private readonly entries = new Map<string, TileEntry>();
   private uploads: TileEntry[] = [];
@@ -51,7 +51,7 @@ export class RegionDetail {
   private loading = 0;
   private clock = 0;
   private lastMipmap = 0;
-  private readonly mipmapsStale: Record<EarthTileLayer, boolean> = { day: false, night: false };
+  private readonly mipmapsStale: Record<EarthTileLayer, boolean> = { day: false, night: false, water: false };
   private disposed = false;
 
   static isSupported(renderer: THREE.WebGLRenderer): boolean {
@@ -63,13 +63,15 @@ export class RegionDetail {
     private readonly loadTile: TileLoader,
   ) {
     this.gl = renderer.getContext() as WebGL2RenderingContext;
-    this.day = this.createAtlas(THREE.RGBAFormat);
-    this.day.colorSpace = THREE.SRGBColorSpace;
-    this.night = this.createAtlas(THREE.RedFormat); // 描画に使うのは 1 色だけなので、メモリを 4 分の 1 にする
-    renderer.initTexture(this.day);
-    renderer.initTexture(this.night);
+    this.atlases = {
+      day: this.createAtlas(THREE.RGBAFormat),
+      night: this.createAtlas(THREE.RedFormat), // 描画に使うのは 1 色だけなので、メモリを 4 分の 1 にする
+      water: this.createAtlas(THREE.RedFormat),
+    };
+    this.atlases.day.colorSpace = THREE.SRGBColorSpace;
+    for (const layer of LAYERS) renderer.initTexture(this.atlases[layer]);
 
-    this.mask = new THREE.DataTexture(this.maskData, WINDOW_TILES, WINDOW_TILES, THREE.RGFormat);
+    this.mask = new THREE.DataTexture(this.maskData, WINDOW_TILES, WINDOW_TILES, THREE.RGBAFormat);
     this.mask.minFilter = THREE.LinearFilter;
     this.mask.magFilter = THREE.LinearFilter;
     this.mask.wrapS = THREE.RepeatWrapping;
@@ -129,7 +131,7 @@ export class RegionDetail {
   }
 
   private writeMask(entry: TileEntry): void {
-    const index = (entry.slotY * WINDOW_TILES + entry.slotX) * 2 + MASK_CHANNEL[entry.layer];
+    const index = (entry.slotY * WINDOW_TILES + entry.slotX) * MASK_STRIDE + MASK_CHANNEL[entry.layer];
     this.maskData[index] = Math.round(entry.opacity * 255);
   }
 
@@ -148,7 +150,8 @@ export class RegionDetail {
     try {
       const bytes = await this.loadTile(entry.layer, entry.col, entry.row);
       if (bytes) {
-        const blob = new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'image/jpeg' });
+        // 形式は中身から判定される。水域の PNG は透明が陸で、不透明な部分の R が約 0.66
+        const blob = new Blob([bytes as Uint8Array<ArrayBuffer>]);
         bitmap = await createImageBitmap(blob, { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
       }
     } catch (err) {
@@ -172,9 +175,8 @@ export class RegionDetail {
   }
 
   private bind(layer: EarthTileLayer): void {
-    const texture = layer === 'day' ? this.day : this.night;
     // 一部分だけ送る処理は Three.js にないので、確保済みのテクスチャへ直接書き込む
-    const handle = this.renderer.properties.get(texture) as { __webglTexture: WebGLTexture };
+    const handle = this.renderer.properties.get(this.atlases[layer]) as { __webglTexture: WebGLTexture };
     this.renderer.state.bindTexture(this.gl.TEXTURE_2D, handle.__webglTexture);
   }
 
@@ -225,8 +227,8 @@ export class RegionDetail {
       if (!entry) break;
       this.upload(entry);
     }
-    const stale = this.mipmapsStale.day || this.mipmapsStale.night;
-    if (stale && (this.uploads.length === 0 || this.clock - this.lastMipmap >= MIPMAP_INTERVAL_SECONDS)) {
+    const stale = LAYERS.some((layer) => this.mipmapsStale[layer]);
+    if (stale &&(this.uploads.length === 0 || this.clock - this.lastMipmap >= MIPMAP_INTERVAL_SECONDS)) {
       this.rebuildMipmaps();
     }
 
@@ -253,8 +255,7 @@ export class RegionDetail {
   dispose(): void {
     this.disposed = true;
     for (const entry of this.order) entry.bitmap?.close();
-    this.day.dispose();
-    this.night.dispose();
+    for (const layer of LAYERS) this.atlases[layer].dispose();
     this.mask.dispose();
   }
 }

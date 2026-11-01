@@ -109,6 +109,7 @@ const TEXTURES: Record<string, string> = {
   'earth-day': 'earth-day.jpg',
   'earth-night': 'earth-night.jpg',
   'earth-relief': 'earth-relief.jpg',
+  'earth-water': 'earth-water.png',
 };
 
 ipcMain.handle('texture:get', (_event, name: string) => {
@@ -117,13 +118,14 @@ ipcMain.handle('texture:get', (_event, name: string) => {
   return new Uint8Array(fs.readFileSync(path.join(app.getAppPath(), 'assets', 'textures', file)));
 });
 
-// 地域ビューの地表と街明かり (NASA GIBS の 500m の面)。中身の変わらない合成画像なので、取得したら取り直さない
+// 地域ビューの地表、街明かり、水域 (NASA GIBS の 500m の面)。中身の変わらない合成画像なので、取得したら取り直さない
 const TILE_FETCH_TIMEOUT_MS = 20_000;
 const NIGHT_TILE_JPEG_QUALITY = 85; // 配信は PNG で 1 枚 140〜300KB ある
 const TILE_URL = 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best';
 const TILE_SOURCES: Record<string, string> = {
   day: 'BlueMarble_ShadedRelief_Bathymetry/default/500m/7/{row}/{col}.jpeg',
   night: 'VIIRS_Black_Marble/default/2016-01-01/500m/7/{row}/{col}.png',
+  water: 'MODIS_Water_Mask/default/250m/7/{row}/{col}.png', // レベル 7 は他の面と同じ 160×80 枚
 };
 
 // 取得できないときは null を返す。画面は今の画像のまま表示を続ける
@@ -132,7 +134,8 @@ ipcMain.handle('earth-tile:get', async (_event, layer: string, col: number, row:
   if (!source || !Number.isInteger(col) || !Number.isInteger(row) || col < 0 || col >= 160 || row < 0 || row >= 80) {
     throw new Error(`unknown tile: ${layer} ${col} ${row}`);
   }
-  const filePath = path.join(dataDir(), 'earth-tiles', layer, String(row), `${col}.jpg`);
+  // 水域は 2 値なので PNG のまま保存する。JPEG にすると境界がにじみ、容量も減らない
+  const filePath = path.join(dataDir(), 'earth-tiles', layer, String(row), `${col}.${layer === 'water' ? 'png' : 'jpg'}`);
   try {
     return new Uint8Array(await fs.promises.readFile(filePath));
   } catch {
