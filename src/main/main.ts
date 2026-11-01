@@ -155,6 +155,7 @@ function createWindow(): void {
     height: 900,
     useContentSize: true,
     backgroundColor: '#0a0e14',
+    icon: path.join(app.getAppPath(), 'assets', 'icons', 'weather-news-v2.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
