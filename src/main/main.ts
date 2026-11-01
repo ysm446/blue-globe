@@ -108,7 +108,6 @@ ipcMain.handle('clouds:get', async () => {
 const TEXTURES: Record<string, string> = {
   'earth-day': 'earth-day.jpg',
   'earth-night': 'earth-night.jpg',
-  'earth-relief': 'earth-relief.jpg',
   'earth-water': 'earth-water.png',
 };
 

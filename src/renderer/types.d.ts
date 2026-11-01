@@ -110,7 +110,7 @@ interface Window {
     setMode(mode: MapMode): Promise<unknown>;
     setGraphics(graphics: GraphicsSettings): Promise<AppSettings>;
     getGraphicsDefaults(): Promise<GraphicsSettings>;
-    getTexture(name: 'earth-day' | 'earth-night' | 'earth-relief' | 'earth-water'): Promise<Uint8Array>;
+    getTexture(name: 'earth-day' | 'earth-night' | 'earth-water'): Promise<Uint8Array>;
     getEarthTile(layer: EarthTileLayer, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null
     getNews(): Promise<NewsReport>;
     getSettings(): Promise<AppSettings>;

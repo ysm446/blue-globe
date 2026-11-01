@@ -321,8 +321,6 @@ function initGlobe() {
 
   // 高解像度の画像は VRAM を多く使うので、地域ビューの間だけ持つ
   let regionDetail: RegionDetail | null = null;
-  let regionRelief: THREE.Texture | null = null;
-  let regionReliefRequested = false;
   let regionDetailEnabled = true;
   let regionBloom = 1;
   const viewStatus = el('view-status');
@@ -333,29 +331,12 @@ function initGlobe() {
       regionDetail = new RegionDetail(renderer, (layer, col, row) => window.weatherApi.getEarthTile(layer, col, row));
       earth.setRegionDetail(regionDetail);
     }
-    if (regionReliefRequested) return;
-    regionReliefRequested = true;
-    loadEarthTexture('earth-relief', renderer)
-      .then((texture) => {
-        // 読み込みの間に地球ビューへ戻っていたり、切り替えを繰り返して先に届いていたら使わない
-        if (!regionReliefRequested || regionRelief) {
-          texture.dispose();
-          return;
-        }
-        regionRelief = texture;
-        earth.setRelief(texture);
-      })
-      .catch((err) => console.error('relief texture load failed', err));
   }
 
   function stopRegionDetail(): void {
     earth.setRegionDetail(null);
     regionDetail?.dispose();
     regionDetail = null;
-    earth.setRelief(null);
-    regionRelief?.dispose();
-    regionRelief = null;
-    regionReliefRequested = false;
     viewStatus.hidden = true;
   }
 
@@ -764,7 +745,7 @@ function createSpaceBackground(): THREE.CanvasTexture {
 
 // file:// の画像は WebGL で使えないので、メインプロセスから受け取ったバイト列を読み込む
 async function loadEarthTexture(
-  name: 'earth-day' | 'earth-night' | 'earth-relief' | 'earth-water',
+  name: 'earth-day' | 'earth-night' | 'earth-water',
   renderer: THREE.WebGLRenderer,
 ): Promise<THREE.Texture> {
   const bytes = await window.weatherApi.getTexture(name);
@@ -774,7 +755,7 @@ async function loadEarthTexture(
   const texture = new THREE.Texture(bitmap);
   texture.flipY = false;
   if (name === 'earth-water') texture.format = THREE.RedFormat; // 1 色だけなので、メモリを 4 分の 1 にする
-  if (name === 'earth-day' || name === 'earth-relief') texture.colorSpace = THREE.SRGBColorSpace;
+  if (name === 'earth-day') texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
   texture.needsUpdate = true;

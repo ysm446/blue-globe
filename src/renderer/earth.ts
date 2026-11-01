@@ -8,6 +8,11 @@ import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
 
 const CLOUD_ALTITUDE = 0.012; // 実際より高い。視差が見える程度に誇張している
 const DEFAULT_CLOUD_SHADOW = 0.55;
+const OPEN_SEA_COLOR = ['0.0006', '0.0015', '0.007']; // 地球ビューの地表の画像の沖の色 (線形)。世界中でほぼ同じ
+const COAST_MIP_LEVEL = 2; // 水域のマスクの縮小段階。1 画素が約 20km で、この範囲を海岸の近くとして扱う
+const COAST_TEXEL_U = 4 / 8192; // 縮小段階での 1 画素の大きさ
+const COAST_TEXEL_V = 4 / 4096;
+const COAST_REACH = 2; // 沖の色を取りに行く距離 (縮小段階の画素数)
 // 太陽の映り込みの広がりと強さ。NASA EPIC の地球の写真の、明るさと大きさに合わせた値
 const WAVE_SLOPE_VARIANCE = 0.016;
 const GLINT_STRENGTH = 0.9;
@@ -51,9 +56,7 @@ uniform float uShadowStrength;
 uniform float uHaze;
 uniform vec3 uSunDir;
 uniform float uRegion;
-uniform float uHasRelief;
 uniform float uHasDetail;
-uniform sampler2D uRelief;
 uniform sampler2D uDetailDay;
 uniform sampler2D uDetailNight;
 uniform sampler2D uDetailWater;
@@ -72,33 +75,44 @@ void main() {
   vec3 day = texture2D(uDay, vUv).rgb;
   float night = texture2D(uNight, vUv).r;
   float waterMask = texture2D(uWater, vUv).r;
-  if (uRegion > 0.0) {
-    // 高解像度の画像と境目が出ないよう、地域ビューでは周囲も同じ種類の画像にする
-    if (uHasRelief > 0.5) day = mix(day, texture2D(uRelief, vUv).rgb, uRegion);
-    if (uHasDetail > 0.5) {
-      // タイルの列と行で表した座標。列は範囲の中心から連続させ、日付変更線で途切れないようにする
-      float lon = atan(n.z, -n.x) * 57.29577951 - 180.0;
-      float centerLon = uDetailCenter.x * ${TILE_DEGREES.toFixed(2)} - 180.0;
-      float offset = mod(lon - centerLon + 180.0, 360.0) - 180.0;
-      vec2 tile = vec2(
-        uDetailCenter.x + offset / ${TILE_DEGREES.toFixed(2)},
-        (90.0 - asin(clamp(n.y, -1.0, 1.0)) * 57.29577951) / ${TILE_DEGREES.toFixed(2)}
-      );
-      vec2 fromCenter = abs(tile - uDetailCenter);
-      float half_ = ${(WINDOW_TILES / 2).toFixed(1)};
-      float inside = smoothstep(half_, half_ - 0.5, max(fromCenter.x, fromCenter.y));
-      vec2 detailUv = tile / ${WINDOW_TILES.toFixed(1)};
-      vec2 dx = dFdx(detailUv);
-      vec2 dy = dFdy(detailUv);
-      vec3 mask = texture2D(uDetailMask, detailUv).rgb * inside * uRegion;
-      day = mix(day, textureGrad(uDetailDay, detailUv, dx, dy).rgb, mask.r);
-      night = mix(night, textureGrad(uDetailNight, detailUv, dx, dy).r, mask.g);
-      waterMask = mix(waterMask, textureGrad(uDetailWater, detailUv, dx, dy).r, mask.b);
-    }
+  if (uRegion > 0.0 && uHasDetail > 0.5) {
+    // タイルの列と行で表した座標。列は範囲の中心から連続させ、日付変更線で途切れないようにする
+    float lon = atan(n.z, -n.x) * 57.29577951 - 180.0;
+    float centerLon = uDetailCenter.x * ${TILE_DEGREES.toFixed(2)} - 180.0;
+    float offset = mod(lon - centerLon + 180.0, 360.0) - 180.0;
+    vec2 tile = vec2(
+      uDetailCenter.x + offset / ${TILE_DEGREES.toFixed(2)},
+      (90.0 - asin(clamp(n.y, -1.0, 1.0)) * 57.29577951) / ${TILE_DEGREES.toFixed(2)}
+    );
+    vec2 fromCenter = abs(tile - uDetailCenter);
+    float half_ = ${(WINDOW_TILES / 2).toFixed(1)};
+    float inside = smoothstep(half_, half_ - 0.5, max(fromCenter.x, fromCenter.y));
+    vec2 detailUv = tile / ${WINDOW_TILES.toFixed(1)};
+    vec2 dx = dFdx(detailUv);
+    vec2 dy = dFdy(detailUv);
+    vec3 mask = texture2D(uDetailMask, detailUv).rgb * inside * uRegion;
+    day = mix(day, textureGrad(uDetailDay, detailUv, dx, dy).rgb, mask.r);
+    night = mix(night, textureGrad(uDetailNight, detailUv, dx, dy).r, mask.g);
+    waterMask = mix(waterMask, textureGrad(uDetailWater, detailUv, dx, dy).r, mask.b);
   }
   // 水域はマスクで決める。凍った海はマスクでは水域なので、画像の白さで除く
   float ice = smoothstep(0.25, 0.5, min(day.r, min(day.g, day.b)));
   float ocean = smoothstep(0.25, 0.55, waterMask) * (1.0 - ice);
+  if (uRegion > 0.0) {
+    // 地域ビューの画像は海底の地形が写っているので、海は地球ビューの画像の色にする。
+    // その画像は粗く海岸に陸の色がにじむので、海岸の近くは少し沖の色を使う。入り江などで沖の色を取れなければ外洋の色にする
+    vec2 step_ = vec2(${COAST_TEXEL_U.toFixed(6)}, ${COAST_TEXEL_V.toFixed(6)});
+    vec2 towardSea = vec2(
+      textureLod(uWater, vUv + vec2(step_.x, 0.0), ${COAST_MIP_LEVEL.toFixed(1)}).r - textureLod(uWater, vUv - vec2(step_.x, 0.0), ${COAST_MIP_LEVEL.toFixed(1)}).r,
+      textureLod(uWater, vUv + vec2(0.0, step_.y), ${COAST_MIP_LEVEL.toFixed(1)}).r - textureLod(uWater, vUv - vec2(0.0, step_.y), ${COAST_MIP_LEVEL.toFixed(1)}).r
+    );
+    towardSea /= max(length(towardSea), 0.001);
+    float nearCoast = 1.0 - smoothstep(0.75, 1.0, textureLod(uWater, vUv, ${COAST_MIP_LEVEL.toFixed(1)}).r);
+    vec2 seaUv = vUv + towardSea * step_ * ${COAST_REACH.toFixed(1)} * nearCoast;
+    float seaFound = smoothstep(0.75, 1.0, textureLod(uWater, seaUv, ${COAST_MIP_LEVEL.toFixed(1)}).r);
+    vec3 sea = mix(vec3(${OPEN_SEA_COLOR.join(', ')}), textureGrad(uDay, seaUv, dFdx(vUv), dFdy(vUv)).rgb, seaFound);
+    day = mix(day, sea, ocean * uRegion);
+  }
 
   // 雲の影。太陽が低いほど長く伸びる
   float shadow = 0.0;
@@ -130,8 +144,8 @@ void main() {
   color += vec3(1.0, 0.6, 0.26) * lights * 4.5; // 画面の白より明るくして、にじませる
 
   // 回して触ったときに場所が分かるよう、夜側でも陸と海がうっすら見える光を残す。
-  // 地域ビューの画像は海が明るいので、海を特に暗くする
-  float nightFill = mix(1.0, mix(0.7, 0.3, ocean), uRegion);
+  // 地域ビューの陸の画像は明るいので、陸だけ暗くする
+  float nightFill = mix(1.0, mix(0.7, 1.0, ocean), uRegion);
   color += (day * vec3(0.22, 0.27, 0.4) + vec3(0.003, 0.006, 0.014)) * (1.0 - dayMask) * nightFill;
 
   // 地表から見える大気 (縁ほど青い)。昼側だけ
@@ -270,9 +284,7 @@ export class RealisticEarth {
         uShadowStrength: { value: DEFAULT_CLOUD_SHADOW },
         uHaze: this.haze,
         uRegion: { value: 0 },
-        uHasRelief: { value: 0 },
         uHasDetail: { value: 0 },
-        uRelief: { value: null },
         uDetailDay: { value: null },
         uDetailNight: { value: null },
         uDetailWater: { value: null },
@@ -343,11 +355,6 @@ export class RealisticEarth {
 
   setCloudShadow(strength: number): void {
     this.material.uniforms.uShadowStrength.value = strength;
-  }
-
-  setRelief(texture: THREE.Texture | null): void {
-    this.material.uniforms.uRelief.value = texture;
-    this.material.uniforms.uHasRelief.value = texture ? 1 : 0;
   }
 
   setRegionDetail(detail: RegionDetail | null): void {
