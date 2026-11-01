@@ -1,13 +1,16 @@
 :root {
   color-scheme: dark;
   --bg: #0a0e14;
-  --panel: rgba(13, 19, 29, 0.95);
+  /* すりガラスのパネル。透明にするだけでは明るい陸の上で文字が読めないので、後ろの明るさも落とす */
+  --panel: rgba(13, 19, 29, 0.4);
+  --panel-strong: rgba(13, 19, 29, 0.65);
+  --glass: blur(16px) brightness(0.5) saturate(1.4);
   --panel-solid: #111825;
   --field: #0c121c;
   --line: rgba(157, 180, 214, 0.18);
   --text: #eef2f8;
   --text-2: #b3bfd0;
-  --text-3: #8795a9;
+  --text-3: #a3b0c3;
   --accent: #7fb2ff;
   --warn: #f2c56b;
   --icon-sun: #ffc857;
@@ -91,6 +94,20 @@ a {
 
 a:hover {
   color: var(--text);
+}
+
+#clock,
+#mode-switch,
+#view-switch,
+#return-home,
+#view-hint,
+#view-status,
+#fps-counter,
+#news,
+#layer-info,
+#screenshot-toast,
+#settings::before {
+  backdrop-filter: var(--glass);
 }
 
 /* ------------------------------------------------ 地点マーカー */
@@ -219,7 +236,7 @@ a:hover {
 }
 
 #return-home:hover {
-  background: var(--panel-solid);
+  background: var(--panel-strong);
 }
 
 #clock {
@@ -585,7 +602,7 @@ a:hover {
   gap: 8px;
   width: 300px;
   padding: 10px 14px;
-  background: var(--panel-solid);
+  background: var(--panel-strong);
   border: 1px solid var(--line);
   border-radius: 8px;
   box-shadow: 0 6px 20px rgba(4, 7, 11, 0.6);
@@ -664,9 +681,18 @@ a:hover {
   padding: 16px 20px;
   overflow: hidden;
   color: var(--text);
-  background: var(--panel-solid);
+  background: transparent;
   border: 1px solid var(--line);
   border-radius: 8px;
+}
+
+/* 本体に backdrop-filter を付けると、中へ移した通知の位置の基準が画面から設定画面に変わる */
+#settings::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--panel-strong);
 }
 
 #settings::backdrop {
