@@ -22,6 +22,8 @@ DEFAULT_SETTINGS = {
         "show_fps": False,
         "show_map_lines": True,
         "star_brightness": 1.0,
+        "cloud_shadow": 0.55,
+        "region_detail": True,
     },
     "models_dir": r"D:\ai-models\llm",
     "model": r"lmstudio-community\gemma-4-E4B-it-GGUF\gemma-4-E4B-it-Q4_K_M.gguf",

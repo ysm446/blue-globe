@@ -195,13 +195,18 @@ a:hover {
   background: var(--panel);
 }
 
-#view-hint {
+#view-hint,
+#view-status {
   padding: 2px 8px;
   color: var(--text-2);
   font-size: 13px;
   background: var(--panel);
   border-radius: 4px;
   pointer-events: none;
+}
+
+#view-status.warn {
+  color: var(--warn);
 }
 
 #fps-counter {

@@ -28,6 +28,7 @@ import {
   type RegionVelocity,
   type RegionView,
 } from './region-camera';
+import { RegionDetail } from './region-detail';
 
 const COLORS = {
   ocean: '#0c1422',
@@ -74,6 +75,7 @@ const CAMERA_NEAR_MAX = 0.1;
 const CAMERA_NEAR_MIN = 0.005;
 const CLOUD_TOP = 0.012; // 雲の層の最も高い位置。カメラの手前の範囲はこれより内側に保つ
 const REGION_BLEND_SECONDS = 0.5;
+const REGION_RELEASE_BLEND = 0.01; // 地球ビューへ戻って、高解像度の画像が見えなくなったら解放する
 const WHEEL_ZOOM_RATE = 0.0012;
 const ROTATE_DEGREES_PER_HEIGHT = 180; // 右ドラッグで画面の高さぶん動かしたときの回転
 const TILT_DEGREES_PER_HEIGHT = 90;
@@ -313,10 +315,71 @@ function initGlobe() {
     };
   }
 
+  // 高解像度の画像は VRAM を多く使うので、地域ビューの間だけ持つ
+  let regionDetail: RegionDetail | null = null;
+  let regionRelief: THREE.Texture | null = null;
+  let regionReliefRequested = false;
+  let regionDetailEnabled = true;
+  const viewStatus = el('view-status');
+
+  function startRegionDetail(): void {
+    if (!regionDetailEnabled) return;
+    if (!regionDetail && RegionDetail.isSupported(renderer)) {
+      regionDetail = new RegionDetail(renderer, (layer, col, row) => window.weatherApi.getEarthTile(layer, col, row));
+      earth.setRegionDetail(regionDetail);
+    }
+    if (regionReliefRequested) return;
+    regionReliefRequested = true;
+    loadEarthTexture('earth-relief', renderer)
+      .then((texture) => {
+        // 読み込みの間に地球ビューへ戻っていたり、切り替えを繰り返して先に届いていたら使わない
+        if (!regionReliefRequested || regionRelief) {
+          texture.dispose();
+          return;
+        }
+        regionRelief = texture;
+        earth.setRelief(texture);
+      })
+      .catch((err) => console.error('relief texture load failed', err));
+  }
+
+  function stopRegionDetail(): void {
+    earth.setRegionDetail(null);
+    regionDetail?.dispose();
+    regionDetail = null;
+    earth.setRelief(null);
+    regionRelief?.dispose();
+    regionRelief = null;
+    regionReliefRequested = false;
+    viewStatus.hidden = true;
+  }
+
+  function updateRegionDetail(dt: number): void {
+    if (regionView && !regionFlight?.leaving) {
+      if (!regionDetail) return;
+      // 飛んでいる間は行き先のタイルを先に読む
+      const center = regionFlight?.to ?? regionView;
+      regionDetail.setView(center.lat, center.lon);
+      regionDetail.update(dt);
+      const { shown, total, failed } = regionDetail.progress;
+      viewStatus.classList.toggle('warn', failed > 0);
+      viewStatus.hidden = shown === total;
+      if (!viewStatus.hidden) {
+        viewStatus.textContent = failed > 0
+          ? '一部の高解像度の画像を取得できず、粗い画像で表示しています'
+          : `高解像度の画像を読み込んでいます(${shown}/${total})`;
+      }
+      return;
+    }
+    viewStatus.hidden = true;
+    if (!regionView && regionDetail && regionBlend < REGION_RELEASE_BLEND) stopRegionDetail();
+  }
+
   function enterRegion(): void {
     if (mode === 'wind' || (regionView && !regionFlight?.leaving)) return;
     flight = null;
     controls.enabled = false;
+    startRegionDetail();
     regionView ??= {
       ...lonLatOf([camera.position.x, camera.position.y, camera.position.z]),
       heading: 0,
@@ -569,6 +632,10 @@ function initGlobe() {
     autoExposure = graphics.auto_exposure;
     hdr.setBloomEnabled(graphics.bloom);
     sky.setStarBrightness(graphics.star_brightness);
+    earth.setCloudShadow(graphics.cloud_shadow);
+    regionDetailEnabled = graphics.region_detail;
+    if (!regionDetailEnabled) stopRegionDetail();
+    else if (regionView && !regionFlight?.leaving) startRegionDetail();
     showMapLines = graphics.show_map_lines;
     syncMapLines();
     fpsCounter.hidden = !graphics.show_fps;
@@ -608,6 +675,7 @@ function initGlobe() {
     else updateFlight(dt);
     updateNearPlane();
     updateRegionBlend(dt);
+    updateRegionDetail(dt);
     coastlines.update(camera.position.length());
     borders.update(camera.position.length());
     // 粒子は風速モードのときだけ動かす (他のモードでは GPU を使わない)。
@@ -642,6 +710,7 @@ function initGlobe() {
     sky,
     earth,
     regionView: () => regionView,
+    regionDetailProgress: () => regionDetail?.progress ?? null,
     mapLinesVisible: () => [coastlines.group.visible, borders.group.visible],
     stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),
     peekAt(body: 'sun' | 'moon' | 'dayside' | 'sunrise'): void {
@@ -689,7 +758,7 @@ function createSpaceBackground(): THREE.CanvasTexture {
 
 // file:// の画像は WebGL で使えないので、メインプロセスから受け取ったバイト列を読み込む
 async function loadEarthTexture(
-  name: 'earth-day' | 'earth-night',
+  name: 'earth-day' | 'earth-night' | 'earth-relief',
   renderer: THREE.WebGLRenderer,
 ): Promise<THREE.Texture> {
   const bytes = await window.weatherApi.getTexture(name);
@@ -698,7 +767,7 @@ async function loadEarthTexture(
   });
   const texture = new THREE.Texture(bitmap);
   texture.flipY = false;
-  if (name === 'earth-day') texture.colorSpace = THREE.SRGBColorSpace;
+  if (name !== 'earth-night') texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
   texture.needsUpdate = true;
@@ -998,6 +1067,12 @@ function initSettingsDialog(
   const fpsToggle = el<HTMLInputElement>('fps-toggle');
   const mapLinesToggle = el<HTMLInputElement>('map-lines-toggle');
   const starSlider = el<HTMLInputElement>('star-brightness');
+  const shadowSlider = el<HTMLInputElement>('cloud-shadow');
+  const regionDetailToggle = el<HTMLInputElement>('region-detail-toggle');
+
+  function showCloudShadow(): void {
+    el('cloud-shadow-value').textContent = `${shadowSlider.value}%`;
+  }
 
   // スライダーは対数にして、1 目盛りごとに同じ比率で変わるようにする
   function showStarBrightness(): void {
@@ -1013,6 +1088,8 @@ function initSettingsDialog(
       show_fps: fpsToggle.checked,
       show_map_lines: mapLinesToggle.checked,
       star_brightness: 2 ** Number(starSlider.value),
+      cloud_shadow: Number(shadowSlider.value) / 100,
+      region_detail: regionDetailToggle.checked,
     };
   }
 
@@ -1023,8 +1100,11 @@ function initSettingsDialog(
     exposureToggle.checked = graphics.auto_exposure;
     fpsToggle.checked = graphics.show_fps;
     mapLinesToggle.checked = graphics.show_map_lines;
+    regionDetailToggle.checked = graphics.region_detail;
     starSlider.value = String(Math.log2(graphics.star_brightness));
     showStarBrightness();
+    shadowSlider.value = String(Math.round(graphics.cloud_shadow * 100));
+    showCloudShadow();
   }
 
   // 変更はすぐ画面に反映し、そのあと保存する。保存は順番に行い、最後の操作が必ず残るようにする
@@ -1034,7 +1114,11 @@ function initSettingsDialog(
     showStarBrightness();
     onGraphicsChange(readGraphics());
   });
-  for (const control of [fpsSelect, scaleSelect, bloomToggle, exposureToggle, mapLinesToggle, fpsToggle, starSlider]) {
+  shadowSlider.addEventListener('input', () => {
+    showCloudShadow();
+    onGraphicsChange(readGraphics());
+  });
+  for (const control of [fpsSelect, scaleSelect, bloomToggle, exposureToggle, mapLinesToggle, regionDetailToggle, fpsToggle, starSlider, shadowSlider]) {
     control.addEventListener('change', () => {
       const graphics = readGraphics();
       onGraphicsChange(graphics);

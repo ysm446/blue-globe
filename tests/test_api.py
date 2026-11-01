@@ -47,6 +47,8 @@ class SettingsApiTest(unittest.TestCase):
         "show_fps": True,
         "show_map_lines": False,
         "star_brightness": 2.0,
+        "cloud_shadow": 0.8,
+        "region_detail": False,
     }
 
     def test_graphics_defaults(self):
@@ -55,13 +57,22 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["render_scale"], 100)
         self.assertTrue(graphics["bloom"])
         self.assertTrue(graphics["show_map_lines"])
+        self.assertEqual(graphics["cloud_shadow"], 0.55)
+        self.assertTrue(graphics["region_detail"])
 
     def test_graphics_are_saved(self):
         self.assertEqual(self.client.put("/settings/graphics", json=self.GRAPHICS).status_code, 200)
         self.assertEqual(self.client.get("/settings").json()["graphics"], self.GRAPHICS)
 
     def test_invalid_graphics_are_rejected(self):
-        for change in ({"fps_limit": 45}, {"render_scale": 10}, {"star_brightness": 100}, {"star_brightness": 0}):
+        for change in (
+            {"fps_limit": 45},
+            {"render_scale": 10},
+            {"star_brightness": 100},
+            {"star_brightness": 0},
+            {"cloud_shadow": 1.5},
+            {"cloud_shadow": -0.1},
+        ):
             response = self.client.put("/settings/graphics", json={**self.GRAPHICS, **change})
             self.assertEqual(response.status_code, 422)
         self.assertEqual(self.client.get("/settings").json()["graphics"]["fps_limit"], 0)
@@ -73,6 +84,8 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["fps_limit"], 60)
         self.assertEqual(graphics["star_brightness"], 1.0)
         self.assertTrue(graphics["show_map_lines"])
+        self.assertEqual(graphics["cloud_shadow"], 0.55)
+        self.assertTrue(graphics["region_detail"])
 
     def test_other_settings_keep_graphics(self):
         self.client.put("/settings/graphics", json=self.GRAPHICS)

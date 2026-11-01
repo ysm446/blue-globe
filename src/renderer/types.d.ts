@@ -16,6 +16,8 @@ type MapMode = 'normal' | 'weather' | 'wind';
 
 type GlobeView = 'globe' | 'region';
 
+type EarthTileLayer = 'day' | 'night';
+
 interface WeatherLocation {
   name: string;
   admin1: string | null;
@@ -33,6 +35,8 @@ interface GraphicsSettings {
   show_fps: boolean;
   show_map_lines: boolean; // 海岸線と国境線 (通常・天気モード。風速モードでは常に描く)
   star_brightness: number; // 星全体の明るさの倍率
+  cloud_shadow: number; // 雲の影の濃さ (0〜1)
+  region_detail: boolean; // 地域ビューで高解像度の画像を取得して使う
 }
 
 interface AppSettings {
@@ -104,7 +108,8 @@ interface Window {
     getClouds(): Promise<CloudResult | null>;
     setMode(mode: MapMode): Promise<unknown>;
     setGraphics(graphics: GraphicsSettings): Promise<AppSettings>;
-    getTexture(name: 'earth-day' | 'earth-night'): Promise<Uint8Array>;
+    getTexture(name: 'earth-day' | 'earth-night' | 'earth-relief'): Promise<Uint8Array>;
+    getEarthTile(layer: EarthTileLayer, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null
     getNews(): Promise<NewsReport>;
     getSettings(): Promise<AppSettings>;
     saveSettings(settings: AppSettings): Promise<AppSettings>;

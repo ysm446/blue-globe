@@ -1,6 +1,7 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { fetchCurrentGfsCloud, fetchCurrentGfsWind } from './nomads';
 import { backendRequest, startBackend, stopBackend } from './backend';
 
@@ -107,12 +108,53 @@ ipcMain.handle('clouds:get', async () => {
 const TEXTURES: Record<string, string> = {
   'earth-day': 'earth-day.jpg',
   'earth-night': 'earth-night.jpg',
+  'earth-relief': 'earth-relief.jpg',
 };
 
 ipcMain.handle('texture:get', (_event, name: string) => {
   const file = Object.hasOwn(TEXTURES, name) ? TEXTURES[name] : null;
   if (!file) throw new Error(`unknown texture: ${name}`);
   return new Uint8Array(fs.readFileSync(path.join(app.getAppPath(), 'assets', 'textures', file)));
+});
+
+// 地域ビューの地表と街明かり (NASA GIBS の 500m の面)。中身の変わらない合成画像なので、取得したら取り直さない
+const TILE_FETCH_TIMEOUT_MS = 20_000;
+const NIGHT_TILE_JPEG_QUALITY = 85; // 配信は PNG で 1 枚 140〜300KB ある
+const TILE_URL = 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best';
+const TILE_SOURCES: Record<string, string> = {
+  day: 'BlueMarble_ShadedRelief_Bathymetry/default/500m/7/{row}/{col}.jpeg',
+  night: 'VIIRS_Black_Marble/default/2016-01-01/500m/7/{row}/{col}.png',
+};
+
+// 取得できないときは null を返す。画面は今の画像のまま表示を続ける
+ipcMain.handle('earth-tile:get', async (_event, layer: string, col: number, row: number) => {
+  const source = Object.hasOwn(TILE_SOURCES, layer) ? TILE_SOURCES[layer] : null;
+  if (!source || !Number.isInteger(col) || !Number.isInteger(row) || col < 0 || col >= 160 || row < 0 || row >= 80) {
+    throw new Error(`unknown tile: ${layer} ${col} ${row}`);
+  }
+  const filePath = path.join(dataDir(), 'earth-tiles', layer, String(row), `${col}.jpg`);
+  try {
+    return new Uint8Array(await fs.promises.readFile(filePath));
+  } catch {
+    // キャッシュにないので取得する
+  }
+  try {
+    const url = `${TILE_URL}/${source.replace('{row}', String(row)).replace('{col}', String(col))}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(TILE_FETCH_TIMEOUT_MS) });
+    if (!response.ok) return null;
+    const received = Buffer.from(await response.arrayBuffer());
+    const image = nativeImage.createFromBuffer(received);
+    if (image.isEmpty()) return null;
+    const bytes = layer === 'night' ? image.toJPEG(NIGHT_TILE_JPEG_QUALITY) : received;
+    // 書き込みの途中で落ちても、壊れた画像がキャッシュに残らないようにする
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    const tempPath = `${filePath}.${randomUUID()}.tmp`;
+    await fs.promises.writeFile(tempPath, bytes);
+    await fs.promises.rename(tempPath, filePath);
+    return new Uint8Array(bytes);
+  } catch {
+    return null;
+  }
 });
 
 const jsonPut = (body: unknown): RequestInit => ({

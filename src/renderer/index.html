@@ -42,6 +42,7 @@
       </div>
       <button id="return-home" type="button">地点へ戻る</button>
       <div id="view-hint" hidden>左ドラッグで移動、右ドラッグで回転と傾き、ホイールで拡大縮小</div>
+      <div id="view-status" role="status" hidden></div>
       <div id="fps-counter" hidden></div>
     </div>
 
@@ -177,10 +178,16 @@
             <input id="star-brightness" type="range" min="-3" max="3" step="0.25" />
             <output id="star-brightness-value" for="star-brightness"></output>
           </div>
+          <label for="cloud-shadow">雲の影の濃さ</label>
+          <div class="range-row">
+            <input id="cloud-shadow" type="range" min="0" max="100" step="5" />
+            <output id="cloud-shadow-value" for="cloud-shadow"></output>
+          </div>
         </div>
         <label class="check-row"><input id="bloom-toggle" type="checkbox" />光のにじみ(通常・天気モード)</label>
         <label class="check-row"><input id="exposure-toggle" type="checkbox" />自動露出(通常・天気モード)</label>
         <label class="check-row"><input id="map-lines-toggle" type="checkbox" />海岸線と国境線を表示(通常・天気モード)</label>
+        <label class="check-row"><input id="region-detail-toggle" type="checkbox" />地域ビューの高解像度の画像(NASA から取得)</label>
         <label class="check-row"><input id="fps-toggle" type="checkbox" />FPS を表示</label>
         <p id="graphics-status" class="settings-help" role="status"></p>
       </section>
@@ -188,6 +195,7 @@
         地名検索: 国土地理院、Open-Meteo<br />
         雲: NOAA GMGSI(衛星の全球合成画像)と NOAA GFS をもとに加工したもので、元データそのものではありません<br />
         星: Hipparcos カタログ(d3-celestial より)<br />
+        地域ビューの地表と街明かり: NASA GIBS の固定の合成画像(街明かりは 2016 年)<br />
         We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS),
         part of NASA's Earth Science Data and Information System (ESDIS).
       </p>

@@ -3,8 +3,12 @@
 // 回すと地面とずれて動くので、ボリューム雲を使わなくても高さが感じられる
 import * as THREE from 'three';
 import { easeFade, stepFade } from './fade';
+import type { RegionDetail } from './region-detail';
+import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
 
 const CLOUD_ALTITUDE = 0.012; // 実際より高い。視差が見える程度に誇張している
+const DEFAULT_CLOUD_SHADOW = 0.55;
+const REGION_LIGHTS = 1.8; // にじませず、都市の中の濃淡が残る明るさ
 const REGION_CLOUD_ALTITUDE = 0.002; // 斜めに見ると誇張した分だけ雲が地面からずれるので、地域ビューでは実際に近づける
 const REGION_HAZE = 0.3; // 縁の青は地球全体を見るためのもので、斜めの視点では画面の大半に乗ってしまう
 const REGION_ATMOSPHERE_THINNESS = 3; // 大気の層も地球全体を見るために厚い。そのままだと空全体が青くなる
@@ -39,8 +43,17 @@ uniform sampler2D uDay;
 uniform sampler2D uNight;
 uniform float uShadowAmount;
 uniform float uCloudAltitude;
+uniform float uShadowStrength;
 uniform float uHaze;
 uniform vec3 uSunDir;
+uniform float uRegion;
+uniform float uHasRelief;
+uniform float uHasDetail;
+uniform sampler2D uRelief;
+uniform sampler2D uDetailDay;
+uniform sampler2D uDetailNight;
+uniform sampler2D uDetailMask;
+uniform vec2 uDetailCenter;
 varying vec3 vPos;
 varying vec2 vUv;
 ${CLOUD_SAMPLING_GLSL}
@@ -52,6 +65,30 @@ void main() {
   float dayMask = smoothstep(-0.1, 0.1, ndl);
 
   vec3 day = texture2D(uDay, vUv).rgb;
+  float night = texture2D(uNight, vUv).r;
+  if (uRegion > 0.0) {
+    // 高解像度の画像と境目が出ないよう、地域ビューでは周囲も同じ種類の画像にする
+    if (uHasRelief > 0.5) day = mix(day, texture2D(uRelief, vUv).rgb, uRegion);
+    if (uHasDetail > 0.5) {
+      // タイルの列と行で表した座標。列は範囲の中心から連続させ、日付変更線で途切れないようにする
+      float lon = atan(n.z, -n.x) * 57.29577951 - 180.0;
+      float centerLon = uDetailCenter.x * ${TILE_DEGREES.toFixed(2)} - 180.0;
+      float offset = mod(lon - centerLon + 180.0, 360.0) - 180.0;
+      vec2 tile = vec2(
+        uDetailCenter.x + offset / ${TILE_DEGREES.toFixed(2)},
+        (90.0 - asin(clamp(n.y, -1.0, 1.0)) * 57.29577951) / ${TILE_DEGREES.toFixed(2)}
+      );
+      vec2 fromCenter = abs(tile - uDetailCenter);
+      float half_ = ${(WINDOW_TILES / 2).toFixed(1)};
+      float inside = smoothstep(half_, half_ - 0.5, max(fromCenter.x, fromCenter.y));
+      vec2 detailUv = tile / ${WINDOW_TILES.toFixed(1)};
+      vec2 dx = dFdx(detailUv);
+      vec2 dy = dFdy(detailUv);
+      vec2 mask = texture2D(uDetailMask, detailUv).rg * inside * uRegion;
+      day = mix(day, textureGrad(uDetailDay, detailUv, dx, dy).rgb, mask.r);
+      night = mix(night, textureGrad(uDetailNight, detailUv, dx, dy).r, mask.g);
+    }
+  }
   float ocean = smoothstep(0.02, 0.1, day.b - day.r);
 
   // 雲の影。太陽が低いほど長く伸びる
@@ -61,7 +98,7 @@ void main() {
     float sinZenith = sqrt(max(1.0 - ndl * ndl, 0.0));
     float reach = min(uCloudAltitude * sinZenith / max(ndl, 0.12), 0.08);
     float caster = cloudAt(normalize(n + toSun * reach), dFdx(vUv), dFdy(vUv));
-    shadow = smoothstep(0.15, 0.75, caster) * 0.55 * uShadowAmount;
+    shadow = smoothstep(0.15, 0.75, caster) * uShadowStrength * uShadowAmount;
   }
 
   vec3 color = day * 1.5 * light * (1.0 - shadow);
@@ -71,11 +108,14 @@ void main() {
   color += vec3(1.0, 0.92, 0.8) * pow(max(dot(n, halfway), 0.0), 90.0) * 4.0 * ocean * (1.0 - shadow) * dayMask;
 
   // 街明かりは夜側だけ
-  float lights = pow(smoothstep(0.1, 1.0, texture2D(uNight, vUv).r), 1.4) * (1.0 - dayMask);
-  color += vec3(1.0, 0.6, 0.26) * lights * 4.5; // 画面の白より明るくして、にじませる
+  float lights = pow(smoothstep(0.1, 1.0, night), 1.4) * (1.0 - dayMask);
+  // 画面の白より明るくして、にじませる。地域ビューは街の形が見えるよう、にじまない明るさに抑える
+  color += vec3(1.0, 0.6, 0.26) * lights * mix(4.5, ${REGION_LIGHTS.toFixed(1)}, uRegion);
 
-  // 回して触ったときに場所が分かるよう、夜側でも陸と海がうっすら見える光を残す
-  color += (day * vec3(0.22, 0.27, 0.4) + vec3(0.003, 0.006, 0.014)) * (1.0 - dayMask);
+  // 回して触ったときに場所が分かるよう、夜側でも陸と海がうっすら見える光を残す。
+  // 地域ビューの画像は海が明るいので、海を特に暗くする
+  float nightFill = mix(1.0, mix(0.7, 0.3, ocean), uRegion);
+  color += (day * vec3(0.22, 0.27, 0.4) + vec3(0.003, 0.006, 0.014)) * (1.0 - dayMask) * nightFill;
 
   // 地表から見える大気 (縁ほど青い)。昼側だけ
   float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.2);
@@ -209,7 +249,16 @@ export class RealisticEarth {
         uCloud: { value: null },
         uShadowAmount: { value: 0 },
         uCloudAltitude: { value: CLOUD_ALTITUDE },
+        uShadowStrength: { value: DEFAULT_CLOUD_SHADOW },
         uHaze: this.haze,
+        uRegion: { value: 0 },
+        uHasRelief: { value: 0 },
+        uHasDetail: { value: 0 },
+        uRelief: { value: null },
+        uDetailDay: { value: null },
+        uDetailNight: { value: null },
+        uDetailMask: { value: null },
+        uDetailCenter: { value: new THREE.Vector2() },
         uSunDir: { value: this.sunDir },
       },
       vertexShader: VS,
@@ -269,6 +318,25 @@ export class RealisticEarth {
     this.cloudMesh.scale.setScalar((this.radius + altitude) / (this.radius + CLOUD_ALTITUDE));
     this.haze.value = THREE.MathUtils.lerp(1, REGION_HAZE, blend);
     this.atmosphereThinness.value = THREE.MathUtils.lerp(1, REGION_ATMOSPHERE_THINNESS, blend);
+    this.material.uniforms.uRegion.value = blend;
+  }
+
+  setCloudShadow(strength: number): void {
+    this.material.uniforms.uShadowStrength.value = strength;
+  }
+
+  setRelief(texture: THREE.Texture | null): void {
+    this.material.uniforms.uRelief.value = texture;
+    this.material.uniforms.uHasRelief.value = texture ? 1 : 0;
+  }
+
+  setRegionDetail(detail: RegionDetail | null): void {
+    const { uniforms } = this.material;
+    uniforms.uHasDetail.value = detail ? 1 : 0;
+    uniforms.uDetailDay.value = detail?.day ?? null;
+    uniforms.uDetailNight.value = detail?.night ?? null;
+    uniforms.uDetailMask.value = detail?.mask ?? null;
+    if (detail) uniforms.uDetailCenter.value = detail.center;
   }
 
   // data は 1 画素 1 バイトの雲の濃さ。1 行目が北端、左端が経度 -180 度
