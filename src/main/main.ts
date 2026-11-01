@@ -240,8 +240,8 @@ async function captureScreenshot(win: BrowserWindow, logical: boolean): Promise<
 
 function createWindow(): void {
   const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    width: 1920,
+    height: 1080,
     useContentSize: true,
     backgroundColor: '#0a0e14',
     icon: path.join(app.getAppPath(), 'assets', 'icons', 'weather-news-v2.png'),

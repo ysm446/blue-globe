@@ -242,7 +242,7 @@ a:hover {
 }
 
 #clock {
-  min-width: 220px;
+  display: flex;
   padding: 10px 16px 8px;
   background: var(--panel);
   border: 1px solid var(--line);
@@ -260,7 +260,8 @@ a:hover {
 }
 
 #clock-place[hidden],
-#clock-weather[hidden] {
+#clock-weather[hidden],
+#clock-details[hidden] {
   display: none;
 }
 
@@ -282,6 +283,83 @@ a:hover {
   align-items: center;
   gap: 12px;
   margin-top: 2px;
+}
+
+#clock-apparent {
+  align-self: flex-end;
+  margin-bottom: 10px;
+  color: var(--text-2);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+#clock-details {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  margin-left: 16px;
+  padding-left: 16px;
+  border-left: 1px solid var(--line);
+  pointer-events: auto; /* 風速にカーソルを合わせると向きと瞬間風速を出す */
+}
+
+.detail-row {
+  display: flex;
+  gap: 16px;
+  margin: 0;
+}
+
+.detail-row + .detail-row {
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.detail-row > div {
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  align-items: center;
+  column-gap: 6px;
+}
+
+.detail-row svg,
+.detail-row span {
+  grid-row: span 2;
+  display: block;
+}
+
+.detail-row dd {
+  grid-row: 1;
+  grid-column: 2;
+  margin: 0;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.detail-row dt {
+  grid-row: 2;
+  grid-column: 2;
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.sun-icon {
+  fill: none;
+  stroke: var(--icon-sun);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.detail-icon {
+  fill: none;
+  stroke: var(--text-2);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 #clock-icon {
@@ -348,7 +426,7 @@ a:hover {
   position: fixed;
   left: 16px;
   bottom: 16px;
-  width: 360px;
+  width: clamp(360px, 24vw, 460px); /* 地球に重ならない範囲で、広い画面では列に余裕を持たせる */
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -508,42 +586,6 @@ a:hover {
   to {
     opacity: 1;
   }
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  margin: 12px 0;
-  border-block: 1px solid var(--line);
-}
-
-.stats > div {
-  padding: 9px 0 10px 10px;
-  border-left: 1px solid var(--line);
-}
-
-.stats > div:first-child {
-  padding-left: 0;
-  border-left: 0;
-}
-
-.stats dt {
-  color: var(--text-3);
-  font-size: 13px;
-}
-
-.stats dd {
-  margin: 2px 0 0;
-  font-size: 15px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-.stats small {
-  color: var(--text-3);
-  font-size: 12px;
-  font-weight: 400;
 }
 
 .forecast-table {

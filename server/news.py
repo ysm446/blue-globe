@@ -109,6 +109,23 @@ def target_days(now: datetime) -> list[date]:
     return [now.date() + timedelta(days=i) for i in range(focus_index(now), 2)]
 
 
+def rain_now(hourly: dict, now: datetime) -> int | None:
+    """今の時間帯の降水確率。予報にない時刻なら None。"""
+    start = now.replace(minute=0).strftime("%Y-%m-%dT%H:%M")
+    return hourly["precipitation_probability"][hourly["time"].index(start)] if start in hourly["time"] else None
+
+
+def sun_times(daily: dict, now: datetime) -> dict:
+    """今日の日の出と日の入り (地点の現地時刻)。白夜や極夜でないときだけ値がある。"""
+    today = now.strftime("%Y-%m-%d")
+    index = daily["time"].index(today) if today in daily["time"] else None
+    clock = lambda value: value[11:16] if value else None
+    return {
+        "sunrise": clock(daily["sunrise"][index]) if index is not None else None,
+        "sunset": clock(daily["sunset"][index]) if index is not None else None,
+    }
+
+
 def daily_from_now(daily: dict, hourly: dict, now: datetime) -> dict:
     """日別予報のうち今日の分を、今の時刻から先の時間別予報で置き換える。"""
     start = now.replace(minute=0)

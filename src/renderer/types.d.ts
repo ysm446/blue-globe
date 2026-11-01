@@ -92,6 +92,9 @@ interface NewsReport {
     wind_speed: number;
     wind_direction: string;
     gust: number;
+    rain: number | null; // 今の時間帯の降水確率
+    sunrise: string | null; // 地点の現地時刻の HH:MM。白夜や極夜では null
+    sunset: string | null;
   };
   hourly: Array<{
     time: string;

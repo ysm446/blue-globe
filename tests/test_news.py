@@ -271,3 +271,34 @@ class OfficeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ClockDetailsTest(unittest.TestCase):
+    NOW = datetime(2026, 11, 2, 6, 15)
+    HOURLY = {
+        "time": ["2026-11-02T05:00", "2026-11-02T06:00", "2026-11-02T07:00"],
+        "precipitation_probability": [10, 30, None],
+    }
+    DAILY = {
+        "time": ["2026-11-02", "2026-11-03", "2026-11-04"],
+        "sunrise": ["2026-11-02T06:05", "2026-11-03T06:06", None],
+        "sunset": ["2026-11-02T16:48", "2026-11-03T16:47", None],
+    }
+
+    def test_rain_now_uses_the_current_hour(self):
+        self.assertEqual(news.rain_now(self.HOURLY, self.NOW), 30)
+
+    def test_rain_now_is_none_outside_the_forecast(self):
+        self.assertIsNone(news.rain_now(self.HOURLY, datetime(2026, 11, 3, 6, 15)))
+
+    def test_rain_now_keeps_missing_value(self):
+        self.assertIsNone(news.rain_now(self.HOURLY, datetime(2026, 11, 2, 7, 0)))
+
+    def test_sun_times_are_todays_clock_times(self):
+        self.assertEqual(news.sun_times(self.DAILY, self.NOW), {"sunrise": "06:05", "sunset": "16:48"})
+
+    def test_sun_times_are_none_without_sunrise(self):
+        self.assertEqual(news.sun_times(self.DAILY, datetime(2026, 11, 4, 6, 0)), {"sunrise": None, "sunset": None})
+
+    def test_sun_times_are_none_outside_the_forecast(self):
+        self.assertEqual(news.sun_times(self.DAILY, datetime(2026, 12, 1, 6, 0)), {"sunrise": None, "sunset": None})

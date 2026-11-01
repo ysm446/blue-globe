@@ -59,7 +59,7 @@ def fetch_forecast(latitude: float, longitude: float) -> dict:
         current="temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,"
         "weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m",
         hourly="temperature_2m,precipitation_probability,weather_code,is_day",
-        daily="weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+        daily="weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset",
     )
 
 

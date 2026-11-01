@@ -252,6 +252,8 @@ def get_news() -> dict:
             "wind_speed": current["wind_speed_10m"],
             "wind_direction": news.wind_direction(current["wind_direction_10m"]),
             "gust": current["wind_gusts_10m"],
+            "rain": news.rain_now(forecast["hourly"], now),
+            **news.sun_times(forecast["daily"], now),
         },
         "hourly": _hourly(forecast, now),
         "weekly": news.weekly_rows(daily),

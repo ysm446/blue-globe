@@ -829,14 +829,6 @@ function formatReportTime(iso: string): string {
   });
 }
 
-function renderStat(id: string, value: string, unit: string, prefix = ''): void {
-  const target = el(id);
-  target.textContent = prefix + value;
-  const small = document.createElement('small');
-  small.textContent = unit;
-  target.append(small);
-}
-
 // 予報の表は時刻や日付を横に並べる。行ごとに、各列のセルの中身を入れる
 function fillRow<T>(
   id: string,
@@ -866,20 +858,26 @@ function svgElement<K extends keyof SVGElementTagNameMap>(
 }
 
 // 降水確率の分だけ下から満たした雫
-function rainDrop(rain: number, index: number): SVGSVGElement {
+function rainDrop(rain: number, key: number | string): SVGSVGElement {
   const svg = svgElement('svg', {
     class: 'rain-drop',
-    viewBox: '0 0 10 14',
-    width: 9,
-    height: 13,
+    viewBox: '-0.5 -0.5 11 15', // 枠いっぱいに描くと、線の太さの半分が切れる
+    width: 10,
+    height: 14,
     'aria-hidden': 'true',
   });
-  const clipId = `rain-drop-${index}`;
+  const clipId = `rain-drop-${key}`;
   const clip = svgElement('clipPath', { id: clipId });
   clip.append(svgElement('rect', { x: 0, y: 14 * (1 - rain / 100), width: 10, height: 14 }));
   svg.append(
     clip,
-    svgElement('path', { d: DROP_PATH, fill: 'none', stroke: 'var(--icon-rain)', 'stroke-width': 1 }),
+    svgElement('path', {
+      d: DROP_PATH,
+      fill: 'none',
+      stroke: 'var(--icon-rain)',
+      'stroke-width': 1,
+      'stroke-linejoin': 'round',
+    }),
     svgElement('path', { d: DROP_PATH, fill: 'var(--icon-rain)', 'clip-path': `url(#${clipId})` }),
   );
   return svg;
@@ -965,12 +963,15 @@ function renderNews(news: NewsReport): void {
   );
   el('clock-temperature').textContent = `${Math.round(news.current.temperature)}°`;
   el('clock-weather').hidden = false;
-  renderStat('stat-temperature', news.current.temperature.toFixed(1), '℃');
-  renderStat('stat-apparent', news.current.apparent.toFixed(1), '℃');
-  renderStat('stat-humidity', String(news.current.humidity), '%');
-  renderStat('stat-wind', news.current.wind_speed.toFixed(1), 'm/s');
-  renderStat('stat-gust', news.current.gust.toFixed(1), 'm/s');
-  el('stat-wind').title = `${news.current.wind_direction}寄りの風`;
+  el('clock-apparent').textContent = `体感 ${Math.round(news.current.apparent)}°`;
+  el('detail-sunrise').textContent = news.current.sunrise ?? '–';
+  el('detail-sunset').textContent = news.current.sunset ?? '–';
+  el('detail-rain').textContent = rainText(news.current.rain);
+  el('detail-rain-icon').replaceChildren(rainDrop(news.current.rain ?? 0, 'now'));
+  el('detail-humidity').textContent = `${news.current.humidity}%`;
+  el('detail-wind').textContent = `${news.current.wind_speed.toFixed(1)}m/s`;
+  el('detail-wind-item').title = `${news.current.wind_direction}寄りの風、最大瞬間 ${news.current.gust.toFixed(1)}m/s`;
+  el('clock-details').hidden = false;
   renderHourly(news);
   renderWeekly(news);
 
@@ -1533,6 +1534,7 @@ async function init(): Promise<void> {
       el('news-body').hidden = true;
       el('forecasts').hidden = true;
       el('clock-weather').hidden = true;
+      el('clock-details').hidden = true;
       if (settings.location) globe.focusLocation(settings.location);
       void refreshNews();
     },
