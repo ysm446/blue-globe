@@ -153,7 +153,7 @@ def weekly_rows(daily: dict) -> list[dict]:
         names = {0: "今日", 1: "明日"}
         rows.append(
             {
-                "label": names.get(index, f"{day.day}日({WEEKDAYS[day.weekday()]})"),
+                "label": names.get(index, f"{day.day}({WEEKDAYS[day.weekday()]})"),
                 "weather": weather_label(code),
                 "icon": weather_icon(code),
                 "high": round(daily["temperature_2m_max"][index]),

@@ -236,7 +236,7 @@ class DaySentenceTest(unittest.TestCase):
 class WeeklyRowsTest(unittest.TestCase):
     def test_labels_and_values(self):
         rows = news.weekly_rows(DAILY)
-        self.assertEqual([r["label"] for r in rows], ["今日", "明日", "3日(火)"])
+        self.assertEqual([r["label"] for r in rows], ["今日", "明日", "3(火)"])
         self.assertEqual(rows[1]["high"], 18)
         self.assertEqual(rows[1]["low"], 9)
         self.assertEqual(rows[2]["icon"], "rain")

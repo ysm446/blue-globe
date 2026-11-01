@@ -390,6 +390,17 @@ a:hover {
   line-height: 1.7;
 }
 
+.stream-char {
+  opacity: 0;
+  animation: stream-char-in 200ms ease-out forwards; /* stream.ts の CHAR_FADE_MS と合わせる */
+}
+
+@keyframes stream-char-in {
+  to {
+    opacity: 1;
+  }
+}
+
 .stats {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
@@ -426,7 +437,7 @@ a:hover {
   font-weight: 400;
 }
 
-.hourly {
+.forecast-table {
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
@@ -434,13 +445,17 @@ a:hover {
   font-variant-numeric: tabular-nums;
 }
 
-.hourly caption {
+.forecast-table + .forecast-table {
+  margin-top: 14px;
+}
+
+.forecast-table caption {
   margin-bottom: 6px;
   color: var(--text-3);
   text-align: left;
 }
 
-.hourly th {
+.forecast-table th {
   width: 34px;
   padding: 3px 0;
   color: var(--text-3);
@@ -448,72 +463,24 @@ a:hover {
   text-align: left;
 }
 
-.hourly td {
+.forecast-table td {
   padding: 3px 0;
   text-align: right;
-}
-
-#hourly-time td {
-  color: var(--text-2);
-}
-
-.weekly {
-  width: 100%;
-  margin-top: 16px;
-  table-layout: fixed;
-  border-collapse: collapse;
-  font-size: 13px;
-  font-variant-numeric: tabular-nums;
-}
-
-.weekly caption {
-  margin-bottom: 4px;
-  color: var(--text-3);
-  text-align: left;
-}
-
-.weekly th {
-  padding: 2px 0;
-  color: var(--text-3);
-  font-weight: 400;
-  text-align: left;
-}
-
-.weekly .col-date {
-  width: 66px;
-}
-
-.weekly .col-icon {
-  width: 28px;
-}
-
-.weekly .col-temp {
-  width: 40px;
-}
-
-.weekly .col-rain {
-  width: 46px;
-}
-
-.weekly td {
-  padding: 2px 0;
-  border-top: 1px solid var(--line);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.weekly th.num,
-.weekly td.num {
-  text-align: right;
+.forecast-table td.today {
+  font-weight: 600;
 }
 
-.weekly td.low {
+#hourly-time td,
+#weekly-day td,
+#weekly-low td {
   color: var(--text-2);
 }
 
-.weekly tr.today td {
-  font-weight: 600;
+#weekly-day td.today {
+  color: var(--text);
 }
 
 .news-note {

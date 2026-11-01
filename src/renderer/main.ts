@@ -11,6 +11,7 @@ import { RealisticEarth } from './earth';
 import { adaptExposure, earthClearance, screenPresence, targetExposure } from './exposure';
 import { HdrPipeline } from './hdr';
 import { Sky } from './sky';
+import { streamParagraphs } from './stream';
 
 const COLORS = {
   ocean: '#0c1422',
@@ -560,46 +561,48 @@ function renderStat(id: string, value: string, unit: string, prefix = ''): void 
   target.append(small);
 }
 
+// 予報の表は時刻や日付を横に並べる。行ごとに、各列のセルの中身を入れる
+function fillRow<T>(
+  id: string,
+  items: T[],
+  fill: (cell: HTMLTableCellElement, item: T, index: number) => void,
+): void {
+  const row = el<HTMLTableRowElement>(id);
+  row.querySelectorAll('td').forEach((cell) => cell.remove());
+  items.forEach((item, index) => fill(row.insertCell(), item, index));
+}
+
+function rainText(rain: number | null): string {
+  return rain === null ? '–' : `${rain}%`;
+}
+
 function renderHourly(news: NewsReport): void {
-  const rows: Array<[string, (h: NewsReport['hourly'][number]) => string]> = [
-    ['hourly-time', (h) => h.time],
-    ['hourly-temperature', (h) => `${h.temperature}°`],
-    ['hourly-rain', (h) => (h.rain === null ? '–' : `${h.rain}%`)],
-  ];
-  for (const [id, format] of rows) {
-    const row = el<HTMLTableRowElement>(id);
-    row.querySelectorAll('td').forEach((cell) => cell.remove());
-    for (const hour of news.hourly) {
-      const cell = row.insertCell();
+  const textRow = (id: string, format: (h: NewsReport['hourly'][number]) => string): void =>
+    fillRow(id, news.hourly, (cell, hour) => {
       cell.textContent = format(hour);
       cell.title = hour.weather;
-    }
-  }
-  const iconRow = el<HTMLTableRowElement>('hourly-icon');
-  iconRow.querySelectorAll('td').forEach((cell) => cell.remove());
-  for (const hour of news.hourly) {
-    iconRow.insertCell().append(weatherIcon(hour.icon, hour.is_day, hour.weather, 24));
-  }
+    });
+  textRow('hourly-time', (h) => h.time);
+  textRow('hourly-temperature', (h) => `${h.temperature}°`);
+  textRow('hourly-rain', (h) => rainText(h.rain));
+  fillRow('hourly-icon', news.hourly, (cell, hour) => {
+    cell.append(weatherIcon(hour.icon, hour.is_day, hour.weather, 24));
+  });
 }
 
 function renderWeekly(news: NewsReport): void {
-  const body = el<HTMLTableSectionElement>('weekly-body');
-  body.replaceChildren();
-  news.weekly.forEach((day, index) => {
-    const row = body.insertRow();
-    if (index === 0) row.className = 'today';
-    const addCell = (text: string, className = ''): HTMLTableCellElement => {
-      const cell = row.insertCell();
-      cell.textContent = text;
-      cell.className = className;
-      return cell;
-    };
-    addCell(day.label);
-    addCell('').append(weatherIcon(day.icon, true, day.weather, 20));
-    addCell(day.weather).title = day.weather;
-    addCell(`${day.high}°`, 'num');
-    addCell(`${day.low}°`, 'num low');
-    addCell(day.rain === null ? '–' : `${day.rain}%`, 'num');
+  const textRow = (id: string, format: (d: NewsReport['weekly'][number]) => string): void =>
+    fillRow(id, news.weekly, (cell, day, index) => {
+      cell.textContent = format(day);
+      cell.title = day.weather;
+      if (index === 0) cell.className = 'today';
+    });
+  textRow('weekly-day', (d) => d.label);
+  textRow('weekly-high', (d) => `${d.high}°`);
+  textRow('weekly-low', (d) => `${d.low}°`);
+  textRow('weekly-rain', (d) => rainText(d.rain));
+  fillRow('weekly-icon', news.weekly, (cell, day) => {
+    cell.append(weatherIcon(day.icon, true, day.weather, 24));
   });
 }
 
@@ -614,8 +617,6 @@ function renderNews(news: NewsReport): void {
   el('clock-temperature').textContent = `${news.current.temperature.toFixed(1)}℃`;
   el('clock-condition').textContent = news.current.weather;
   el('clock-weather').hidden = false;
-  el('current-text').textContent = news.current_text;
-  el('day-text').textContent = news.day_text;
   renderStat('stat-temperature', news.current.temperature.toFixed(1), '℃');
   renderStat('stat-apparent', news.current.apparent.toFixed(1), '℃');
   renderStat('stat-humidity', String(news.current.humidity), '%');
@@ -626,9 +627,7 @@ function renderNews(news: NewsReport): void {
   renderWeekly(news);
 
   const { outlook } = news;
-  const outlookText = el('outlook-text');
-  outlookText.textContent = outlook?.text ?? '';
-  outlookText.hidden = !outlook;
+  el('outlook-text').hidden = !outlook;
   const note = el('outlook-note');
   note.textContent = news.note ?? '';
   note.hidden = !news.note;
@@ -643,6 +642,11 @@ function renderNews(news: NewsReport): void {
   }
   el('outlook-source').textContent = parts.join('・');
   el('news-body').hidden = false;
+  streamParagraphs([
+    [el('current-text'), news.current_text],
+    [el('day-text'), news.day_text],
+    [el('outlook-text'), outlook?.text ?? ''],
+  ]);
 }
 
 function initSettingsDialog(

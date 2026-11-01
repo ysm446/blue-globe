@@ -68,7 +68,7 @@
           <div><dt>瞬間</dt><dd id="stat-gust"></dd></div>
         </dl>
 
-        <table class="hourly">
+        <table class="forecast-table">
           <caption>これから24時間</caption>
           <tbody>
             <tr id="hourly-time"><th scope="row">時刻</th></tr>
@@ -78,26 +78,15 @@
           </tbody>
         </table>
 
-        <table class="weekly">
+        <table class="forecast-table">
           <caption>週間予報(今日はこのあとの予報)</caption>
-          <colgroup>
-            <col class="col-date" />
-            <col class="col-icon" />
-            <col />
-            <col class="col-temp" />
-            <col class="col-temp" />
-            <col class="col-rain" />
-          </colgroup>
-          <thead>
-            <tr>
-              <th scope="col">日付</th>
-              <th scope="col" colspan="2">天気</th>
-              <th scope="col" class="num">最高</th>
-              <th scope="col" class="num">最低</th>
-              <th scope="col" class="num">降水</th>
-            </tr>
-          </thead>
-          <tbody id="weekly-body"></tbody>
+          <tbody>
+            <tr id="weekly-day"><th scope="row">日付</th></tr>
+            <tr id="weekly-icon"><th scope="row">天気</th></tr>
+            <tr id="weekly-high"><th scope="row">最高</th></tr>
+            <tr id="weekly-low"><th scope="row">最低</th></tr>
+            <tr id="weekly-rain"><th scope="row">降水</th></tr>
+          </tbody>
         </table>
 
         <p id="outlook-note" class="news-note" hidden></p>
