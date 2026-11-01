@@ -8,6 +8,10 @@ import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
 
 const CLOUD_ALTITUDE = 0.012; // 実際より高い。視差が見える程度に誇張している
 const DEFAULT_CLOUD_SHADOW = 0.55;
+// 太陽の映り込みの広がりと強さ。NASA EPIC の地球の写真の、明るさと大きさに合わせた値
+const WAVE_SLOPE_VARIANCE = 0.016;
+const GLINT_STRENGTH = 0.9;
+const GLINT_MAX = 0.4;
 const REGION_CLOUD_ALTITUDE = 0.002; // 斜めに見ると誇張した分だけ雲が地面からずれるので、地域ビューでは実際に近づける
 const REGION_HAZE = 0.3; // 縁の青は地球全体を見るためのもので、斜めの視点では画面の大半に乗ってしまう
 const REGION_ATMOSPHERE_THINNESS = 3; // 大気の層も地球全体を見るために厚い。そのままだと空全体が青くなる
@@ -108,10 +112,17 @@ void main() {
 
   vec3 color = day * 1.5 * light * (1.0 - shadow);
 
-  // 太陽の映り込み (水域だけ)。波で散らばる広い光と、中心の強い光を重ねる
+  // 太陽の映り込み (水域だけ)。波の傾きの分布 (Cox-Munk) と、水面の反射率 (Fresnel) から求める
   vec3 halfway = normalize(uSunDir + view);
-  float facingSun = max(dot(n, halfway), 0.0);
-  float glint = pow(facingSun, 250.0) * 0.35 + pow(facingSun, 2000.0) * 2.5;
+  float facingSun = max(max(dot(n, halfway), 0.0), 0.001);
+  float tanSq = (1.0 - facingSun * facingSun) / (facingSun * facingSun);
+  float waterFresnel = 0.02 + 0.98 * pow(1.0 - max(dot(view, halfway), 0.0), 5.0);
+  float glintPeak = ${GLINT_STRENGTH.toFixed(1)} * waterFresnel
+    / (3.14159265 * ${WAVE_SLOPE_VARIANCE.toFixed(3)} * 4.0 * max(dot(n, view), 0.05) * pow(facingSun, 4.0));
+  // 太陽が低いと式の値が昼の数十倍になる。実際に光を弱める大気や波の陰は描かないので、なめらかに抑える。
+  // 分布を掛ける前に抑え、光が平らに頭打ちにならないようにする
+  glintPeak = ${GLINT_MAX.toFixed(1)} * (1.0 - exp(-glintPeak / ${GLINT_MAX.toFixed(1)}));
+  float glint = glintPeak * exp(-tanSq / ${WAVE_SLOPE_VARIANCE.toFixed(3)});
   color += vec3(1.0, 0.92, 0.8) * glint * ocean * (1.0 - shadow) * dayMask;
 
   // 街明かりは夜側だけ
