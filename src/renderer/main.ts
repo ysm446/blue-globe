@@ -351,6 +351,8 @@ function initGlobe() {
     autoExposure = graphics.auto_exposure;
     hdr.setBloomEnabled(graphics.bloom);
     sky.setStarBrightness(graphics.star_brightness);
+    coastlines.group.visible = graphics.show_map_lines;
+    borders.group.visible = graphics.show_map_lines;
     fpsCounter.hidden = !graphics.show_fps;
     const ratio = (Math.min(window.devicePixelRatio, 2) * graphics.render_scale) / 100;
     if (ratio !== renderer.getPixelRatio()) {
@@ -415,6 +417,7 @@ function initGlobe() {
     exposure: () => exposure,
     camera,
     sky,
+    mapLinesVisible: () => [coastlines.group.visible, borders.group.visible],
     stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),
     peekAt(body: 'sun' | 'moon' | 'dayside' | 'sunrise'): void {
       flight = null;
@@ -761,6 +764,7 @@ function initSettingsDialog(
   const bloomToggle = el<HTMLInputElement>('bloom-toggle');
   const exposureToggle = el<HTMLInputElement>('exposure-toggle');
   const fpsToggle = el<HTMLInputElement>('fps-toggle');
+  const mapLinesToggle = el<HTMLInputElement>('map-lines-toggle');
   const starSlider = el<HTMLInputElement>('star-brightness');
 
   // スライダーは対数にして、1 目盛りごとに同じ比率で変わるようにする
@@ -775,6 +779,7 @@ function initSettingsDialog(
       bloom: bloomToggle.checked,
       auto_exposure: exposureToggle.checked,
       show_fps: fpsToggle.checked,
+      show_map_lines: mapLinesToggle.checked,
       star_brightness: 2 ** Number(starSlider.value),
     };
   }
@@ -785,6 +790,7 @@ function initSettingsDialog(
     bloomToggle.checked = graphics.bloom;
     exposureToggle.checked = graphics.auto_exposure;
     fpsToggle.checked = graphics.show_fps;
+    mapLinesToggle.checked = graphics.show_map_lines;
     starSlider.value = String(Math.log2(graphics.star_brightness));
     showStarBrightness();
   }
@@ -796,7 +802,7 @@ function initSettingsDialog(
     showStarBrightness();
     onGraphicsChange(readGraphics());
   });
-  for (const control of [fpsSelect, scaleSelect, bloomToggle, exposureToggle, fpsToggle, starSlider]) {
+  for (const control of [fpsSelect, scaleSelect, bloomToggle, exposureToggle, mapLinesToggle, fpsToggle, starSlider]) {
     control.addEventListener('change', () => {
       const graphics = readGraphics();
       onGraphicsChange(graphics);

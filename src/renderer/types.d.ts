@@ -29,6 +29,7 @@ interface GraphicsSettings {
   bloom: boolean;
   auto_exposure: boolean;
   show_fps: boolean;
+  show_map_lines: boolean; // 海岸線と国境線
   star_brightness: number; // 星全体の明るさの倍率
 }
 

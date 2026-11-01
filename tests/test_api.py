@@ -45,6 +45,7 @@ class SettingsApiTest(unittest.TestCase):
         "bloom": False,
         "auto_exposure": False,
         "show_fps": True,
+        "show_map_lines": False,
         "star_brightness": 2.0,
     }
 
@@ -53,6 +54,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["fps_limit"], 0)
         self.assertEqual(graphics["render_scale"], 100)
         self.assertTrue(graphics["bloom"])
+        self.assertTrue(graphics["show_map_lines"])
 
     def test_graphics_are_saved(self):
         self.assertEqual(self.client.put("/settings/graphics", json=self.GRAPHICS).status_code, 200)
@@ -70,6 +72,7 @@ class SettingsApiTest(unittest.TestCase):
         graphics = self.client.get("/settings").json()["graphics"]
         self.assertEqual(graphics["fps_limit"], 60)
         self.assertEqual(graphics["star_brightness"], 1.0)
+        self.assertTrue(graphics["show_map_lines"])
 
     def test_other_settings_keep_graphics(self):
         self.client.put("/settings/graphics", json=self.GRAPHICS)

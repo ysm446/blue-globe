@@ -20,6 +20,7 @@ DEFAULT_SETTINGS = {
         "bloom": True,
         "auto_exposure": True,
         "show_fps": False,
+        "show_map_lines": True,
         "star_brightness": 1.0,
     },
     "models_dir": r"D:\ai-models\llm",

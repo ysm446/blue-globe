@@ -65,6 +65,7 @@ class GraphicsUpdate(BaseModel):
     bloom: bool
     auto_exposure: bool
     show_fps: bool
+    show_map_lines: bool
     star_brightness: float = Field(ge=0.125, le=8)
 
 
