@@ -153,6 +153,14 @@ function initGlobe() {
   let gpuParticles: GpuParticleSystem | null = null;
   let cpuParticles: ParticleSystem | null = null;
   let mode: MapMode = 'normal';
+  let showMapLines = true;
+
+  // 風速モードは線がないと風の場所が分からないので、設定にかかわらず描く
+  function syncMapLines(): void {
+    const visible = mode === 'wind' || showMapLines;
+    coastlines.group.visible = visible;
+    borders.group.visible = visible;
+  }
 
   function updateSky(): void {
     sky.setTime(new Date());
@@ -175,6 +183,7 @@ function initGlobe() {
     scene.background = wind ? flatBackground : spaceBackground;
     coastlines.setOpacity(wind ? COASTLINE_OPACITY : EARTH_COASTLINE_OPACITY);
     borders.setOpacity(wind ? BORDER_OPACITY : EARTH_BORDER_OPACITY);
+    syncMapLines();
   }
   setMode(mode);
 
@@ -351,8 +360,8 @@ function initGlobe() {
     autoExposure = graphics.auto_exposure;
     hdr.setBloomEnabled(graphics.bloom);
     sky.setStarBrightness(graphics.star_brightness);
-    coastlines.group.visible = graphics.show_map_lines;
-    borders.group.visible = graphics.show_map_lines;
+    showMapLines = graphics.show_map_lines;
+    syncMapLines();
     fpsCounter.hidden = !graphics.show_fps;
     const ratio = (Math.min(window.devicePixelRatio, 2) * graphics.render_scale) / 100;
     if (ratio !== renderer.getPixelRatio()) {

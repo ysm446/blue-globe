@@ -70,11 +70,52 @@ class ComposeTest(unittest.TestCase):
 
     def test_cold_ground_is_rejected_when_gfs_says_clear(self):
         # シベリアのように赤外では雲に見えるが GFS は晴れ
-        self.assertEqual(float(sample(self.build(178, 0.0), 0, 20)), 0.0)
+        ir = np.full((360, 720), 76, dtype=np.float32)
+        ir[:, 340:380] = 178  # 経度 -10〜10 度だけ冷たい
+        gfs = np.zeros((181, 360), dtype=np.float32)
+        self.assertEqual(float(sample(clouds.compose(ir, gfs), 0, 20)), 0.0)
 
-    def test_low_cloud_is_shown_as_thin_veil(self):
-        # 赤外には写らないが GFS は曇り
-        self.assertAlmostEqual(float(sample(self.build(76, 1.0), 0, 20)), clouds.LOW_CLOUD_VEIL, places=3)
+    def test_gfs_alone_does_not_make_cloud(self):
+        # 薄い雲を別のデータから足すと、濃い雲と形がつながらない
+        self.assertEqual(float(sample(self.build(70, 1.0), 0, 20)), 0.0)
+
+    def test_density_is_continuous_from_thin_to_thick(self):
+        # 同じ緯度帯に晴れた場所を作り、基準を実データと同じ方法で求める
+        ir = np.full((360, 720), 73, dtype=np.float32)
+        gfs = np.zeros((181, 360), dtype=np.float32)
+        steps = list(range(84, 216, 4))
+        for i, value in enumerate(steps):
+            ir[:, 300 + i * 2 : 302 + i * 2] = value
+        # GFS の格子は経度 0 度始まり。経度 -40〜10 度 (ir の列 280〜380) に雲がある
+        gfs[:, 320:] = 1
+        gfs[:, :10] = 1
+        density = clouds.compose(ir, gfs)[175]
+        values = [float(density[300 + i * 2]) for i in range(len(steps))]
+        self.assertGreater(values[0], 0.0)
+        self.assertLess(values[0], 0.05)
+        self.assertGreater(values[-1], 0.95)
+        self.assertTrue(all(b > a for a, b in zip(values, values[1:])))
+        self.assertLess(max(b - a for a, b in zip(values, values[1:])), 0.05)  # 途中で急に飛ばない
+
+    def test_background_depends_on_latitude(self):
+        # 同じ値でも、晴れた場所が暖かい緯度では雲、冷たい緯度では晴れになる
+        ir = np.full((360, 720), 73, dtype=np.float32)
+        lats = clouds.target_latitudes(360)
+        ir[lats < -50] = 136
+        gfs = np.zeros((181, 360), dtype=np.float32)
+        # GFS の格子は経度 0 度始まり。経度 -60〜20 度に雲がある
+        gfs[:, 300:] = 1
+        gfs[:, :20] = 1
+        ir[:, 240:400] = 136
+        density = clouds.compose(ir, gfs)
+        self.assertGreater(float(sample(density, -40, 10)), 0.2)
+        self.assertEqual(float(sample(density, -40, -60)), 0.0)
+
+    def test_background_falls_back_without_clear_area(self):
+        ir = np.full((360, 720), 120, dtype=np.float32)
+        gfs = np.ones((181, 360), dtype=np.float32)
+        background = clouds.clear_background(ir, clouds.gfs_to_target(gfs, 720, 360))
+        self.assertAlmostEqual(float(background[180]), 72.0, delta=1)
 
     def test_poles_use_gfs(self):
         ir = np.full((360, 720), np.nan, dtype=np.float32)
@@ -117,8 +158,8 @@ class UpdateTest(unittest.TestCase):
         self.cache = self.root / "cloud-cache"
         self.cache.mkdir()
 
-    def write_previous(self):
-        meta = {"key": "old.nc", "nx": 4, "ny": 2, "valid_time": "2026-11-01T07:00:00+00:00"}
+    def write_previous(self, version=clouds.MAP_VERSION):
+        meta = {"version": version, "key": "old.nc", "nx": 4, "ny": 2, "valid_time": "2026-11-01T07:00:00+00:00"}
         (self.cache / "current-sat.json").write_text(json.dumps(meta), encoding="utf-8")
         (self.cache / "current-sat.bin").write_bytes(bytes(8))
 
@@ -142,6 +183,15 @@ class UpdateTest(unittest.TestCase):
             result = clouds.update_satellite_map()
         get.assert_not_called()
         self.assertFalse(result["stale"])
+
+    def test_old_map_version_is_rebuilt_even_for_same_key(self):
+        self.write_previous(version=clouds.MAP_VERSION - 1)
+        with mock.patch.object(clouds, "latest_key", return_value="old.nc"), mock.patch.object(
+            clouds.httpx, "get", side_effect=httpx.ConnectError("down")
+        ) as get:
+            result = clouds.update_satellite_map()
+        get.assert_called_once()  # 作り直そうとする
+        self.assertTrue(result["stale"])  # 失敗したら古い地図で続ける
 
 
 if __name__ == "__main__":

@@ -119,7 +119,7 @@ void main() {
   // ノイズだけで白い塊ができないようにする
   vec3 warp = vec3(fbm(n * 9.0 + 1.3), fbm(n * 9.0 + 7.1), 0.0) - 0.5;
   float detail = fbm(n * 38.0 + warp * 1.6);
-  float noiseAmount = min(base * 1.6, 0.6) * (1.0 - smoothstep(0.45, 0.95, base));
+  float noiseAmount = min(base * 1.1, 0.32) * (1.0 - smoothstep(0.4, 0.9, base));
   float d = clamp(base + (detail - 0.5) * noiseAmount, 0.0, 1.0);
 
   // 半透明。光の通りにくさは厚みに対して指数的で、縁では視線が雲を長く通るので濃くなる
@@ -128,7 +128,7 @@ void main() {
   opticalDepth *= mix(1.0, pathLength, 0.45);
   // 縁はぼかす。ここで切れると、地球の輪郭が雲の形でギザギザになる
   float limb = smoothstep(0.0, 0.14, dot(n, view));
-  float alpha = (1.0 - exp(-opticalDepth)) * smoothstep(0.015, 0.1, d) * limb;
+  float alpha = (1.0 - exp(-opticalDepth)) * limb;
 
   // 立体感。太陽の方向へ数点たどり、手前にある雲に遮られた分だけ暗くする
   float ndl = dot(n, uSunDir);
