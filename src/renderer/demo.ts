@@ -15,15 +15,16 @@ export interface DemoScene {
 
 export type DemoPlaceKind = 'day' | 'night' | 'city';
 
+// 今の様子を見せたいので、風の場面のほかは雲を出す
 export const DEMO_SCENES: DemoScene[] = [
-  { mode: 'normal', view: 'globe', seconds: 40 },
-  { mode: 'normal', view: 'region', place: 'home', seconds: 40 },
+  { mode: 'weather', view: 'globe', seconds: 40 },
+  { mode: 'weather', view: 'region', place: 'home', seconds: 40 },
   { mode: 'weather', view: 'globe', dayside: true, seconds: 30 },
-  { mode: 'normal', view: 'region', place: 'day', seconds: 40 },
-  { mode: 'normal', view: 'globe', dayside: true, seconds: 25 },
-  { mode: 'normal', view: 'region', place: 'night', seconds: 40 },
+  { mode: 'weather', view: 'region', place: 'day', seconds: 40 },
+  { mode: 'weather', view: 'globe', dayside: true, seconds: 25 },
+  { mode: 'weather', view: 'region', place: 'night', seconds: 40 },
   { mode: 'wind', view: 'globe', seconds: 40 },
-  { mode: 'normal', view: 'region', place: 'city', seconds: 40 },
+  { mode: 'weather', view: 'region', place: 'city', seconds: 40 },
 ];
 
 // 世界の都市。選ばれると、その都市の天気をパネルに出す

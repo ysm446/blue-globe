@@ -33,6 +33,11 @@ test('最近行った場所を避ける', () => {
   assert.equal(recent.length, 5);
 });
 
+test('風の場面のほかは雲を出す', () => {
+  for (const scene of DEMO_SCENES) assert.notEqual(scene.mode, 'normal');
+  assert.equal(DEMO_SCENES.filter((scene) => scene.mode === 'wind').length, 1);
+});
+
 test('どの太陽の位置でも昼と夜の都市が見つかる', () => {
   for (let lon = -180; lon < 180; lon += 15) {
     for (const lat of [-23, 0, 23]) {
