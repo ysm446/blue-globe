@@ -248,7 +248,7 @@ export function renderNews(news: NewsReport): void {
 }
 
 // 左上のパネルを読む順に見せる。値は 15 分ごとにほぼ必ず変わるので、場所が変わったときだけ流す
-const CLOCK_PLACE_ITEMS = 2; // 地名と時刻。天気はその次から現す
+const CLOCK_PLACE_ITEMS = 3; // 地名、時刻、日付。天気はその次から現す
 let clockPlaceName: string | null = null;
 let clockWeatherPlace: string | null = null;
 
@@ -282,6 +282,7 @@ let clockViewTime: Date | null = null; // 過去の時刻を見ている間は�
 
 function updateClock(): void {
   const timeEl = el('clock-time');
+  const dateEl = el('clock-date');
   const shifted = clockOffsetSeconds !== null;
   const now = new Date((clockViewTime?.getTime() ?? Date.now()) + (clockOffsetSeconds ?? 0) * 1000);
   const timeZone = shifted ? 'UTC' : undefined;
@@ -292,8 +293,8 @@ function updateClock(): void {
     weekday: 'short',
     timeZone,
   });
-  const text = `${date} ${time}`;
-  if (timeEl.textContent !== text) timeEl.textContent = text;
+  if (timeEl.textContent !== time) timeEl.textContent = time;
+  if (dateEl.textContent !== date) dateEl.textContent = date;
 }
 
 // 過去の時刻を見ている間は、その時刻を渡す。null で今の時刻に戻す
@@ -314,13 +315,13 @@ export function showClockPlace(location: WeatherLocation | null): void {
   el('clock-place').hidden = !location;
   if (name === clockPlaceName) return;
   // 起動時は時刻がすでに出ているので、地名だけを流す
-  revealInOrder(clockPlaceName === null ? [el('clock-place')] : [el('clock-place'), el('clock-time')]);
+  revealInOrder(clockPlaceName === null ? [el('clock-place')] : [el('clock-place'), el('clock-time'), el('clock-date')]);
   clockPlaceName = name;
 }
 
 export function initNewsView(): void {
   updateClock();
-  revealInOrder([el('clock-time')]);
+  revealInOrder([el('clock-time'), el('clock-date')]);
   window.setInterval(updateClock, 1000);
   // パネルを開いたときや幅が変わったときに描き直す
   new ResizeObserver(drawHourlyLine).observe(el('fold-hourly'));
