@@ -17,7 +17,7 @@ function seededRandom(seed: number): () => number {
 }
 
 // 格子ごとに 1 点を置き、最も近い点までの距離を求める。点の近くほど大きい値にして、丸いかたまりを作る
-function addWorley(out: Float32Array, size: number, cells: number, weight: number, random: () => number): void {
+function* addWorley(out: Float32Array, size: number, cells: number, weight: number, random: () => number): Generator<void> {
   const points = new Float32Array(cells * cells * cells * 3);
   for (let i = 0; i < points.length; i++) points[i] = random();
   const scale = cells / size;
@@ -52,12 +52,15 @@ function addWorley(out: Float32Array, size: number, cells: number, weight: numbe
         out[index++] += (1 - Math.min(1, Math.sqrt(nearest))) * weight;
       }
     }
+    yield;
   }
 }
 
-function layer(size: number, baseCells: number, random: () => number): Float32Array {
+function* layer(size: number, baseCells: number, random: () => number): Generator<void, Float32Array> {
   const out = new Float32Array(size * size * size);
-  OCTAVE_WEIGHTS.forEach((weight, octave) => addWorley(out, size, baseCells * 2 ** octave, weight, random));
+  for (const [octave, weight] of OCTAVE_WEIGHTS.entries()) {
+    yield* addWorley(out, size, baseCells * 2 ** octave, weight, random);
+  }
   return out;
 }
 
@@ -75,11 +78,18 @@ function writeChannel(target: Uint8Array, channel: number, values: Float32Array)
   });
 }
 
-// 1 成分目が大きなかたまり、2 つ目が細かいかたまり
-export function createCloudNoise(size: number = CLOUD_NOISE_SIZE): Uint8Array<ArrayBuffer> {
+// 1 成分目が大きなかたまり、2 つ目が細かいかたまり。描画を止めないよう、1 面ごとに手を止めながら作る
+export function* generateCloudNoise(size: number = CLOUD_NOISE_SIZE): Generator<void, Uint8Array<ArrayBuffer>> {
   const random = seededRandom(20261102);
   const data = new Uint8Array(size * size * size * 2);
-  writeChannel(data, 0, layer(size, SHAPE_CELLS, random));
-  writeChannel(data, 1, layer(size, DETAIL_CELLS, random));
+  writeChannel(data, 0, yield* layer(size, SHAPE_CELLS, random));
+  writeChannel(data, 1, yield* layer(size, DETAIL_CELLS, random));
   return data;
+}
+
+export function createCloudNoise(size: number = CLOUD_NOISE_SIZE): Uint8Array<ArrayBuffer> {
+  const steps = generateCloudNoise(size);
+  let step = steps.next();
+  while (!step.done) step = steps.next();
+  return step.value;
 }

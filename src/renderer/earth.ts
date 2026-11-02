@@ -1,7 +1,7 @@
 // 写実的な地球。地表写真、夜の街明かり、大気の縁、雲の層を描く。
 // 雲は天気モードのときだけ表示し (setCloudsEnabled)、地表より少し高い別の球に載せる。
 // 回すと地面とずれて動くので、ボリューム雲を使わなくても高さが感じられる。
-// 地域ビューで近づくと立体の雲 (volume-clouds.ts) に入れ替える
+// 地球ビューでも地域ビューでも、近づくと立体の雲 (volume-clouds.ts) に入れ替える
 import * as THREE from 'three';
 import { stepFade } from './fade';
 import { CLOUD_SUN_COLOR_GLSL, VALUE_NOISE_GLSL } from './glsl';
@@ -371,16 +371,16 @@ export class RealisticEarth {
 
   // blend は 0 が地球ビュー、1 が地域ビュー。cameraAltitude は地表からのカメラの高さ
   setRegionBlend(blend: number, cameraAltitude: number): void {
-    const altitude = THREE.MathUtils.lerp(CLOUD_ALTITUDE, REGION_CLOUD_ALTITUDE, blend);
+    this.volumeMix = this.volumeEnabled
+      ? 1 - THREE.MathUtils.smoothstep(cameraAltitude, VOLUME_FULL_ALTITUDE, VOLUME_START_ALTITUDE)
+      : 0;
+    // 立体の雲は低いところにあるので、混ざる間は平らな雲も下げる。高いままだと雲が二重に見える
+    const altitude = THREE.MathUtils.lerp(CLOUD_ALTITUDE, REGION_CLOUD_ALTITUDE, Math.max(blend, this.volumeMix));
     this.material.uniforms.uCloudAltitude.value = altitude;
     this.cloudMesh.scale.setScalar((this.radius + altitude) / (this.radius + CLOUD_ALTITUDE));
     this.haze.value = THREE.MathUtils.lerp(1, REGION_HAZE, blend);
     this.atmosphereThinness.value = THREE.MathUtils.lerp(1, REGION_ATMOSPHERE_THINNESS, blend);
     this.material.uniforms.uRegion.value = blend;
-    this.volumeMix = this.volumeEnabled
-      ? THREE.MathUtils.smoothstep(blend, 0.5, 0.95) *
-        (1 - THREE.MathUtils.smoothstep(cameraAltitude, VOLUME_FULL_ALTITUDE, VOLUME_START_ALTITUDE))
-      : 0;
   }
 
   setVolumeCloudsEnabled(enabled: boolean): void {
@@ -394,6 +394,7 @@ export class RealisticEarth {
 
   // 画面を描く前に呼ぶ
   renderVolumeClouds(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera): void {
+    if (this.volumeEnabled && this.cloudFade >= 1) this.volume.prepare(renderer, camera);
     this.volume.render(renderer, camera);
   }
 

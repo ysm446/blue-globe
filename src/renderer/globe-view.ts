@@ -512,6 +512,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (regionView) {
       lonLatToVector3(regionView.lon, regionView.lat, EARTH_SURFACE_RADIUS, shadowFocus);
       earth.setVolumeShadowFocus(shadowFocus, regionView.distance);
+    } else {
+      shadowFocus.copy(camera.position).setLength(EARTH_SURFACE_RADIUS);
+      earth.setVolumeShadowFocus(shadowFocus, cameraAltitude());
     }
     // 風速モードでは粒子の面より上に線を置く必要があるので、元の高さのまま
     const lineRadius = (radius: number): number =>

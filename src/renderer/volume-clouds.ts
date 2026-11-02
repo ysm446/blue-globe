@@ -1,9 +1,9 @@
-// 地域ビューの立体の雲。衛星の雲マップから広がりを、濃さから高さを決め、細かい形はノイズで作る。
+// 近づいたときの立体の雲。衛星の雲マップから広がりを、濃さから高さを決め、細かい形はノイズで作る。
 // 視線に沿って厚みをたどるので重い。解像度を下げて別に描き、それを画面へ重ねる。
 // 地球が唯一の遮るものなので、奥行きのバッファは使わず球との交点を計算で求める。
 // 太陽から見た雲の濃さを画像に焼き込み、地面の影と、遠くの雲が別の雲に落とす影に使う
 import * as THREE from 'three';
-import { CLOUD_NOISE_SIZE, createCloudNoise } from './cloud-noise';
+import { CLOUD_NOISE_SIZE, generateCloudNoise } from './cloud-noise';
 import { needsShadowBake, shadowBasis, shadowHalfSize, type ShadowBake } from './cloud-shadow';
 import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, PIXEL_JITTER_GLSL } from './glsl';
 import type { Vec3 } from './math';
@@ -19,6 +19,7 @@ const WARP_AMOUNT = 0.003; // 雲マップの画素の四角が見えないよ�
 const EXTINCTION = 900; // 地球の半径 1 あたりの光の通りにくさ
 const CLOUD_MAP_TEXEL = (2 * Math.PI) / 4096;
 const SHADOW_MAP_SIZE = 1024;
+const NOISE_MS_PER_FRAME = 3; // ノイズを先に用意するとき、1 フレームで作業する時間
 const SHADOW_STEPS = 40;
 const SHADOW_MIN_STRIDE = 0.00015;
 const FAR_SHADOW_START = 0.003; // 太陽の方向へ歩いて確かめる距離 (約 0.0045) の手前から、焼き込んだ影に引き継ぐ
@@ -159,6 +160,7 @@ uniform float uHaze;
 varying vec2 vUv;
 
 const int MAX_STEPS = 64;
+const float MIN_LAYER_STEPS = 12.0;
 
 // 太陽の方向へたどり、途中の雲に遮られずに届く光の割合を求める
 float sunlightAt(vec3 p) {
@@ -202,7 +204,8 @@ void main() {
   setFootprint(start * uPixelAngle);
 
   // 歩幅の刻みが縞に見えないよう、始点を画素ごとにずらす
-  float stride = clamp(start * 0.002, 0.0002, 0.004);
+  // 層を縦に通る視線は短いので、遠くからでも層の中で一定の歩数を確保する。少ないと雲が粒に見える
+  float stride = clamp(min(start * 0.002, (end - start) / MIN_LAYER_STEPS), 0.0002, 0.004);
   float t = start + stride * pixelJitter();
   float transmit = 1.0;
   vec3 color = vec3(0.0);
@@ -275,6 +278,8 @@ export class VolumeClouds {
   private readonly bufferSize = new THREE.Vector2();
   private readonly clearColor = new THREE.Color();
   private noise: THREE.Data3DTexture | null = null;
+  private noiseSteps: Generator<void, Uint8Array<ArrayBuffer>> | null = null;
+  private prepared = false;
   private baked: ShadowBake | null = null;
   private cloudVersion = 0;
   private focus: Vec3 = [0, 0, 1];
@@ -375,10 +380,17 @@ export class VolumeClouds {
     return this.baked !== null;
   }
 
-  private ensureNoise(): void {
+  // 期限までに作り終わらなければ、次に呼ばれたときに続きから作る
+  private buildNoise(deadline = Infinity): void {
     if (this.noise) return;
+    this.noiseSteps ??= generateCloudNoise();
+    let step = this.noiseSteps.next();
+    while (!step.done) {
+      if (performance.now() >= deadline) return;
+      step = this.noiseSteps.next();
+    }
     const texture = new THREE.Data3DTexture(
-      createCloudNoise(),
+      step.value,
       CLOUD_NOISE_SIZE,
       CLOUD_NOISE_SIZE,
       CLOUD_NOISE_SIZE,
@@ -395,6 +407,21 @@ export class VolumeClouds {
     texture.needsUpdate = true;
     this.noise = texture;
     this.marchMaterial.uniforms.uNoise.value = texture;
+  }
+
+  // 寄る操作の途中で止まらないよう、ノイズとシェーダーを先に用意する。終わるまで毎フレーム呼ぶ
+  prepare(renderer: THREE.WebGLRenderer, camera: THREE.Camera): void {
+    if (this.prepared) return;
+    this.buildNoise(performance.now() + NOISE_MS_PER_FRAME);
+    if (!this.noise) return;
+    this.prepared = true;
+    renderer.initTexture(this.noise);
+    // シェーダーは描く先によって作り分けられるので、実際に描く先を指定しておく
+    const previousTarget = renderer.getRenderTarget();
+    renderer.setRenderTarget(this.target);
+    void renderer.compileAsync(this.marchScene, camera);
+    void renderer.compileAsync(this.bakeScene, camera);
+    renderer.setRenderTarget(previousTarget);
   }
 
   private bakeShadow(renderer: THREE.WebGLRenderer, camera: THREE.Camera, bake: ShadowBake): void {
@@ -415,7 +442,7 @@ export class VolumeClouds {
   // 画面を描く前に毎フレーム呼ぶ。見えていないときは何もしない
   render(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera): void {
     if (!this.mesh.visible) return;
-    this.ensureNoise();
+    this.buildNoise();
     renderer.getDrawingBufferSize(this.bufferSize);
     const width = Math.max(1, Math.ceil(this.bufferSize.x * RESOLUTION_SCALE));
     const height = Math.max(1, Math.ceil(this.bufferSize.y * RESOLUTION_SCALE));
