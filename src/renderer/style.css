@@ -930,6 +930,21 @@ body.demo-idle * {
   color: var(--warn);
 }
 
+#layer-info.source-only {
+  width: auto;
+  max-width: 280px;
+  padding: 6px 12px;
+}
+
+#layer-info.source-only .legend-bar,
+#layer-info.source-only .legend-scale {
+  display: none;
+}
+
+#layer-info.source-only #layer-source {
+  margin-top: 0;
+}
+
 /* ------------------------------------------------ スクリーンショットの通知 */
 
 #screenshot-toast {

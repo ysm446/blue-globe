@@ -10,7 +10,6 @@ const LAYER_CHECK_MS = 60_000; // 取得した時刻は起動時刻とずれる�
 const WIND_LEGEND = `linear-gradient(to right, ${WIND_COLOR_STOPS.map(
   ([speed, [r, g, b]]) => `rgb(${r} ${g} ${b}) ${(speed / RAMP_MAX_SPEED) * 100}%`,
 ).join(', ')})`;
-const CLOUD_LEGEND = 'linear-gradient(to right, rgb(240 245 255 / 0.08), rgb(240 245 255))';
 
 interface LayerCaption {
   text: string;
@@ -99,10 +98,10 @@ export function initMapLayers(globe: Pick<GlobeController, 'setClouds' | 'setWin
     const info = el('layer-info');
     info.hidden = mode === 'normal';
     if (mode === 'normal') return;
-    el('legend-bar').style.background = mode === 'wind' ? WIND_LEGEND : CLOUD_LEGEND;
-    el('legend-min').textContent = mode === 'wind' ? '0' : '薄い';
-    el('legend-label').textContent = mode === 'wind' ? '風速 m/s' : '雲';
-    el('legend-max').textContent = mode === 'wind' ? String(RAMP_MAX_SPEED) : '厚い';
+    // 雲は見ればわかるので凡例を出さず、出典だけにする
+    info.classList.toggle('source-only', mode === 'weather');
+    el('legend-bar').style.background = WIND_LEGEND;
+    el('legend-max').textContent = String(RAMP_MAX_SPEED);
     const caption = layers[mode].caption;
     const source = el('layer-source');
     source.textContent = caption?.text ?? 'データを取得しています…';
