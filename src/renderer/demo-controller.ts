@@ -113,7 +113,7 @@ export function initDemo(
     const target = event.target instanceof Element ? event.target : null;
     if (target?.closest('#panels, #screenshot-toast')) return;
     if (target?.closest('#start-demo')) stoppedByStartButton = true; // 続く click で再開しない
-    // 左上や右上のボタンはそのまま働かせる。地球は触った操作をドラッグとして始めない
+    // 右上や右下のボタンはそのまま働かせる。地球は触った操作をドラッグとして始めない
     if (!(event instanceof KeyboardEvent) && target?.closest('button')) {
       stop();
       return;
