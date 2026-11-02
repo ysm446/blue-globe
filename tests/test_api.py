@@ -110,10 +110,10 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["glint_strength"], 1.3)
 
     def test_panels_default_to_open(self):
-        self.assertEqual(self.client.get("/settings").json()["panels"], {"news": True, "hourly": True, "weekly": True})
+        self.assertEqual(self.client.get("/settings").json()["panels"], {"news": True, "hourly": True, "weekly": True, "details": True})
 
     def test_panels_are_saved(self):
-        panels = {"news": True, "hourly": False, "weekly": False}
+        panels = {"news": True, "hourly": False, "weekly": False, "details": False}
         self.assertEqual(self.client.put("/settings/panels", json=panels).status_code, 200)
         self.assertEqual(self.client.get("/settings").json()["panels"], panels)
 
@@ -122,7 +122,7 @@ class SettingsApiTest(unittest.TestCase):
 
     def test_old_settings_file_gets_new_panels_defaults(self):
         config.save_settings({"location": None, "panels": {"weekly": False}})
-        self.assertEqual(self.client.get("/settings").json()["panels"], {"news": True, "hourly": True, "weekly": False})
+        self.assertEqual(self.client.get("/settings").json()["panels"], {"news": True, "hourly": True, "weekly": False, "details": True})
 
     def test_other_settings_keep_graphics(self):
         self.client.put("/settings/graphics", json=self.GRAPHICS)

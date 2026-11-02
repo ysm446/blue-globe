@@ -66,6 +66,7 @@ class PanelsUpdate(BaseModel):
     news: bool
     hourly: bool
     weekly: bool
+    details: bool
 
 
 class GraphicsUpdate(BaseModel):

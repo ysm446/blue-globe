@@ -49,6 +49,7 @@ interface PanelSettings {
   news: boolean; // true で開いている
   hourly: boolean;
   weekly: boolean;
+  details: boolean;
 }
 
 interface AppSettings {

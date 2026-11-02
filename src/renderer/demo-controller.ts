@@ -111,7 +111,7 @@ export function initDemo(
   function onInput(event: Event): void {
     if (event instanceof KeyboardEvent && event.key === 'F12') return;
     const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest('#panels, #screenshot-toast')) return;
+    if (target?.closest('#panels, #detail-panel, #screenshot-toast')) return;
     if (target?.closest('#start-demo')) stoppedByStartButton = true; // 続く click で再開しない
     // 右上や右下のボタンはそのまま働かせる。地球は触った操作をドラッグとして始めない
     if (!(event instanceof KeyboardEvent) && target?.closest('button')) {

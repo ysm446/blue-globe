@@ -44,18 +44,32 @@ function initScreenshotToast(): void {
   el('screenshot-toast-close').addEventListener('click', hide);
 }
 
+const PANELS_RIGHT_MIN_WIDTH = 901; // これより狭い画面ではパネルを下に置く (style.css と合わせる)
+// これ以下の高さでは、左下の予報が左上のパネルに重なるので右の列へ移す
+const PANELS_RIGHT_HEIGHT = 870;
+const PANELS_RIGHT_HEIGHT_DETAILS_CLOSED = 766;
+
 // パネルの開閉。閉じた状態は次に起動したときも残す
 function initPanelFolds(): (panels: PanelSettings) => void {
   const folds: Record<keyof PanelSettings, HTMLDetailsElement> = {
     news: el<HTMLDetailsElement>('fold-news'),
     hourly: el<HTMLDetailsElement>('fold-hourly'),
     weekly: el<HTMLDetailsElement>('fold-weekly'),
+    details: el<HTMLDetailsElement>('fold-details'),
   };
   const read = (): PanelSettings => ({
     news: folds.news.open,
     hourly: folds.hourly.open,
     weekly: folds.weekly.open,
+    details: folds.details.open,
   });
+  function syncPanelColumn(): void {
+    const limit = folds.details.open ? PANELS_RIGHT_HEIGHT : PANELS_RIGHT_HEIGHT_DETAILS_CLOSED;
+    document.body.classList.toggle('panels-right', window.innerWidth >= PANELS_RIGHT_MIN_WIDTH && window.innerHeight <= limit);
+  }
+  window.addEventListener('resize', syncPanelColumn);
+  folds.details.addEventListener('toggle', syncPanelColumn);
+  syncPanelColumn();
   let saved = JSON.stringify(read());
   let saving: Promise<unknown> = Promise.resolve();
   for (const fold of Object.values(folds)) {
@@ -74,6 +88,7 @@ function initPanelFolds(): (panels: PanelSettings) => void {
     folds.news.open = panels.news;
     folds.hourly.open = panels.hourly;
     folds.weekly.open = panels.weekly;
+    folds.details.open = panels.details;
   };
 }
 

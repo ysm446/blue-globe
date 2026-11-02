@@ -27,7 +27,7 @@ DEFAULT_SETTINGS = {
         "region_detail": True,
         "volume_clouds": True,
     },
-    "panels": {"news": True, "hourly": True, "weekly": True},  # True で開いている
+    "panels": {"news": True, "hourly": True, "weekly": True, "details": True},  # True で開いている
 }
 
 
