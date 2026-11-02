@@ -33,9 +33,8 @@ test('最近行った場所を避ける', () => {
   assert.equal(recent.length, 5);
 });
 
-test('風の場面のほかは雲を出す', () => {
-  for (const scene of DEMO_SCENES) assert.notEqual(scene.mode, 'normal');
-  assert.equal(DEMO_SCENES.filter((scene) => scene.mode === 'wind').length, 1);
+test('すべての場面で雲を出す', () => {
+  for (const scene of DEMO_SCENES) assert.equal(scene.mode, 'weather');
 });
 
 test('どの太陽の位置でも昼と夜の都市が見つかる', () => {
@@ -48,8 +47,7 @@ test('どの太陽の位置でも昼と夜の都市が見つかる', () => {
   }
 });
 
-test('風速モードに地域ビューがなく、地域ビューの場面が続かない', () => {
-  assert.ok(DEMO_SCENES.every((scene) => !(scene.mode === 'wind' && scene.view === 'region')));
+test('地域ビューの場面が続かない', () => {
   DEMO_SCENES.forEach((scene, index) => {
     const next = DEMO_SCENES[(index + 1) % DEMO_SCENES.length];
     assert.ok(!(scene.view === 'region' && next.view === 'region'));

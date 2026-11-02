@@ -15,16 +15,16 @@ export interface DemoScene {
 
 export type DemoPlaceKind = 'day' | 'night' | 'city';
 
-// 今の様子を見せたいので、風の場面のほかは雲を出す
+// 今の様子を見せたいので、すべての場面で雲を出す
 export const DEMO_SCENES: DemoScene[] = [
-  { mode: 'weather', view: 'globe', seconds: 40 },
-  { mode: 'weather', view: 'region', place: 'home', seconds: 40 },
-  { mode: 'weather', view: 'globe', dayside: true, seconds: 30 },
-  { mode: 'weather', view: 'region', place: 'day', seconds: 40 },
-  { mode: 'weather', view: 'globe', dayside: true, seconds: 25 },
-  { mode: 'weather', view: 'region', place: 'night', seconds: 40 },
-  { mode: 'wind', view: 'globe', seconds: 40 },
-  { mode: 'weather', view: 'region', place: 'city', seconds: 40 },
+  { mode: 'weather', view: 'globe', seconds: 20 },
+  { mode: 'weather', view: 'region', place: 'home', seconds: 20 },
+  { mode: 'weather', view: 'globe', dayside: true, seconds: 15 },
+  { mode: 'weather', view: 'region', place: 'day', seconds: 20 },
+  { mode: 'weather', view: 'globe', dayside: true, seconds: 15 },
+  { mode: 'weather', view: 'region', place: 'night', seconds: 20 },
+  { mode: 'weather', view: 'globe', dayside: true, seconds: 15 },
+  { mode: 'weather', view: 'region', place: 'city', seconds: 20 },
 ];
 
 // 世界の都市。デモの行き先と、地球儀のラベルに使う。ラベルが重なるときは前の都市を優先する
