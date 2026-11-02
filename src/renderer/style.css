@@ -307,11 +307,9 @@ a:hover {
   pointer-events: none;
 }
 
-/* 時刻を小さくしてもパネルの幅は保ち、スライダーを操作しやすくする */
 #time-head {
   display: flex;
   justify-content: space-between;
-  min-width: 258px;
   align-items: baseline;
   gap: 12px;
 }

@@ -10,7 +10,7 @@ import type { RegionDetail } from './region-detail';
 import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
 import { BAKED_SHADOW_GLSL, CLOUD_UV_GLSL, VolumeClouds } from './volume-clouds';
 
-export const CLOUD_ALTITUDE = 0.012; // 実際より高い。視差が見える程度に誇張している
+export const CLOUD_ALTITUDE = 0.008; // 実際より高い。視差が見える程度に誇張している
 const OPEN_SEA_COLOR = ['0.0006', '0.0015', '0.007']; // 地球ビューの地表の画像の沖の色 (線形)。世界中でほぼ同じ
 const COAST_MIP_LEVEL = 2; // 水域のマスクの縮小段階。1 画素が約 20km で、この範囲を海岸の近くとして扱う
 const COAST_TEXEL_U = 4 / 8192; // 縮小段階での 1 画素の大きさ
