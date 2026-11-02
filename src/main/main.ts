@@ -323,10 +323,14 @@ function createWindow(): void {
   });
   win.webContents.on('will-navigate', (event) => event.preventDefault());
 
-  // F12 は物理ピクセルのまま、Shift+F12 は表示倍率 100% 相当の大きさで保存する
-  win.webContents.on('before-input-event', (_event, input) => {
-    if (input.type === 'keyDown' && input.key === 'F12' && !input.isAutoRepeat) {
-      void captureScreenshot(win, input.shift);
+  win.webContents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' || input.isAutoRepeat) return;
+    // F12 は物理ピクセルのまま、Shift+F12 は表示倍率 100% 相当の大きさで保存する
+    if (input.key === 'F12') void captureScreenshot(win, input.shift);
+    // Ctrl+R で画面だけを読み直す。メニューを外しているので Electron の標準の操作は効かない
+    if (input.control && input.key.toLowerCase() === 'r') {
+      event.preventDefault();
+      win.webContents.reload();
     }
   });
 }

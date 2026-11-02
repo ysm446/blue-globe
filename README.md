@@ -31,6 +31,8 @@ npm start       # 起動
 npm test        # ニュース文の単体テスト
 ```
 
+画面側(`src/renderer/`)の変更は、`npm run build:renderer` のあとアプリで Ctrl+R を押すと、再起動せずに反映できます。`npm run watch:renderer` を動かしておくと、保存のたびに自動でビルドされます。`src/main/` の変更は `npm run build` と再起動が必要です。
+
 構成と方針は [docs/plan/plan.md](docs/plan/plan.md)、進捗は [docs/plan/progress.md](docs/plan/progress.md) を参照してください。
 
 ## 保存先

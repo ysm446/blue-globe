@@ -6,6 +6,7 @@
   "private": true,
   "scripts": {
     "build:renderer": "vite build",
+    "watch:renderer": "vite build --watch",
     "build:main": "esbuild src/main/main.ts src/main/preload.ts --bundle --platform=node --external:electron --outdir=dist --format=cjs",
     "build": "tsc --noEmit && npm run build:renderer && npm run build:main",
     "start": "electron .",
