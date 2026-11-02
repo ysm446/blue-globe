@@ -25,6 +25,9 @@ const REGION_ATMOSPHERE_THINNESS = 3; // 大気の層も地球全体を見るた
 // 立体の雲は遠くから見ても差が出ないので、この高さより上では平らな雲に戻す
 const VOLUME_FULL_ALTITUDE = 0.6;
 const VOLUME_START_ALTITUDE = 0.85;
+const SHADOW_ON_HAZE = 0.8; // 立体の雲の影が大気の青を暗くする割合
+const SHADOW_LIFT = 0.006; // 立体の雲の影をずらすために足す高さ (約 38km)
+const SHADOW_MIN_SLOPE = 0.5; // 太陽が真上に近くても、この傾きの分は影をずらす
 
 const VS = /* glsl */ `
 varying vec3 vPos;
@@ -64,6 +67,11 @@ uniform sampler2D uDetailNight;
 uniform sampler2D uDetailWater;
 uniform sampler2D uDetailMask;
 uniform vec2 uDetailCenter;
+uniform sampler2D uBakedShadow;
+uniform vec3 uBakeCenter;
+uniform vec3 uBakeU;
+uniform vec3 uBakeV;
+uniform float uBakedShadowMix;
 varying vec3 vPos;
 varying vec2 vUv;
 ${CLOUD_SAMPLING_GLSL}
@@ -124,6 +132,19 @@ void main() {
     float reach = min(uCloudAltitude * sinZenith / max(ndl, 0.12), 0.08);
     float caster = cloudAt(normalize(n + toSun * reach), dFdx(vUv), dFdy(vUv));
     shadow = smoothstep(0.15, 0.75, caster) * uShadowStrength * uShadowAmount;
+    // 立体の雲の影。太陽から見た雲の濃さの画像から引く。範囲の外は上の影のまま
+    if (uBakedShadowMix > 0.0) {
+      // 実際の高さのままだと影はほぼ雲の真下に隠れるので、雲がもっと高いものとして影をずらす
+      float lift = min(${SHADOW_LIFT.toFixed(4)} * max(sinZenith, ${SHADOW_MIN_SLOPE.toFixed(1)}) / max(ndl, 0.12), 0.08);
+      vec3 fromCenter = vPos + toSun * lift - uBakeCenter;
+      vec2 bakeUv = vec2(dot(fromCenter, uBakeU), dot(fromCenter, uBakeV)) * 0.5 + 0.5;
+      vec2 edge = abs(bakeUv - 0.5) * 2.0;
+      float inside = smoothstep(1.0, 0.9, max(edge.x, edge.y));
+      // 雲の陰に隠れない部分が少ないので、スライダーの同じ値でも平らな雲の影より濃くする
+      float strength = 1.0 - pow(1.0 - uShadowStrength, 1.5);
+      float baked = (1.0 - textureLod(uBakedShadow, bakeUv, 0.0).r) * strength * uShadowAmount;
+      shadow = mix(shadow, baked, inside * uBakedShadowMix);
+    }
   }
 
   vec3 color = day * 1.5 * light * (1.0 - shadow);
@@ -152,8 +173,10 @@ void main() {
 
   // 地表から見える大気 (縁ほど青い)。昼側だけ
   float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.2);
-  color += vec3(0.22, 0.48, 1.0) * fresnel * smoothstep(-0.15, 0.45, ndl) * 1.2 * uHaze;
-  color += vec3(0.07, 0.16, 0.34) * light * 0.35 * uHaze;
+  // 海の色はほとんどがこの青なので、地表の色だけを暗くしても海には影が見えない。立体の雲の影はこの青も暗くする
+  float hazeShade = 1.0 - shadow * uBakedShadowMix * ${SHADOW_ON_HAZE.toFixed(1)};
+  color += vec3(0.22, 0.48, 1.0) * fresnel * smoothstep(-0.15, 0.45, ndl) * 1.2 * uHaze * hazeShade;
+  color += vec3(0.07, 0.16, 0.34) * light * 0.35 * uHaze * hazeShade;
 
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
@@ -296,6 +319,7 @@ export class RealisticEarth {
         uDetailWater: { value: null },
         uDetailMask: { value: null },
         uDetailCenter: { value: new THREE.Vector2() },
+        uBakedShadowMix: { value: 0 },
         uSunDir: { value: this.sunDir },
       },
       vertexShader: VS,
@@ -325,6 +349,7 @@ export class RealisticEarth {
 
     this.volume = new VolumeClouds(radius, this.sunDir, this.haze);
     this.group.add(this.volume.mesh);
+    Object.assign(this.material.uniforms, this.volume.bakeUniforms);
 
     this.group.add(
       new THREE.Mesh(
@@ -368,6 +393,11 @@ export class RealisticEarth {
 
   setVolumeCloudsEnabled(enabled: boolean): void {
     this.volumeEnabled = enabled;
+  }
+
+  // 立体の雲の影を焼く範囲の中心にする地表の点と、そこからカメラまでの距離
+  setVolumeShadowFocus(center: THREE.Vector3, distance: number): void {
+    this.volume.setShadowFocus(center, distance);
   }
 
   // 画面を描く前に呼ぶ
@@ -442,5 +472,6 @@ export class RealisticEarth {
     this.cloudMaterial.uniforms.uFade.value = flat;
     this.volume.setAmount(amount * this.volumeMix);
     this.material.uniforms.uShadowAmount.value = amount;
+    this.material.uniforms.uBakedShadowMix.value = this.volume.shadowReady ? this.volumeMix : 0;
   }
 }

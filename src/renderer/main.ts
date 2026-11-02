@@ -496,10 +496,15 @@ function initGlobe() {
     camera.updateProjectionMatrix();
   }
 
+  const shadowFocus = new THREE.Vector3();
   function updateRegionBlend(dt: number): void {
     const goal = regionView && !regionFlight?.leaving ? 1 : 0;
     regionBlend += (goal - regionBlend) * (1 - Math.exp(-dt / REGION_BLEND_SECONDS));
     earth.setRegionBlend(regionBlend, camera.position.length() - GLOBE_RADIUS);
+    if (regionView) {
+      lonLatToVector3(regionView.lon, regionView.lat, EARTH_SURFACE_RADIUS, shadowFocus);
+      earth.setVolumeShadowFocus(shadowFocus, regionView.distance);
+    }
     // 風速モードでは粒子の面より上に線を置く必要があるので、元の高さのまま
     const lineRadius = (radius: number): number =>
       THREE.MathUtils.lerp(radius, mode === 'wind' ? radius : REGION_LINE_RADIUS, regionBlend) / radius;

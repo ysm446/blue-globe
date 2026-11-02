@@ -1,8 +1,10 @@
 // 地域ビューの立体の雲。衛星の雲マップから広がりを、濃さから高さを決め、細かい形はノイズで作る。
 // 視線に沿って厚みをたどるので重い。解像度を下げて別に描き、それを画面へ重ねる。
-// 地球が唯一の遮るものなので、奥行きのバッファは使わず球との交点を計算で求める
+// 地球が唯一の遮るものなので、奥行きのバッファは使わず球との交点を計算で求める。
+// 太陽から見た雲の濃さを画像に焼き込み、地面の影と、遠くの雲が別の雲に落とす影に使う
 import * as THREE from 'three';
 import { CLOUD_NOISE_SIZE, createCloudNoise } from './cloud-noise';
+import { needsShadowBake, shadowBasis, shadowHalfSize, type ShadowBake, type Vec3 } from './cloud-shadow';
 
 const RESOLUTION_SCALE = 0.5;
 const CLOUD_BASE = 0.0005; // 約 3km
@@ -14,6 +16,12 @@ const WARP_PERIOD = 0.02;
 const WARP_AMOUNT = 0.003; // 雲マップの画素の四角が見えないよう、引く位置を約 10km までずらす
 const EXTINCTION = 900; // 地球の半径 1 あたりの光の通りにくさ
 const CLOUD_MAP_TEXEL = (2 * Math.PI) / 4096;
+const SHADOW_MAP_SIZE = 1024;
+const SHADOW_STEPS = 40;
+const SHADOW_MIN_STRIDE = 0.00015;
+const FAR_SHADOW_START = 0.003; // 太陽の方向へ歩いて確かめる距離 (約 0.0045) の手前から、焼き込んだ影に引き継ぐ
+const FAR_SHADOW_FULL = 0.0055;
+const NO_CLOUD_DEPTH = -2; // 雲がない画素の深さ。どの点よりも地球の側にして、影を落とさない
 
 // 雲マップは左端が経度 -180 度、1 行目が北端
 export const CLOUD_UV_GLSL = /* glsl */ `
@@ -32,29 +40,31 @@ void main() {
 }
 `;
 
-const MARCH_FS = /* glsl */ `
+// 雲を描く処理と、影を焼く処理で同じ形を使う
+const CLOUD_SHAPE_GLSL = /* glsl */ `
 precision highp float;
 precision highp sampler3D;
 uniform sampler2D uCloud;
 uniform sampler3D uNoise;
-uniform mat4 uViewToWorld;
 uniform vec3 uSunDir;
 uniform float uRadius;
-uniform float uPixelAngle;
-uniform float uAmount;
-uniform float uHaze;
-varying vec2 vUv;
 ${CLOUD_UV_GLSL}
 
 const float BASE = ${CLOUD_BASE.toFixed(5)};
 const float TOP = ${CLOUD_TOP.toFixed(5)};
 const float SIGMA = ${EXTINCTION.toFixed(1)};
-const int MAX_STEPS = 64;
 
 float cloudLod;
 float shapeLod;
 float detailLod;
 float columnTop; // 最後に調べた点の雲頂の高さ (0〜1)
+
+// 遠いほど 1 画素が広いので、粗いノイズで足りる
+void setFootprint(float footprint) {
+  cloudLod = max(log2(footprint / ${CLOUD_MAP_TEXEL.toFixed(6)}), 0.0);
+  shapeLod = max(log2(footprint * ${(CLOUD_NOISE_SIZE / SHAPE_PERIOD).toFixed(1)}), 0.0);
+  detailLod = max(log2(footprint * ${(CLOUD_NOISE_SIZE / DETAIL_PERIOD).toFixed(1)}), 0.0);
+}
 
 // 球との交点。当たらなければ x が y より大きい
 vec2 hitSphere(vec3 origin, vec3 ray, float radius) {
@@ -89,6 +99,62 @@ float densityAt(vec3 p, bool withDetail) {
   return body * mix(0.3, 1.0, smoothstep(0.0, 0.6, cover)); // 薄い雲は地面が透ける
 }
 
+float pixelJitter() {
+  return fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
+}
+`;
+
+// 太陽に垂直な面の各画素から、太陽の反対へ雲を通り抜ける。
+// 1 つ目の成分は通り抜けた光の割合、2 つ目は最初に雲に当たった位置 (太陽の方向の座標)
+const BAKE_FS = /* glsl */ `
+${CLOUD_SHAPE_GLSL}
+uniform vec3 uBakeCenter;
+uniform vec3 uBakeAxisU;
+uniform vec3 uBakeAxisV;
+uniform float uBakeFootprint;
+varying vec2 vUv;
+
+void main() {
+  vec2 plane = vUv * 2.0 - 1.0;
+  vec3 origin = uBakeCenter + uBakeAxisU * plane.x + uBakeAxisV * plane.y + uSunDir * 2.0;
+  vec3 ray = -uSunDir;
+  vec2 shell = hitSphere(origin, ray, uRadius + TOP);
+  if (shell.x > shell.y) {
+    gl_FragColor = vec4(1.0, ${NO_CLOUD_DEPTH.toFixed(1)}, 0.0, 1.0);
+    return;
+  }
+  vec2 ground = hitSphere(origin, ray, uRadius + BASE);
+  float end = ground.x <= ground.y ? ground.x : shell.y;
+  setFootprint(uBakeFootprint);
+
+  float stride = max((end - shell.x) / ${SHADOW_STEPS.toFixed(1)}, ${SHADOW_MIN_STRIDE.toFixed(5)});
+  float t = shell.x + stride * pixelJitter();
+  float tau = 0.0;
+  float front = ${NO_CLOUD_DEPTH.toFixed(1)};
+  for (int i = 0; i < ${SHADOW_STEPS} && t < end && tau < 6.0; i++) {
+    vec3 p = origin + ray * t;
+    tau += densityAt(p, false) * SIGMA * stride;
+    if (front == ${NO_CLOUD_DEPTH.toFixed(1)} && tau > 0.1) front = dot(p - uBakeCenter, uSunDir);
+    t += stride;
+  }
+  gl_FragColor = vec4(exp(-tau), front, 0.0, 1.0);
+}
+`;
+
+const MARCH_FS = /* glsl */ `
+${CLOUD_SHAPE_GLSL}
+uniform mat4 uViewToWorld;
+uniform float uPixelAngle;
+uniform float uAmount;
+uniform float uHaze;
+uniform sampler2D uBakedShadow;
+uniform vec3 uBakeCenter;
+uniform vec3 uBakeU;
+uniform vec3 uBakeV;
+varying vec2 vUv;
+
+const int MAX_STEPS = 64;
+
 // 太陽の方向へたどり、途中の雲に遮られずに届く光の割合を求める
 float sunlightAt(vec3 p) {
   float depth = 0.0;
@@ -104,6 +170,19 @@ float sunlightAt(vec3 p) {
   return max(exp(-tau), 0.45 * exp(-tau * 0.25));
 }
 
+// たどった距離より遠くの雲が落とす影。太陽が低いと、高い雲の影が遠くの雲に届く
+float farShadowAt(vec3 p) {
+  vec3 fromCenter = p - uBakeCenter;
+  vec2 uv = vec2(dot(fromCenter, uBakeU), dot(fromCenter, uBakeV)) * 0.5 + 0.5;
+  vec2 edge = abs(uv - 0.5) * 2.0;
+  float inside = smoothstep(1.0, 0.9, max(edge.x, edge.y));
+  if (inside <= 0.0) return 1.0;
+  vec2 baked = textureLod(uBakedShadow, uv, 0.0).rg;
+  float below = baked.g - dot(fromCenter, uSunDir);
+  float occluded = smoothstep(${FAR_SHADOW_START.toFixed(4)}, ${FAR_SHADOW_FULL.toFixed(4)}, below);
+  return mix(1.0, max(baked.r, 0.45), occluded * inside);
+}
+
 void main() {
   vec4 far = uViewToWorld * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
   vec3 origin = cameraPosition;
@@ -116,17 +195,11 @@ void main() {
   float start = max(shell.x, 0.0);
   vec2 ground = hitSphere(origin, ray, uRadius + BASE);
   float end = ground.x <= ground.y && ground.x > 0.0 ? ground.x : shell.y;
-
-  // 遠いほど 1 画素が広いので、粗いノイズと大きな歩幅で足りる
-  float footprint = start * uPixelAngle;
-  cloudLod = max(log2(footprint / ${CLOUD_MAP_TEXEL.toFixed(6)}), 0.0);
-  shapeLod = max(log2(footprint * ${(CLOUD_NOISE_SIZE / SHAPE_PERIOD).toFixed(1)}), 0.0);
-  detailLod = max(log2(footprint * ${(CLOUD_NOISE_SIZE / DETAIL_PERIOD).toFixed(1)}), 0.0);
+  setFootprint(start * uPixelAngle);
 
   // 歩幅の刻みが縞に見えないよう、始点を画素ごとにずらす
-  float jitter = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
   float stride = clamp(start * 0.002, 0.0002, 0.004);
-  float t = start + stride * jitter;
+  float t = start + stride * pixelJitter();
   float transmit = 1.0;
   vec3 color = vec3(0.0);
   for (int i = 0; i < MAX_STEPS && t < end && transmit > 0.01; i++) {
@@ -141,7 +214,7 @@ void main() {
       float dayLight = smoothstep(-0.06, 0.5, ndl);
       float dusk = smoothstep(-0.08, 0.02, ndl) * (1.0 - smoothstep(0.02, 0.28, ndl));
       vec3 sunColor = mix(vec3(1.0, 0.99, 0.97), vec3(1.0, 0.6, 0.36), dusk * 0.8);
-      float sunlight = dayLight > 0.0 ? sunlightAt(p) : 0.0;
+      float sunlight = dayLight > 0.0 ? sunlightAt(p) * farShadowAt(p) : 0.0;
       // 地球ビューの雲と同じ色合い。影の部分は黒くせず、空の光を受けた青灰色にする
       // 低いところほど周りの雲に光を遮られる。厚い雲の上面の起伏は、主にこの差で見える
       vec3 lit = mix(vec3(0.26, 0.31, 0.42), vec3(0.86), sunlight) * mix(0.48, 1.1, smoothstep(0.1, 0.85, h));
@@ -182,19 +255,41 @@ void main() {
 export class VolumeClouds {
   // 雲の球の代わりに画面全体へ重ねる面。地球の後ろへ描かれないよう、深度は見ない
   readonly mesh: THREE.Mesh;
+  // 地面の影を引くために、地球の描画と共有する
+  readonly bakeUniforms = {
+    uBakedShadow: { value: null as THREE.Texture | null },
+    uBakeCenter: { value: new THREE.Vector3() },
+    uBakeU: { value: new THREE.Vector3() }, // 範囲の端で 1 になるよう、範囲の大きさで割ってある
+    uBakeV: { value: new THREE.Vector3() },
+  };
+  private readonly sunDir: THREE.Vector3;
   private readonly marchScene = new THREE.Scene();
   private readonly marchMaterial: THREE.ShaderMaterial;
   private readonly compositeMaterial: THREE.ShaderMaterial;
   private readonly target: THREE.WebGLRenderTarget;
+  private readonly bakeScene = new THREE.Scene();
+  private readonly bakeMaterial: THREE.ShaderMaterial;
+  private readonly bakeTarget: THREE.WebGLRenderTarget;
   private readonly bufferSize = new THREE.Vector2();
   private readonly clearColor = new THREE.Color();
   private noise: THREE.Data3DTexture | null = null;
+  private baked: ShadowBake | null = null;
+  private cloudVersion = 0;
+  private focus: Vec3 = [0, 0, 1];
+  private focusDistance = 1;
 
   constructor(radius: number, sunDir: THREE.Vector3, haze: { value: number }) {
+    this.sunDir = sunDir;
     this.target = new THREE.WebGLRenderTarget(1, 1, {
       type: THREE.HalfFloatType,
       depthBuffer: false,
     });
+    this.bakeTarget = new THREE.WebGLRenderTarget(SHADOW_MAP_SIZE, SHADOW_MAP_SIZE, {
+      type: THREE.HalfFloatType,
+      format: THREE.RGFormat,
+      depthBuffer: false,
+    });
+    this.bakeUniforms.uBakedShadow.value = this.bakeTarget.texture;
     const quad = new THREE.PlaneGeometry(2, 2);
     this.marchMaterial = new THREE.ShaderMaterial({
       uniforms: {
@@ -206,6 +301,7 @@ export class VolumeClouds {
         uPixelAngle: { value: 0 },
         uAmount: { value: 0 },
         uHaze: haze,
+        ...this.bakeUniforms,
       },
       vertexShader: FULLSCREEN_VS,
       fragmentShader: MARCH_FS,
@@ -216,6 +312,27 @@ export class VolumeClouds {
     const marchMesh = new THREE.Mesh(quad, this.marchMaterial);
     marchMesh.frustumCulled = false;
     this.marchScene.add(marchMesh);
+
+    this.bakeMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uCloud: this.marchMaterial.uniforms.uCloud,
+        uNoise: this.marchMaterial.uniforms.uNoise,
+        uSunDir: { value: sunDir },
+        uRadius: { value: radius },
+        uBakeCenter: this.bakeUniforms.uBakeCenter,
+        uBakeAxisU: { value: new THREE.Vector3() },
+        uBakeAxisV: { value: new THREE.Vector3() },
+        uBakeFootprint: { value: 0 },
+      },
+      vertexShader: FULLSCREEN_VS,
+      fragmentShader: BAKE_FS,
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.NoBlending,
+    });
+    const bakeMesh = new THREE.Mesh(quad, this.bakeMaterial);
+    bakeMesh.frustumCulled = false;
+    this.bakeScene.add(bakeMesh);
 
     this.compositeMaterial = new THREE.ShaderMaterial({
       uniforms: {
@@ -237,6 +354,7 @@ export class VolumeClouds {
 
   setCloudTexture(texture: THREE.Texture): void {
     this.marchMaterial.uniforms.uCloud.value = texture;
+    this.cloudVersion++;
   }
 
   // amount は 0 で見えず、1 で本来の濃さ。厚みに掛けるので、厚い雲から先に見え始める
@@ -245,8 +363,18 @@ export class VolumeClouds {
     this.marchMaterial.uniforms.uAmount.value = amount;
   }
 
-  private ensureNoise(): THREE.Data3DTexture {
-    if (this.noise) return this.noise;
+  // 影を焼く範囲の中心にする地表の点と、そこからカメラまでの距離
+  setShadowFocus(center: THREE.Vector3, distance: number): void {
+    this.focus = [center.x, center.y, center.z];
+    this.focusDistance = distance;
+  }
+
+  get shadowReady(): boolean {
+    return this.baked !== null;
+  }
+
+  private ensureNoise(): void {
+    if (this.noise) return;
     const texture = new THREE.Data3DTexture(
       createCloudNoise(),
       CLOUD_NOISE_SIZE,
@@ -265,7 +393,21 @@ export class VolumeClouds {
     texture.needsUpdate = true;
     this.noise = texture;
     this.marchMaterial.uniforms.uNoise.value = texture;
-    return texture;
+  }
+
+  private bakeShadow(renderer: THREE.WebGLRenderer, camera: THREE.Camera, bake: ShadowBake): void {
+    const { u, v } = shadowBasis(bake.sun);
+    const size = bake.halfSize;
+    this.bakeUniforms.uBakeCenter.value.set(...bake.center);
+    this.bakeUniforms.uBakeU.value.set(...u).divideScalar(size);
+    this.bakeUniforms.uBakeV.value.set(...v).divideScalar(size);
+    const { uniforms } = this.bakeMaterial;
+    uniforms.uBakeAxisU.value.set(...u).multiplyScalar(size);
+    uniforms.uBakeAxisV.value.set(...v).multiplyScalar(size);
+    uniforms.uBakeFootprint.value = (2 * size) / SHADOW_MAP_SIZE;
+    renderer.setRenderTarget(this.bakeTarget);
+    renderer.render(this.bakeScene, camera);
+    this.baked = bake;
   }
 
   // 画面を描く前に毎フレーム呼ぶ。見えていないときは何もしない
@@ -286,8 +428,15 @@ export class VolumeClouds {
     const previousTarget = renderer.getRenderTarget();
     const previousAlpha = renderer.getClearAlpha();
     renderer.getClearColor(this.clearColor);
-    renderer.setRenderTarget(this.target);
     renderer.setClearColor(0x000000, 0);
+    const wanted: ShadowBake = {
+      center: this.focus,
+      halfSize: shadowHalfSize(this.focusDistance),
+      sun: [this.sunDir.x, this.sunDir.y, this.sunDir.z],
+      cloudVersion: this.cloudVersion,
+    };
+    if (needsShadowBake(this.baked, wanted)) this.bakeShadow(renderer, camera, wanted);
+    renderer.setRenderTarget(this.target);
     renderer.render(this.marchScene, camera);
     renderer.setRenderTarget(previousTarget);
     renderer.setClearColor(this.clearColor, previousAlpha);
