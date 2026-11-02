@@ -1,7 +1,8 @@
 // 雲の影の焼き込みの範囲と条件の検証。実行: node --test tests/cloud-shadow.test.ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { needsShadowBake, shadowBasis, shadowHalfSize, type ShadowBake, type Vec3 } from '../src/renderer/cloud-shadow.ts';
+import { needsShadowBake, shadowBasis, shadowHalfSize, type ShadowBake } from '../src/renderer/cloud-shadow.ts';
+import type { Vec3 } from '../src/renderer/math.ts';
 
 const BAKED: ShadowBake = { center: [1, 0, 0], halfSize: 0.5, sun: [0, 1, 0], cloudVersion: 1 };
 

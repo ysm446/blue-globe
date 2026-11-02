@@ -5,77 +5,87 @@ import { randomUUID } from 'node:crypto';
 import { fetchCurrentGfsCloud, fetchCurrentGfsWind } from './nomads';
 import { backendRequest, startBackend, stopBackend } from './backend';
 
-const WIND_MAX_AGE_MS = 3 * 3600_000; // GFS 1.0° は 3 時間刻み
-const WIND_FETCH_TIMEOUT_MS = 30_000;
+const GFS_MAX_AGE_MS = 3 * 3600_000; // GFS 1.0° は 3 時間刻み
+const GFS_FETCH_TIMEOUT_MS = 30_000;
 
 // 動作検証時に実際の設定を汚さないよう、環境変数で差し替えられる
 function dataDir(): string {
   return process.env.WEATHER_NEWS_DATA_DIR || path.join(app.getAppPath(), 'data');
 }
 
-function readJson(filePath: string): unknown {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+async function readJson(filePath: string): Promise<unknown> {
+  return JSON.parse(await fs.promises.readFile(filePath, 'utf8'));
+}
+
+// ファイルがなければ Infinity を返す
+async function fileAgeMs(filePath: string): Promise<number> {
+  try {
+    return Date.now() - (await fs.promises.stat(filePath)).mtimeMs;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
+// 書き込みの途中で落ちても、壊れたファイルがキャッシュに残らないようにする
+async function writeFileAtomic(filePath: string, data: string | Uint8Array): Promise<void> {
+  await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+  const tempPath = `${filePath}.${randomUUID()}.tmp`;
+  await fs.promises.writeFile(tempPath, data);
+  await fs.promises.rename(tempPath, filePath);
 }
 
 // 風データの探索順: 新しいキャッシュ → NOMADS → 古いキャッシュ → アプリ同梱サンプル
 ipcMain.handle('wind:get', async () => {
   const cachePath = path.join(dataDir(), 'wind-cache', 'current-wind.json');
-  const cacheAge = fs.existsSync(cachePath)
-    ? Date.now() - fs.statSync(cachePath).mtimeMs
-    : Number.POSITIVE_INFINITY;
-  if (cacheAge < WIND_MAX_AGE_MS) return { source: 'cache', records: readJson(cachePath) };
+  const cacheAge = await fileAgeMs(cachePath);
+  if (cacheAge < GFS_MAX_AGE_MS) return { source: 'cache', records: await readJson(cachePath) };
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), WIND_FETCH_TIMEOUT_MS);
   try {
-    const result = await fetchCurrentGfsWind(controller.signal);
-    fs.mkdirSync(path.dirname(cachePath), { recursive: true });
-    fs.writeFileSync(cachePath, JSON.stringify(result.records));
-    return { source: 'nomads', records: result.records };
+    const records = await fetchCurrentGfsWind(AbortSignal.timeout(GFS_FETCH_TIMEOUT_MS));
+    await writeFileAtomic(cachePath, JSON.stringify(records));
+    return { source: 'nomads', records };
   } catch (err) {
     console.error('wind fetch failed', err);
-  } finally {
-    clearTimeout(timer);
   }
-  if (Number.isFinite(cacheAge)) return { source: 'stale', records: readJson(cachePath) };
+  if (Number.isFinite(cacheAge)) return { source: 'stale', records: await readJson(cachePath) };
   return {
     source: 'sample',
-    records: readJson(path.join(app.getAppPath(), 'assets', 'data', 'current-wind.json')),
+    records: await readJson(path.join(app.getAppPath(), 'assets', 'data', 'current-wind.json')),
   };
 });
 
+function cloudCachePath(name: string): string {
+  return path.join(dataDir(), 'cloud-cache', name);
+}
+
 // GFS の雲量を data/cloud-cache に用意する。新しいキャッシュ → NOMADS → 古いキャッシュの順に探す
 async function ensureGfsCloud(): Promise<boolean> {
-  const metaPath = path.join(dataDir(), 'cloud-cache', 'current-cloud.json');
-  const binPath = path.join(dataDir(), 'cloud-cache', 'current-cloud.bin');
-  const cached = fs.existsSync(metaPath) && fs.existsSync(binPath);
-  if (cached && Date.now() - fs.statSync(binPath).mtimeMs < WIND_MAX_AGE_MS) return true;
+  const metaPath = cloudCachePath('current-cloud.json');
+  const binPath = cloudCachePath('current-cloud.bin');
+  const binAge = await fileAgeMs(binPath);
+  const cached = Number.isFinite(binAge) && Number.isFinite(await fileAgeMs(metaPath));
+  if (cached && binAge < GFS_MAX_AGE_MS) return true;
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), WIND_FETCH_TIMEOUT_MS);
   try {
-    const { data, ...meta } = await fetchCurrentGfsCloud(controller.signal);
-    fs.mkdirSync(path.dirname(binPath), { recursive: true });
-    fs.writeFileSync(binPath, data);
-    fs.writeFileSync(metaPath, JSON.stringify(meta));
+    const { data, ...meta } = await fetchCurrentGfsCloud(AbortSignal.timeout(GFS_FETCH_TIMEOUT_MS));
+    await writeFileAtomic(binPath, data);
+    await writeFileAtomic(metaPath, JSON.stringify(meta));
     return true;
   } catch (err) {
     console.error('cloud fetch failed', err);
     return cached;
-  } finally {
-    clearTimeout(timer);
   }
 }
 
 // 衛星の雲マップを取れないときは、GFS だけで表示する。経度 0 度始まりなので -180 度始まりへ回す
-function readGfsFallback(): unknown {
-  const meta = readJson(path.join(dataDir(), 'cloud-cache', 'current-cloud.json')) as {
+async function readGfsFallback(): Promise<unknown> {
+  const meta = (await readJson(cloudCachePath('current-cloud.json'))) as {
     nx: number;
     ny: number;
     refTime: string;
     forecastTime: number;
   };
-  const raw = fs.readFileSync(path.join(dataDir(), 'cloud-cache', 'current-cloud.bin'));
+  const raw = await fs.promises.readFile(cloudCachePath('current-cloud.bin'));
   const data = new Uint8Array(raw.length);
   const half = meta.nx / 2;
   for (let y = 0; y < meta.ny; y++) {
@@ -96,7 +106,7 @@ ipcMain.handle('clouds:get', async () => {
       valid_time: string;
       stale: boolean;
     };
-    const data = new Uint8Array(fs.readFileSync(path.join(dataDir(), 'cloud-cache', 'current-sat.bin')));
+    const data = new Uint8Array(await fs.promises.readFile(cloudCachePath('current-sat.bin')));
     return { source: 'satellite', nx: sat.nx, ny: sat.ny, validTime: sat.valid_time, stale: sat.stale, data };
   } catch (err) {
     console.error('satellite cloud failed', err);
@@ -111,10 +121,10 @@ const TEXTURES: Record<string, string> = {
   'earth-water': 'earth-water.png',
 };
 
-ipcMain.handle('texture:get', (_event, name: string) => {
+ipcMain.handle('texture:get', async (_event, name: string) => {
   const file = Object.hasOwn(TEXTURES, name) ? TEXTURES[name] : null;
   if (!file) throw new Error(`unknown texture: ${name}`);
-  return new Uint8Array(fs.readFileSync(path.join(app.getAppPath(), 'assets', 'textures', file)));
+  return new Uint8Array(await fs.promises.readFile(path.join(app.getAppPath(), 'assets', 'textures', file)));
 });
 
 // 地域ビューの地表、街明かり、水域 (NASA GIBS の 500m の面)。中身の変わらない合成画像なので、取得したら取り直さない
@@ -148,11 +158,7 @@ ipcMain.handle('earth-tile:get', async (_event, layer: string, col: number, row:
     const image = nativeImage.createFromBuffer(received);
     if (image.isEmpty()) return null;
     const bytes = layer === 'night' ? image.toJPEG(NIGHT_TILE_JPEG_QUALITY) : received;
-    // 書き込みの途中で落ちても、壊れた画像がキャッシュに残らないようにする
-    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
-    const tempPath = `${filePath}.${randomUUID()}.tmp`;
-    await fs.promises.writeFile(tempPath, bytes);
-    await fs.promises.rename(tempPath, filePath);
+    await writeFileAtomic(filePath, bytes);
     return new Uint8Array(bytes);
   } catch {
     return null;
@@ -231,9 +237,9 @@ async function captureScreenshot(win: BrowserWindow, logical: boolean): Promise<
     const stamp =
       `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
       `-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-    fs.mkdirSync(screenshotDir(), { recursive: true });
+    await fs.promises.mkdir(screenshotDir(), { recursive: true });
     filePath = path.join(screenshotDir(), `screenshot-${stamp}${logical ? '-100pct' : ''}.png`);
-    fs.writeFileSync(filePath, image.toPNG());
+    await fs.promises.writeFile(filePath, image.toPNG());
   } catch (err) {
     console.error('screenshot failed', err);
     filePath = null;

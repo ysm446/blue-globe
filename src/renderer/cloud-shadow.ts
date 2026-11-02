@@ -1,6 +1,6 @@
 // 太陽から見た雲の濃さの画像 (影の焼き込み) の範囲と、焼き直す条件。
 // 雲は 1 時間ごと、太陽もゆっくりしか変わらないので、毎フレームは焼かない
-export type Vec3 = [number, number, number];
+import { dot, type Vec3 } from './math.ts';
 
 export interface ShadowBake {
   center: Vec3; // 画像の中心にする地表の点
@@ -16,8 +16,7 @@ const MAX_MOVE = 0.15; // 中心がこの割合だけ動いたら焼き直す
 const MAX_SIZE_RATIO = 1.25; // 寄ったら細かく、引いたら広く焼き直す
 const MIN_SUN_DOT = 1 - 1e-5; // 太陽が約 0.25 度 (約 1 分) 動いたら焼き直す
 
-const dot = (a: Vec3, b: Vec3): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: Vec3, b: Vec3): Vec3 => [
+const cross =(a: Vec3, b: Vec3): Vec3 => [
   a[1] * b[2] - a[2] * b[1],
   a[2] * b[0] - a[0] * b[2],
   a[0] * b[1] - a[1] * b[0],

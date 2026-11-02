@@ -10,8 +10,8 @@ import {
   panRegionView,
   regionPose,
   type RegionView,
-  type Vec3,
 } from '../src/renderer/region-camera.ts';
+import type { Vec3 } from '../src/renderer/math.ts';
 
 const TOKYO: RegionView = { lat: 35.6, lon: 139.7, heading: 0, tilt: 0, distance: 0.3 };
 

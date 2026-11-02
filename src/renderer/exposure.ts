@@ -1,21 +1,12 @@
 // カメラの露出の自動調整。太陽が画面に入ると絞り、夜側を見ているときは少し開ける。
 // 計算は画面の明るさの実測ではなく、太陽と地球の位置関係から求める
-export type Vec3 = readonly [number, number, number];
+import { dot, smoothstep, type Vec3 } from './math.ts';
 
 const SUN_EXPOSURE = 0.3; // 太陽を正面に見たときの倍率
 const NIGHT_EXPOSURE = 1.25;
 const DAY_EXPOSURE = 0.85;
 const CLOSE_SECONDS = 0.35; // 明るいものを見たら素早く絞る
 const OPEN_SECONDS = 1.4; // 暗さに慣れるのはゆっくり
-
-function smoothstep(edge0: number, edge1: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - edge0) / (edge1 - edge0)));
-  return t * t * (3 - 2 * t);
-}
-
-function dot(a: Vec3, b: Vec3): number {
-  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
 
 // 地球に隠れていない割合 (0〜1)。direction はカメラから太陽への単位ベクトル。
 // 地球の縁から顔を出す間は滑らかに変わる

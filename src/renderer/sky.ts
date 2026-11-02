@@ -1,5 +1,6 @@
 // 実際の星、太陽、月。方向は本物で、太陽と月の大きさは見やすさのために誇張している
 import * as THREE from 'three';
+import { VALUE_NOISE_GLSL } from './glsl';
 import { lonLatToVector3 } from './globe';
 import { siderealDegrees, starIntensity, sublunarPoint, subsolarPoint } from './astro';
 import starCatalog from './data/stars.json';
@@ -75,26 +76,7 @@ const MOON_FS = /* glsl */ `
 precision highp float;
 uniform vec3 uSunDir;
 varying vec3 vNormalDir;
-float hash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-float vnoise(vec3 p) {
-  vec3 i = floor(p);
-  vec3 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(
-    mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
-    mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y),
-    f.z);
-}
-float fbm(vec3 p) {
-  float v = 0.0;
-  float a = 0.5;
-  for (int i = 0; i < 4; i++) {
-    v += a * vnoise(p);
-    p = p * 2.03 + 3.1;
-    a *= 0.5;
-  }
-  return v;
-}
+${VALUE_NOISE_GLSL}
 void main() {
   vec3 n = normalize(vNormalDir);
   float maria = smoothstep(0.42, 0.62, fbm(n * 3.2 + 4.0));

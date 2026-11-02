@@ -10,7 +10,7 @@
     "build": "tsc --noEmit && npm run build:renderer && npm run build:main",
     "start": "electron .",
     "dev": "npm run build && electron .",
-    "test": ".venv\\Scripts\\python -m unittest discover tests && node --test tests/astro.test.ts tests/cloud-noise.test.ts tests/cloud-shadow.test.ts tests/demo.test.ts tests/exposure.test.ts tests/fade.test.ts tests/frame-timer.test.ts tests/hourly-chart.test.ts tests/region-camera.test.ts tests/stream.test.ts tests/tile-window.test.ts"
+    "test": ".venv\\Scripts\\python -m unittest discover tests && node --test \"tests/*.test.ts\""
   },
   "devDependencies": {
     "@types/node": "^25.9.3",

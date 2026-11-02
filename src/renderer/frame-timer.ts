@@ -35,6 +35,7 @@ export class GpuTimer {
 
   // 届いた結果を古い順に ms で返す。GPU の時刻が飛んだ間の結果は信用できないので捨てる
   collect(): number[] {
+    if (this.timeElapsed === null) return []; // 拡張がないときに getParameter を呼ぶと GL のエラーになる
     const { gl } = this;
     const results: number[] = [];
     const lost = gl.getParameter(this.disjoint) as boolean;

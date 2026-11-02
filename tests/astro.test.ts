@@ -2,14 +2,13 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import {
-  separationDegrees,
-  siderealDegrees,
-  starIntensity,
-  sublunarPoint,
-  subsolarPoint,
-  sunElevation,
-} from '../src/renderer/astro.ts';
+import { siderealDegrees, starIntensity, sublunarPoint, subsolarPoint } from '../src/renderer/astro.ts';
+import { separationDegrees } from '../src/renderer/math.ts';
+
+// 地点から見た太陽の高度 (度)。大気差は含まない
+function sunElevation(date: Date, lon: number, lat: number): number {
+  return 90 - separationDegrees({ lon, lat }, subsolarPoint(date));
+}
 
 test('分点と至点で太陽直下点の緯度が合う', () => {
   assert.ok(Math.abs(subsolarPoint(new Date('2026-03-20T14:46Z')).lat) < 0.02);

@@ -35,6 +35,9 @@ CALM_WIND_MS = 0.3
 WEEKDAYS = "月火水木金土日"
 # 朝に見るアプリなので普段は今日の話をする。この時刻からは明日の話に切り替える
 EVENING_HOUR = 18
+HOURLY_STEP = 3
+HOURLY_COUNT = 8
+DAY_NAMES = {0: "今日", 1: "明日"}
 
 SUMMARY_SYSTEM = """あなたは気象ニュースの編集者です。入力された気象庁の文章だけを根拠に、日本語で1文に要約します。
 - 「気象庁によると、{day}日は」で始め、「見込みです。」で終える。
@@ -77,6 +80,10 @@ def weather_label(code: int) -> str:
 
 def weather_icon(code: int) -> str:
     return ICONS.get(code, "cloudy")
+
+
+def weather_fields(code: int) -> dict:
+    return {"weather": weather_label(code), "icon": weather_icon(code)}
 
 
 def clock_label(time: datetime) -> str:
@@ -162,17 +169,36 @@ def day_sentence(daily: dict, index: int) -> str:
     return f"{text}の見込みです。"
 
 
+def hourly_rows(hourly: dict, now: datetime) -> list[dict]:
+    """今の時刻から先の時間別予報を、一定の間隔で取り出す。"""
+    start = now.replace(minute=0)
+    rows = []
+    for index, value in enumerate(hourly["time"]):
+        time = datetime.fromisoformat(value)
+        if time <= start or (time - start).total_seconds() % (HOURLY_STEP * 3600):
+            continue
+        rows.append(
+            {
+                "time": f"{time.hour}時",
+                "temperature": round(hourly["temperature_2m"][index]),
+                "rain": hourly["precipitation_probability"][index],
+                **weather_fields(hourly["weather_code"][index]),
+                "is_day": bool(hourly["is_day"][index]),
+            }
+        )
+        if len(rows) == HOURLY_COUNT:
+            break
+    return rows
+
+
 def weekly_rows(daily: dict) -> list[dict]:
     rows = []
     for index, value in enumerate(daily["time"]):
         day = date.fromisoformat(value)
-        code = daily["weather_code"][index]
-        names = {0: "今日", 1: "明日"}
         rows.append(
             {
-                "label": names.get(index, f"{day.day}({WEEKDAYS[day.weekday()]})"),
-                "weather": weather_label(code),
-                "icon": weather_icon(code),
+                "label": DAY_NAMES.get(index, f"{day.day}({WEEKDAYS[day.weekday()]})"),
+                **weather_fields(daily["weather_code"][index]),
                 "high": round(daily["temperature_2m_max"][index]),
                 "low": round(daily["temperature_2m_min"][index]),
                 "rain": daily["precipitation_probability_max"][index],

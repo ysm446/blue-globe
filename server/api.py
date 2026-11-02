@@ -15,9 +15,6 @@ from . import clouds, news, sources
 from .config import DEFAULT_SETTINGS, load_settings, update_settings
 from .llm import LlamaServer, LlmError, list_models
 
-HOURLY_STEP = 3
-HOURLY_COUNT = 8
-
 llama = LlamaServer()
 summary_cache: dict[tuple[str, str, str], str] = {}
 
@@ -198,27 +195,11 @@ def _outlook(location: dict, settings: dict, now: datetime) -> tuple[dict | None
     )
 
 
-def _hourly(forecast: dict, now: datetime) -> list[dict]:
-    hourly = forecast["hourly"]
-    start = now.replace(minute=0)
-    rows = []
-    for index, value in enumerate(hourly["time"]):
-        time = datetime.fromisoformat(value)
-        if time <= start or (time - start).total_seconds() % (HOURLY_STEP * 3600):
-            continue
-        rows.append(
-            {
-                "time": f"{time.hour}時",
-                "temperature": round(hourly["temperature_2m"][index]),
-                "rain": hourly["precipitation_probability"][index],
-                "weather": news.weather_label(hourly["weather_code"][index]),
-                "icon": news.weather_icon(hourly["weather_code"][index]),
-                "is_day": bool(hourly["is_day"][index]),
-            }
-        )
-        if len(rows) == HOURLY_COUNT:
-            break
-    return rows
+def _fetch_forecast(latitude: float, longitude: float) -> dict:
+    try:
+        return sources.fetch_forecast(latitude, longitude)
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(502, f"天気データを取得できませんでした: {e}") from e
 
 
 @app.get("/news")
@@ -227,11 +208,7 @@ def get_news() -> dict:
     location = settings["location"]
     if not location:
         raise HTTPException(409, "地点が設定されていません")
-    try:
-        forecast = sources.fetch_forecast(location["latitude"], location["longitude"])
-    except (httpx.HTTPError, ValueError) as e:
-        raise HTTPException(502, f"天気データを取得できませんでした: {e}") from e
-
+    forecast = _fetch_forecast(location["latitude"], location["longitude"])
     now = datetime.fromisoformat(forecast["current"]["time"])
     outlook, note = _outlook(location, settings, now)
     return _report(location, forecast, outlook, note)
@@ -252,11 +229,7 @@ def get_place_news(
         "latitude": latitude,
         "longitude": longitude,
     }
-    try:
-        forecast = sources.fetch_forecast(latitude, longitude)
-    except (httpx.HTTPError, ValueError) as e:
-        raise HTTPException(502, f"天気データを取得できませんでした: {e}") from e
-    return _report(location, forecast, None, None)
+    return _report(location, _fetch_forecast(latitude, longitude), None, None)
 
 
 def _report(location: dict, forecast: dict, outlook: dict | None, note: str | None) -> dict:
@@ -272,8 +245,7 @@ def _report(location: dict, forecast: dict, outlook: dict | None, note: str | No
         "outlook": outlook,
         "note": note,
         "current": {
-            "weather": news.weather_label(current["weather_code"]),
-            "icon": news.weather_icon(current["weather_code"]),
+            **news.weather_fields(current["weather_code"]),
             "is_day": bool(current["is_day"]),
             "temperature": current["temperature_2m"],
             "apparent": current["apparent_temperature"],
@@ -284,6 +256,6 @@ def _report(location: dict, forecast: dict, outlook: dict | None, note: str | No
             "rain": news.rain_now(forecast["hourly"], now),
             **news.sun_times(forecast["daily"], now),
         },
-        "hourly": _hourly(forecast, now),
+        "hourly": news.hourly_rows(forecast["hourly"], now),
         "weekly": news.weekly_rows(daily),
     }

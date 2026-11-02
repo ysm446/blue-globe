@@ -1,13 +1,13 @@
 // デモの場面の順番と行き先。画面の計算から切り離して検証できるよう、DOM に依存しない
-export interface DemoPlace {
+import { separationDegrees, type LonLat } from './math.ts';
+
+export interface DemoPlace extends LonLat {
   name: string;
-  lat: number;
-  lon: number;
 }
 
 export interface DemoScene {
-  mode: 'normal' | 'weather' | 'wind';
-  view: 'globe' | 'region';
+  mode: MapMode;
+  view: GlobeView;
   place?: 'home' | DemoPlaceKind;
   dayside?: boolean; // 雲や海の反射が見えるよう、地域ビューから昼側へ移って回る
   seconds: number;
@@ -65,19 +65,15 @@ export const CITIES: DemoPlace[] = [
 const DAY_MIN_ELEVATION = 15; // 太陽がこれより高ければ、地表がよく見える
 const NIGHT_MAX_ELEVATION = -6; // 太陽がこれより低ければ、街明かりがはっきり見える
 const RECENT_LIMIT = 5; // 同じ場所が続かないよう、最近行った場所を避ける
-const DEG = Math.PI / 180;
 
-export function sunElevation(place: { lat: number; lon: number }, sun: { lat: number; lon: number }): number {
-  const cosine =
-    Math.sin(place.lat * DEG) * Math.sin(sun.lat * DEG) +
-    Math.cos(place.lat * DEG) * Math.cos(sun.lat * DEG) * Math.cos((place.lon - sun.lon) * DEG);
-  return Math.asin(Math.max(-1, Math.min(1, cosine))) / DEG;
+export function sunElevation(place: LonLat, sun: LonLat): number {
+  return 90 - separationDegrees(place, sun);
 }
 
 // 昼や夜の都市は、今の太陽で見頃の都市からランダムに選ぶ。recent は新しい順で、選んだ場所を先頭に足す
 export function pickDemoPlace(
   kind: DemoPlaceKind,
-  sun: { lat: number; lon: number },
+  sun: LonLat,
   recent: string[],
   random: () => number = Math.random,
 ): DemoPlace {

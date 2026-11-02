@@ -34,8 +34,8 @@ export class WindField {
   readonly dy: number;
   readonly refTime: string | null;
   readonly forecastTime: number | null; // 基準時刻からの予報時間 (hour)
-  private readonly uData: Float32Array;
-  private readonly vData: Float32Array;
+  readonly uValues: Float32Array;
+  readonly vValues: Float32Array;
 
   constructor(
     header: Pick<GfsHeader, 'nx' | 'ny' | 'lo1' | 'la1' | 'dx' | 'dy'>,
@@ -52,8 +52,8 @@ export class WindField {
     this.dy = header.dy;
     this.refTime = refTime;
     this.forecastTime = forecastTime;
-    this.uData = uData;
-    this.vData = vData;
+    this.uValues = uData;
+    this.vValues = vData;
   }
 
   static fromGfsJson(records: unknown): WindField | null {
@@ -77,27 +77,6 @@ export class WindField {
     );
   }
 
-  // DB から読み出したフレーム (格子情報 + u/v 配列) から構築する
-  static fromArrays(
-    grid: Pick<GfsHeader, 'nx' | 'ny' | 'lo1' | 'la1' | 'dx' | 'dy'>,
-    u: Float32Array,
-    v: Float32Array,
-    refTime: string | null = null,
-    forecastTime: number | null = null,
-  ): WindField | null {
-    if (u.length !== grid.nx * grid.ny || v.length !== grid.nx * grid.ny) return null;
-    return new WindField(grid, u, v, refTime, forecastTime);
-  }
-
-  // GPU テクスチャ生成用に格子データへの読み取りアクセスを提供する
-  get uValues(): Float32Array {
-    return this.uData;
-  }
-
-  get vValues(): Float32Array {
-    return this.vData;
-  }
-
   // lon: -180..180 または 0..360、lat: -90..90。格子外(極の外側)は null。
   sample(lon: number, lat: number): WindSample | null {
     const x = ((((lon - this.lo1) % 360) + 360) % 360) / this.dx;
@@ -117,11 +96,11 @@ export class WindField {
     const i11 = y1 * this.nx + x1;
 
     const u =
-      (this.uData[i00] * (1 - fx) + this.uData[i10] * fx) * (1 - fy) +
-      (this.uData[i01] * (1 - fx) + this.uData[i11] * fx) * fy;
+      (this.uValues[i00] * (1 - fx) + this.uValues[i10] * fx) * (1 - fy) +
+      (this.uValues[i01] * (1 - fx) + this.uValues[i11] * fx) * fy;
     const v =
-      (this.vData[i00] * (1 - fx) + this.vData[i10] * fx) * (1 - fy) +
-      (this.vData[i01] * (1 - fx) + this.vData[i11] * fx) * fy;
+      (this.vValues[i00] * (1 - fx) + this.vValues[i10] * fx) * (1 - fy) +
+      (this.vValues[i01] * (1 - fx) + this.vValues[i11] * fx) * fy;
 
     return { u, v, speed: Math.hypot(u, v) };
   }

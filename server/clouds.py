@@ -9,7 +9,6 @@ NOAA の全球衛星合成画像 (GMGSI、赤外) から、薄い雲も濃い雲
 GFS の取得はメインプロセスが行い、data/cloud-cache/ に置く。
 """
 import json
-import os
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -17,7 +16,7 @@ import h5py
 import httpx
 import numpy as np
 
-from .config import DATA_DIR
+from .config import DATA_DIR, atomic_write
 
 GMGSI_BASE = "https://noaa-gmgsi-pds.s3.amazonaws.com"
 TIMEOUT_SECONDS = 90
@@ -213,12 +212,6 @@ def _read_gfs() -> np.ndarray | None:
         return None
 
 
-def _atomic_write(path, data: bytes) -> None:
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_bytes(data)
-    os.replace(tmp, path)
-
-
 def update_satellite_map(now: datetime | None = None) -> dict:
     """最新の雲マップを data/cloud-cache/current-sat.bin に作り、メタ情報を返す。
 
@@ -236,14 +229,14 @@ def update_satellite_map(now: datetime | None = None) -> dict:
         response = httpx.get(f"{GMGSI_BASE}/{key}", timeout=TIMEOUT_SECONDS)
         response.raise_for_status()
         download = cache / "gmgsi.nc"
-        _atomic_write(download, response.content)
+        atomic_write(download, response.content)
         density = compose(read_gmgsi(download), _read_gfs())
     except (httpx.HTTPError, OSError, ValueError, KeyError, CloudError) as e:
         if previous and bin_path.exists():
             return {**previous, "stale": True}
         raise CloudError(f"衛星画像を取得できませんでした: {e}") from e
 
-    _atomic_write(bin_path, (np.clip(density, 0, 1) * 255).astype(np.uint8).tobytes())
+    atomic_write(bin_path, (np.clip(density, 0, 1) * 255).astype(np.uint8).tobytes())
     meta = {"version": MAP_VERSION, "key": key, "nx": density.shape[1], "ny": density.shape[0], "valid_time": valid_time_of(key)}
-    _atomic_write(meta_path, json.dumps(meta).encode("utf-8"))
+    atomic_write(meta_path, json.dumps(meta).encode("utf-8"))
     return {**meta, "stale": False}

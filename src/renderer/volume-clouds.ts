@@ -4,7 +4,9 @@
 // 太陽から見た雲の濃さを画像に焼き込み、地面の影と、遠くの雲が別の雲に落とす影に使う
 import * as THREE from 'three';
 import { CLOUD_NOISE_SIZE, createCloudNoise } from './cloud-noise';
-import { needsShadowBake, shadowBasis, shadowHalfSize, type ShadowBake, type Vec3 } from './cloud-shadow';
+import { needsShadowBake, shadowBasis, shadowHalfSize, type ShadowBake } from './cloud-shadow';
+import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, PIXEL_JITTER_GLSL } from './glsl';
+import type { Vec3 } from './math';
 
 const RESOLUTION_SCALE = 0.5;
 const CLOUD_BASE = 0.0005; // 約 3km
@@ -32,11 +34,19 @@ vec2 cloudUvOf(vec3 n) {
 }
 `;
 
-const FULLSCREEN_VS = /* glsl */ `
-varying vec2 vUv;
-void main() {
-  vUv = uv;
-  gl_Position = vec4(position.xy, 0.0, 1.0);
+// 太陽から見た雲の濃さの画像を引く。地球の描画と立体の雲で共有する
+export const BAKED_SHADOW_GLSL = /* glsl */ `
+uniform sampler2D uBakedShadow;
+uniform vec3 uBakeCenter;
+uniform vec3 uBakeU;
+uniform vec3 uBakeV;
+vec2 bakedUvOf(vec3 fromCenter) {
+  return vec2(dot(fromCenter, uBakeU), dot(fromCenter, uBakeV)) * 0.5 + 0.5;
+}
+// 範囲の中で 1、外で 0。端の手前からなめらかに変わる
+float bakedCoverage(vec2 uv) {
+  vec2 edge = abs(uv - 0.5) * 2.0;
+  return smoothstep(1.0, 0.9, max(edge.x, edge.y));
 }
 `;
 
@@ -49,6 +59,7 @@ uniform sampler3D uNoise;
 uniform vec3 uSunDir;
 uniform float uRadius;
 ${CLOUD_UV_GLSL}
+${PIXEL_JITTER_GLSL}
 
 const float BASE = ${CLOUD_BASE.toFixed(5)};
 const float TOP = ${CLOUD_TOP.toFixed(5)};
@@ -98,10 +109,6 @@ float densityAt(vec3 p, bool withDetail) {
   }
   return body * mix(0.3, 1.0, smoothstep(0.0, 0.6, cover)); // 薄い雲は地面が透ける
 }
-
-float pixelJitter() {
-  return fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-}
 `;
 
 // 太陽に垂直な面の各画素から、太陽の反対へ雲を通り抜ける。
@@ -143,14 +150,12 @@ void main() {
 
 const MARCH_FS = /* glsl */ `
 ${CLOUD_SHAPE_GLSL}
+${BAKED_SHADOW_GLSL}
+${CLOUD_SUN_COLOR_GLSL}
 uniform mat4 uViewToWorld;
 uniform float uPixelAngle;
 uniform float uAmount;
 uniform float uHaze;
-uniform sampler2D uBakedShadow;
-uniform vec3 uBakeCenter;
-uniform vec3 uBakeU;
-uniform vec3 uBakeV;
 varying vec2 vUv;
 
 const int MAX_STEPS = 64;
@@ -173,9 +178,8 @@ float sunlightAt(vec3 p) {
 // たどった距離より遠くの雲が落とす影。太陽が低いと、高い雲の影が遠くの雲に届く
 float farShadowAt(vec3 p) {
   vec3 fromCenter = p - uBakeCenter;
-  vec2 uv = vec2(dot(fromCenter, uBakeU), dot(fromCenter, uBakeV)) * 0.5 + 0.5;
-  vec2 edge = abs(uv - 0.5) * 2.0;
-  float inside = smoothstep(1.0, 0.9, max(edge.x, edge.y));
+  vec2 uv = bakedUvOf(fromCenter);
+  float inside = bakedCoverage(uv);
   if (inside <= 0.0) return 1.0;
   vec2 baked = textureLod(uBakedShadow, uv, 0.0).rg;
   float below = baked.g - dot(fromCenter, uSunDir);
@@ -212,13 +216,11 @@ void main() {
       // 雲頂を 1 とした高さ。低い雲も上面は明るくなる
       float h = clamp((length(p) - uRadius - BASE) / (TOP - BASE) / columnTop, 0.0, 1.0);
       float dayLight = smoothstep(-0.06, 0.5, ndl);
-      float dusk = smoothstep(-0.08, 0.02, ndl) * (1.0 - smoothstep(0.02, 0.28, ndl));
-      vec3 sunColor = mix(vec3(1.0, 0.99, 0.97), vec3(1.0, 0.6, 0.36), dusk * 0.8);
       float sunlight = dayLight > 0.0 ? sunlightAt(p) * farShadowAt(p) : 0.0;
       // 地球ビューの雲と同じ色合い。影の部分は黒くせず、空の光を受けた青灰色にする
       // 低いところほど周りの雲に光を遮られる。厚い雲の上面の起伏は、主にこの差で見える
       vec3 lit = mix(vec3(0.26, 0.31, 0.42), vec3(0.86), sunlight) * mix(0.48, 1.1, smoothstep(0.1, 0.85, h));
-      vec3 sample_ = lit * sunColor * dayLight + vec3(0.016, 0.021, 0.036);
+      vec3 sample_ = lit * cloudSunColor(ndl) * dayLight + vec3(0.016, 0.021, 0.036);
       color += transmit * opacity * sample_;
       transmit *= 1.0 - opacity;
     }

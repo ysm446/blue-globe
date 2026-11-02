@@ -1,20 +1,12 @@
 // 太陽・月・星の方向を日時から求める。結果は地球に固定した経度・緯度で表し、
 // その地点の真上に天体がある、という形で扱う。天文年鑑の低精度式で、表示には十分な精度。
-const DEG = Math.PI / 180;
+import { DEG, wrapDegrees, type LonLat } from './math.ts';
+
 const J2000_MS = Date.UTC(2000, 0, 1, 12);
 const DAY_MS = 86_400_000;
 
-export interface LonLat {
-  lon: number;
-  lat: number;
-}
-
 function daysSinceJ2000(date: Date): number {
   return (date.getTime() - J2000_MS) / DAY_MS;
-}
-
-function wrapLon(lon: number): number {
-  return ((((lon + 180) % 360) + 360) % 360) - 180;
 }
 
 // グリニッジ恒星時 (度)。赤経からこの値を引くと経度になる
@@ -23,7 +15,7 @@ export function siderealDegrees(date: Date): number {
 }
 
 function equatorialToLonLat(ra: number, dec: number, date: Date): LonLat {
-  return { lon: wrapLon(ra - siderealDegrees(date)), lat: dec };
+  return { lon: wrapDegrees(ra - siderealDegrees(date)), lat: dec };
 }
 
 // 太陽直下点。誤差は角度で約 0.01°
@@ -64,16 +56,4 @@ const ZERO_MAGNITUDE_INTENSITY = 12;
 // 等級から明るさへ。5 等級差でちょうど 100 倍 (ポグソンの式)
 export function starIntensity(magnitude: number): number {
   return ZERO_MAGNITUDE_INTENSITY * 10 ** (-0.4 * magnitude);
-}
-
-export function separationDegrees(a: LonLat, b: LonLat): number {
-  const cosine =
-    Math.sin(a.lat * DEG) * Math.sin(b.lat * DEG) +
-    Math.cos(a.lat * DEG) * Math.cos(b.lat * DEG) * Math.cos((a.lon - b.lon) * DEG);
-  return Math.acos(Math.min(1, Math.max(-1, cosine))) / DEG;
-}
-
-// 地点から見た太陽の高度 (度)。大気差は含まない
-export function sunElevation(date: Date, lon: number, lat: number): number {
-  return 90 - separationDegrees({ lon, lat }, subsolarPoint(date));
 }

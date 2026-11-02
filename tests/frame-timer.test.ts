@@ -10,7 +10,7 @@ const RESULT = 4;
 
 // 問い合わせを作った順に番号を振り、ready に入れた番号だけ結果が届いたことにする
 function fakeGl(hasTimer = true) {
-  const state = { created: 0, deleted: 0, ready: new Set<number>(), nanoseconds: 2_500_000, lost: false, open: 0 };
+  const state = { created: 0, deleted: 0, ready: new Set<number>(), nanoseconds: 2_500_000, lost: false, open: 0, parameterReads: 0 };
   const gl = {
     QUERY_RESULT_AVAILABLE: AVAILABLE,
     QUERY_RESULT: RESULT,
@@ -19,7 +19,10 @@ function fakeGl(hasTimer = true) {
     deleteQuery: () => state.deleted++,
     beginQuery: () => state.open++,
     endQuery: () => state.open--,
-    getParameter: () => state.lost,
+    getParameter: () => {
+      state.parameterReads++;
+      return state.lost;
+    },
     getQueryParameter: (query: number, name: number) => (name === AVAILABLE ? state.ready.has(query) : state.nanoseconds),
   };
   return { gl: gl as unknown as WebGL2RenderingContext, state };
@@ -76,6 +79,7 @@ test('タイマーがない環境でも動く', () => {
   timer.end();
   assert.deepEqual(timer.collect(), []);
   assert.equal(state.created, 0);
+  assert.equal(state.parameterReads, 0); // 拡張の定数がないのに読むと GL のエラーになる
 });
 
 test('表示は合計と内訳を出し、GPU を測れないときは CPU だけと分かるようにする', () => {

@@ -1,7 +1,8 @@
 // 雲の現れ方の検証。実行: node --test tests/fade.test.ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { easeFade, stepFade } from '../src/renderer/fade.ts';
+import { stepFade } from '../src/renderer/fade.ts';
+import { easeInOut } from '../src/renderer/math.ts';
 
 function secondsUntilDone(fps: number, visible: boolean, start: number): number {
   const dt = 1 / fps;
@@ -41,13 +42,13 @@ test('途中で向きが変わっても値が飛ばない', () => {
 });
 
 test('動き始めと終わりがなめらかで、単調に増える', () => {
-  assert.equal(easeFade(0), 0);
-  assert.equal(easeFade(1), 1);
-  assert.ok(easeFade(0.05) < 0.05);
-  assert.ok(easeFade(0.95) > 0.95);
+  assert.equal(easeInOut(0), 0);
+  assert.equal(easeInOut(1), 1);
+  assert.ok(easeInOut(0.05) < 0.05);
+  assert.ok(easeInOut(0.95) > 0.95);
   let previous = 0;
   for (let i = 1; i <= 100; i++) {
-    const value = easeFade(i / 100);
+    const value = easeInOut(i / 100);
     assert.ok(value > previous);
     previous = value;
   }

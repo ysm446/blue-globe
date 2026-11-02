@@ -3,13 +3,14 @@
 // 回すと地面とずれて動くので、ボリューム雲を使わなくても高さが感じられる。
 // 地域ビューで近づくと立体の雲 (volume-clouds.ts) に入れ替える
 import * as THREE from 'three';
-import { easeFade, stepFade } from './fade';
+import { stepFade } from './fade';
+import { CLOUD_SUN_COLOR_GLSL, VALUE_NOISE_GLSL } from './glsl';
+import { easeInOut } from './math';
 import type { RegionDetail } from './region-detail';
 import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
-import { CLOUD_UV_GLSL, VolumeClouds } from './volume-clouds';
+import { BAKED_SHADOW_GLSL, CLOUD_UV_GLSL, VolumeClouds } from './volume-clouds';
 
-const CLOUD_ALTITUDE = 0.012; // 実際より高い。視差が見える程度に誇張している
-const DEFAULT_CLOUD_SHADOW = 0.55;
+export const CLOUD_ALTITUDE = 0.012; // 実際より高い。視差が見える程度に誇張している
 const OPEN_SEA_COLOR = ['0.0006', '0.0015', '0.007']; // 地球ビューの地表の画像の沖の色 (線形)。世界中でほぼ同じ
 const COAST_MIP_LEVEL = 2; // 水域のマスクの縮小段階。1 画素が約 20km で、この範囲を海岸の近くとして扱う
 const COAST_TEXEL_U = 4 / 8192; // 縮小段階での 1 画素の大きさ
@@ -67,14 +68,15 @@ uniform sampler2D uDetailNight;
 uniform sampler2D uDetailWater;
 uniform sampler2D uDetailMask;
 uniform vec2 uDetailCenter;
-uniform sampler2D uBakedShadow;
-uniform vec3 uBakeCenter;
-uniform vec3 uBakeU;
-uniform vec3 uBakeV;
 uniform float uBakedShadowMix;
 varying vec3 vPos;
 varying vec2 vUv;
 ${CLOUD_SAMPLING_GLSL}
+${BAKED_SHADOW_GLSL}
+// 海岸の近くを判定するための、水域のマスクの縮小段階
+float coastWater(vec2 uv) {
+  return textureLod(uWater, uv, ${COAST_MIP_LEVEL.toFixed(1)}).r;
+}
 void main() {
   vec3 n = normalize(vPos);
   vec3 view = normalize(cameraPosition - vPos);
@@ -113,13 +115,13 @@ void main() {
     // その画像は粗く海岸に陸の色がにじむので、海岸の近くは少し沖の色を使う。入り江などで沖の色を取れなければ外洋の色にする
     vec2 step_ = vec2(${COAST_TEXEL_U.toFixed(6)}, ${COAST_TEXEL_V.toFixed(6)});
     vec2 towardSea = vec2(
-      textureLod(uWater, vUv + vec2(step_.x, 0.0), ${COAST_MIP_LEVEL.toFixed(1)}).r - textureLod(uWater, vUv - vec2(step_.x, 0.0), ${COAST_MIP_LEVEL.toFixed(1)}).r,
-      textureLod(uWater, vUv + vec2(0.0, step_.y), ${COAST_MIP_LEVEL.toFixed(1)}).r - textureLod(uWater, vUv - vec2(0.0, step_.y), ${COAST_MIP_LEVEL.toFixed(1)}).r
+      coastWater(vUv + vec2(step_.x, 0.0)) - coastWater(vUv - vec2(step_.x, 0.0)),
+      coastWater(vUv + vec2(0.0, step_.y)) - coastWater(vUv - vec2(0.0, step_.y))
     );
     towardSea /= max(length(towardSea), 0.001);
-    float nearCoast = 1.0 - smoothstep(0.75, 1.0, textureLod(uWater, vUv, ${COAST_MIP_LEVEL.toFixed(1)}).r);
+    float nearCoast = 1.0 - smoothstep(0.75, 1.0, coastWater(vUv));
     vec2 seaUv = vUv + towardSea * step_ * ${COAST_REACH.toFixed(1)} * nearCoast;
-    float seaFound = smoothstep(0.75, 1.0, textureLod(uWater, seaUv, ${COAST_MIP_LEVEL.toFixed(1)}).r);
+    float seaFound = smoothstep(0.75, 1.0, coastWater(seaUv));
     vec3 sea = mix(vec3(${OPEN_SEA_COLOR.join(', ')}), textureGrad(uDay, seaUv, dFdx(vUv), dFdy(vUv)).rgb, seaFound);
     day = mix(day, sea, ocean * uRegion);
   }
@@ -136,14 +138,11 @@ void main() {
     if (uBakedShadowMix > 0.0) {
       // 実際の高さのままだと影はほぼ雲の真下に隠れるので、雲がもっと高いものとして影をずらす
       float lift = min(${SHADOW_LIFT.toFixed(4)} * max(sinZenith, ${SHADOW_MIN_SLOPE.toFixed(1)}) / max(ndl, 0.12), 0.08);
-      vec3 fromCenter = vPos + toSun * lift - uBakeCenter;
-      vec2 bakeUv = vec2(dot(fromCenter, uBakeU), dot(fromCenter, uBakeV)) * 0.5 + 0.5;
-      vec2 edge = abs(bakeUv - 0.5) * 2.0;
-      float inside = smoothstep(1.0, 0.9, max(edge.x, edge.y));
+      vec2 bakeUv = bakedUvOf(vPos + toSun * lift - uBakeCenter);
       // 雲の陰に隠れない部分が少ないので、スライダーの同じ値でも平らな雲の影より濃くする
       float strength = 1.0 - pow(1.0 - uShadowStrength, 1.5);
       float baked = (1.0 - textureLod(uBakedShadow, bakeUv, 0.0).r) * strength * uShadowAmount;
-      shadow = mix(shadow, baked, inside * uBakedShadowMix);
+      shadow = mix(shadow, baked, bakedCoverage(bakeUv) * uBakedShadowMix);
     }
   }
 
@@ -191,26 +190,8 @@ uniform float uFade;
 varying vec3 vPos;
 varying vec2 vUv;
 ${CLOUD_SAMPLING_GLSL}
-float hash(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
-float vnoise(vec3 p) {
-  vec3 i = floor(p);
-  vec3 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-  return mix(
-    mix(mix(hash(i), hash(i + vec3(1, 0, 0)), f.x), mix(hash(i + vec3(0, 1, 0)), hash(i + vec3(1, 1, 0)), f.x), f.y),
-    mix(mix(hash(i + vec3(0, 0, 1)), hash(i + vec3(1, 0, 1)), f.x), mix(hash(i + vec3(0, 1, 1)), hash(i + vec3(1, 1, 1)), f.x), f.y),
-    f.z);
-}
-float fbm(vec3 p) {
-  float v = 0.0;
-  float a = 0.5;
-  for (int i = 0; i < 4; i++) {
-    v += a * vnoise(p);
-    p = p * 2.03 + 3.1;
-    a *= 0.5;
-  }
-  return v;
-}
+${VALUE_NOISE_GLSL}
+${CLOUD_SUN_COLOR_GLSL}
 void main() {
   vec3 n = normalize(vPos);
   vec3 view = normalize(cameraPosition - vPos);
@@ -248,11 +229,9 @@ void main() {
   float transmit = clamp(exp(-max(blocked, 0.0) * 1.15 * slope) + (-relief) * 0.9 * slope, 0.0, 1.0);
 
   float light = smoothstep(-0.06, 0.5, ndl);
-  float dusk = smoothstep(-0.08, 0.02, ndl) * (1.0 - smoothstep(0.02, 0.28, ndl));
-  vec3 sunColor = mix(vec3(1.0, 0.99, 0.97), vec3(1.0, 0.6, 0.36), dusk * 0.8);
   // 影の部分は黒くせず、空の光を受けた青灰色にする
   vec3 lit = mix(vec3(0.3, 0.36, 0.48), vec3(0.88), transmit);
-  vec3 color = lit * sunColor * light + vec3(0.016, 0.021, 0.036);
+  vec3 color = lit * cloudSunColor(ndl) * light + vec3(0.016, 0.021, 0.036);
 
   // 縁の雲にも大気の青を重ねる
   float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.2);
@@ -309,7 +288,7 @@ export class RealisticEarth {
         uCloud: { value: null },
         uShadowAmount: { value: 0 },
         uCloudAltitude: { value: CLOUD_ALTITUDE },
-        uShadowStrength: { value: DEFAULT_CLOUD_SHADOW },
+        uShadowStrength: { value: 0 },
         uGlintStrength: { value: 1 },
         uHaze: this.haze,
         uRegion: { value: 0 },
@@ -466,7 +445,7 @@ export class RealisticEarth {
   }
 
   private applyCloudFade(): void {
-    const amount = easeFade(this.cloudFade);
+    const amount = easeInOut(this.cloudFade);
     const flat = amount * (1 - this.volumeMix);
     this.cloudMesh.visible = flat > 0;
     this.cloudMaterial.uniforms.uFade.value = flat;

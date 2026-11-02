@@ -18,6 +18,8 @@ type GlobeView = 'globe' | 'region';
 
 type EarthTileLayer = 'day' | 'night' | 'water';
 
+type EarthTextureName = 'earth-day' | 'earth-night' | 'earth-water';
+
 interface WeatherLocation {
   name: string;
   admin1: string | null;
@@ -117,6 +119,7 @@ interface NewsReport {
 }
 
 interface Window {
+  __weatherNewsDebug: { demoTimeScale: number; [key: string]: unknown }; // 動作検証用
   weatherApi: {
     getWind(): Promise<WindResult>;
     getClouds(): Promise<CloudResult | null>;
@@ -124,7 +127,7 @@ interface Window {
     setGraphics(graphics: GraphicsSettings): Promise<AppSettings>;
     setPanels(panels: PanelSettings): Promise<AppSettings>;
     getGraphicsDefaults(): Promise<GraphicsSettings>;
-    getTexture(name: 'earth-day' | 'earth-night' | 'earth-water'): Promise<Uint8Array>;
+    getTexture(name: EarthTextureName): Promise<Uint8Array>;
     getEarthTile(layer: EarthTileLayer, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null
     getNews(): Promise<NewsReport>;
     getPlaceNews(name: string, latitude: number, longitude: number): Promise<NewsReport>;

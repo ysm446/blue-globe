@@ -72,14 +72,24 @@ function shapes(icon: string, isDay: boolean): string {
   }
 }
 
+export function svgElement<K extends keyof SVGElementTagNameMap>(
+  name: K,
+  attributes: Record<string, string | number>,
+): SVGElementTagNameMap[K] {
+  const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
+  return element;
+}
+
 export function weatherIcon(icon: string, isDay: boolean, label: string, size: number): SVGSVGElement {
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  svg.setAttribute('viewBox', '0 0 32 32');
-  svg.setAttribute('width', String(size));
-  svg.setAttribute('height', String(size));
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', label);
-  svg.classList.add('weather-icon');
+  const svg = svgElement('svg', {
+    viewBox: '0 0 32 32',
+    width: size,
+    height: size,
+    role: 'img',
+    'aria-label': label,
+    class: 'weather-icon',
+  });
   svg.innerHTML = `<title></title>${shapes(icon, isDay)}`;
   svg.querySelector('title')!.textContent = label;
   return svg;

@@ -5,6 +5,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { FULLSCREEN_VS, PIXEL_JITTER_GLSL } from './glsl';
 
 const BLOOM_STRENGTH = 0.42;
 const BLOOM_RADIUS = 0.6;
@@ -17,18 +18,13 @@ const FINAL_SHADER = {
     tDiffuse: { value: null as THREE.Texture | null },
     uExposure: { value: 1 },
   },
-  vertexShader: /* glsl */ `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = vec4(position.xy, 0.0, 1.0);
-    }
-  `,
+  vertexShader: FULLSCREEN_VS,
   fragmentShader: /* glsl */ `
     precision highp float;
     uniform sampler2D tDiffuse;
     uniform float uExposure;
     varying vec2 vUv;
+    ${PIXEL_JITTER_GLSL}
     vec3 aces(vec3 x) {
       return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
     }
@@ -38,8 +34,7 @@ const FINAL_SHADER = {
     void main() {
       vec3 color = toSrgb(aces(max(texture2D(tDiffuse, vUv).rgb, vec3(0.0)) * uExposure));
       // 暗い背景の階調が帯状に見えないよう、8 ビットの 1 段分より小さいノイズを足す
-      float noise = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));
-      gl_FragColor = vec4(color + (noise - 0.5) / 255.0, 1.0);
+      gl_FragColor = vec4(color + (pixelJitter() - 0.5) / 255.0, 1.0);
     }
   `,
 };

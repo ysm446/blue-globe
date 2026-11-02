@@ -48,11 +48,16 @@ def load_settings() -> dict:
     return {**DEFAULT_SETTINGS, **saved, "graphics": graphics, "panels": panels}
 
 
+def atomic_write(path: Path, data: bytes) -> None:
+    """書き込みの途中で落ちても、壊れたファイルを残さない。"""
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_bytes(data)
+    tmp.replace(path)
+
+
 def save_settings(settings: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = SETTINGS_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(settings, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(SETTINGS_FILE)
+    atomic_write(SETTINGS_FILE, json.dumps(settings, ensure_ascii=False, indent=2).encode("utf-8"))
 
 
 def update_settings(changes: dict) -> dict:

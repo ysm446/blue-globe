@@ -1,11 +1,6 @@
 // 地域ビューのカメラの計算。地表の 1 点を画面の中心に置き、そこを軸に斜めから見下ろす。
 // 画面の計算から切り離して検証できるよう、Three.js に依存しない。座標は globe.ts の lonLatToVector3 と同じ
-export type Vec3 = readonly [number, number, number];
-
-export interface LonLat {
-  lat: number;
-  lon: number;
-}
+import { clamp, DEG, wrapDegrees, type LonLat, type Vec3 } from './math.ts';
 
 export interface RegionView extends LonLat {
   heading: number; // 見ている方角。0 が北、90 が東
@@ -29,18 +24,8 @@ const MAX_LAT = 80; // 極の近くでは経度の移動が大きくなりすぎ
 const MAX_PAN_STEP = 10; // 地平線の近くをつかむと、1 回の移動で遠くまで飛ぶのを防ぐ
 const INERTIA_SECONDS = 0.1;
 const ZOOM_SECONDS = 0.1;
-const DEG = Math.PI / 180;
 
 export const REGION_STILL: RegionVelocity = { lat: 0, lon: 0, heading: 0, tilt: 0 };
-
-// -180 以上 180 未満へ折り返す
-function wrapDegrees(value: number): number {
-  return ((((value + 180) % 360) + 360) % 360) - 180;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
 
 export function lonLatOf(position: Vec3): LonLat {
   const [x, y, z] = position;
