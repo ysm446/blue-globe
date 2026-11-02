@@ -77,6 +77,7 @@ interface NewsOutlook {
 
 interface NewsReport {
   location: WeatherLocation;
+  utc_offset_seconds: number;
   headline: string;
   current_text: string;
   day_text: string;
@@ -125,6 +126,7 @@ interface Window {
     getTexture(name: 'earth-day' | 'earth-night' | 'earth-water'): Promise<Uint8Array>;
     getEarthTile(layer: EarthTileLayer, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null
     getNews(): Promise<NewsReport>;
+    getPlaceNews(name: string, latitude: number, longitude: number): Promise<NewsReport>;
     getSettings(): Promise<AppSettings>;
     saveSettings(settings: AppSettings): Promise<AppSettings>;
     searchLocations(query: string): Promise<WeatherLocation[]>;

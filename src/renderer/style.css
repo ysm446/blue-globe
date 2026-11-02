@@ -400,36 +400,32 @@ a:hover {
   background: var(--panel-strong);
 }
 
-/* デモの間はパネルを隠して、地球だけを見せる */
-body.demo #top-left,
-body.demo #top-right,
-body.demo #panels,
-body.demo #layer-info {
+/* ドラッグするとデモが終わるので、操作の案内は出さない */
+body.demo #view-hint {
   display: none;
+}
+
+#start-demo[aria-pressed='true'] {
+  color: var(--accent);
 }
 
 body.demo-idle * {
   cursor: none !important;
 }
 
+/* 凡例の上、下の中央に出す */
 #demo-caption {
   position: fixed;
-  left: 32px;
-  bottom: 28px;
+  left: 50%;
+  bottom: 92px;
+  font-size: 32px;
+  font-weight: 200;
+  white-space: nowrap;
+  transform: translateX(-50%);
   pointer-events: none;
   text-shadow: 0 1px 8px rgba(4, 7, 11, 0.9);
 }
 
-#demo-caption-title {
-  font-size: 32px;
-  font-weight: 200;
-}
-
-#demo-caption-note {
-  margin-top: 2px;
-  color: var(--text-2);
-  font-size: 13px;
-}
 
 #demo-hint {
   position: fixed;
@@ -788,6 +784,7 @@ body.demo-idle * {
 
 #layer-source {
   margin-top: 3px;
+  font-size: 11px;
 }
 
 #layer-source.warn {

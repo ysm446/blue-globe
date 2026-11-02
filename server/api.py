@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal
 
 import httpx
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from . import clouds, news, sources
@@ -231,12 +231,40 @@ def get_news() -> dict:
     except (httpx.HTTPError, ValueError) as e:
         raise HTTPException(502, f"天気データを取得できませんでした: {e}") from e
 
+    now = datetime.fromisoformat(forecast["current"]["time"])
+    outlook, note = _outlook(location, settings, now)
+    return _report(location, forecast, outlook, note)
+
+
+# デモで選ばれた都市の天気。設定は変えない。見通しは LLM を起動することがあるので作らない
+@app.get("/news/place")
+def get_place_news(
+    name: str,
+    latitude: float = Query(ge=-90, le=90),
+    longitude: float = Query(ge=-180, le=180),
+) -> dict:
+    location = {
+        "name": name,
+        "admin1": None,
+        "country": None,
+        "country_code": None,
+        "latitude": latitude,
+        "longitude": longitude,
+    }
+    try:
+        forecast = sources.fetch_forecast(latitude, longitude)
+    except (httpx.HTTPError, ValueError) as e:
+        raise HTTPException(502, f"天気データを取得できませんでした: {e}") from e
+    return _report(location, forecast, None, None)
+
+
+def _report(location: dict, forecast: dict, outlook: dict | None, note: str | None) -> dict:
     current = forecast["current"]
     now = datetime.fromisoformat(current["time"])
-    outlook, note = _outlook(location, settings, now)
     daily = news.daily_from_now(forecast["daily"], forecast["hourly"], now)
     return {
         "location": location,
+        "utc_offset_seconds": forecast["utc_offset_seconds"],
         "headline": news.headline(location["name"], now),
         "current_text": news.current_sentence(current),
         "day_text": news.day_sentence(daily, news.focus_index(now)),

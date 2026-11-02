@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('weatherApi', {
   getTexture: (name: string) => ipcRenderer.invoke('texture:get', name),
   getEarthTile: (layer: string, col: number, row: number) => ipcRenderer.invoke('earth-tile:get', layer, col, row),
   getNews: () => ipcRenderer.invoke('news:get'),
+  getPlaceNews: (name: string, latitude: number, longitude: number) =>
+    ipcRenderer.invoke('news:place', name, latitude, longitude),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('settings:set', settings),
   searchLocations: (query: string) => ipcRenderer.invoke('locations:search', query),

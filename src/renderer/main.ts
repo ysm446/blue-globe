@@ -30,7 +30,7 @@ import {
 } from './region-camera';
 import { RegionDetail } from './region-detail';
 import { linePath, linePoints } from './hourly-chart';
-import { DEMO_SCENES, pickDemoPlace } from './demo';
+import { DEMO_SCENES, pickDemoPlace, type DemoPlace } from './demo';
 
 const COLORS = {
   ocean: '#0c1422',
@@ -506,19 +506,23 @@ function initGlobe() {
     borders.group.scale.setScalar(lineRadius(BORDER_RADIUS));
   }
 
-  function focusLocation(location: WeatherLocation): void {
-    focused = location;
-    el('marker-label').textContent = location.name;
-    lonLatToVector3(location.longitude, location.latitude, EARTH_SURFACE_RADIUS, markerPos);
+  function placeMarker(name: string, lat: number, lon: number): void {
+    el('marker-label').textContent = name;
+    lonLatToVector3(lon, lat, EARTH_SURFACE_RADIUS, markerPos);
     markerNormal = markerPos.clone().normalize();
     marker.hidden = false;
+  }
+
+  function focusLocation(location: WeatherLocation): void {
+    focused = location;
+    placeMarker(location.name, location.latitude, location.longitude);
     if (regionView) {
       if (!regionFlight?.leaving) flyRegion(regionHomeOf(regionView), false);
       return;
     }
     flight = {
       from: camera.position.clone(),
-      to: markerNormal.clone().multiplyScalar(mode === 'wind' ? FOCUS_DIST : EARTH_VIEW_DIST),
+      to: markerPos.clone().normalize().multiplyScalar(mode === 'wind' ? FOCUS_DIST : EARTH_VIEW_DIST),
       elapsed: 0,
     };
   }
@@ -747,6 +751,12 @@ function initGlobe() {
       demoMotion = on;
       controls.autoRotate = on;
       controls.autoRotateSpeed = DEMO_ROTATE_SPEED;
+    },
+    // place を省くと設定地点に戻す
+    demoMarker(place?: DemoPlace): void {
+      if (place) placeMarker(place.name, place.lat, place.lon);
+      else if (focused) placeMarker(focused.name, focused.latitude, focused.longitude);
+      else marker.hidden = true;
     },
     // place を省くと設定地点へ向かう
     demoRegion(place?: LonLat): void {
@@ -1354,21 +1364,27 @@ function initSettingsDialog(
 }
 
 // PC の時刻を表示する。スリープ復帰後もすぐ合うよう、毎秒確かめて変わったときだけ書き換える
-function initClock(): void {
+let clockOffsetSeconds: number | null = null; // デモで都市を見せている間は、その都市の現地時刻にする
+
+function updateClock(): void {
   const timeEl = el('clock-time');
-  const update = (): void => {
-    const now = new Date();
-    const time = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
-    const date = now.toLocaleDateString('ja-JP', {
-      month: 'long',
-      day: 'numeric',
-      weekday: 'short',
-    });
-    const text = `${date} ${time}`;
-    if (timeEl.textContent !== text) timeEl.textContent = text;
-  };
-  update();
-  window.setInterval(update, 1000);
+  const shifted = clockOffsetSeconds !== null;
+  const now = new Date(Date.now() + (clockOffsetSeconds ?? 0) * 1000);
+  const timeZone = shifted ? 'UTC' : undefined;
+  const time = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone });
+  const date = now.toLocaleDateString('ja-JP', {
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+    timeZone,
+  });
+  const text = `${date} ${time}`;
+  if (timeEl.textContent !== text) timeEl.textContent = text;
+}
+
+function initClock(): void {
+  updateClock();
+  window.setInterval(updateClock, 1000);
 }
 
 function showClockPlace(location: WeatherLocation | null): void {
@@ -1444,17 +1460,12 @@ function initPanelFolds(): (panels: PanelSettings) => void {
   };
 }
 
-const DEMO_MODE_CAPTION: Record<MapMode, { title: string; note: string }> = {
-  normal: { title: '地球', note: '今の太陽の位置で描いています' },
-  weather: { title: '今の雲', note: 'NOAA GMGSI と GFS をもとに加工したもので、元データそのものではありません' },
-  wind: { title: '今の風', note: 'NOAA GFS' },
-};
-
 // 地球の回転と地域ビューを順に見せる。操作すると終わり、元のモードと視点へ戻す
 function initDemo(
   globe: ReturnType<typeof initGlobe>,
   modes: { get(): MapMode; apply(mode: MapMode): void },
   views: { get(): GlobeView; show(view: GlobeView): void },
+  weather: { hasHome(): boolean; showHome(): void; showCity(news: NewsReport): void },
 ): void {
   const start = el<HTMLButtonElement>('start-demo');
   const caption = el('demo-caption');
@@ -1463,11 +1474,37 @@ function initDemo(
   let timer = 0;
   let hintTimer = 0;
   let step = 0;
-  const next = { day: 0, night: 0 };
+  let stoppedByStartButton = false;
+  let cityRequest = 0;
+  const recent: string[] = [];
 
-  function showCaption(title: string, note: string): void {
-    el('demo-caption-title').textContent = title;
-    el('demo-caption-note').textContent = note;
+  function showCaption(text: string): void {
+    caption.textContent = text;
+    caption.hidden = !text;
+  }
+
+  // 天気が届くまでと取得できないときは、どの都市を見ているかを字幕で示す
+  function showCity(place: DemoPlace): void {
+    const request = ++cityRequest;
+    showCaption(place.name);
+    window.weatherApi
+      .getPlaceNews(place.name, place.lat, place.lon)
+      .then((news) => {
+        if (request !== cityRequest) return;
+        weather.showCity(news);
+        showCaption('');
+      })
+      .catch((err) => {
+        console.error('city weather failed', place.name, err);
+        if (request === cityRequest) showCaption(`${place.name}(天気を取得できませんでした)`);
+      });
+  }
+
+  function showHomeWeather(): void {
+    cityRequest++;
+    weather.showHome();
+    globe.demoMarker();
+    showCaption('');
   }
 
   function runScene(): void {
@@ -1476,20 +1513,17 @@ function initDemo(
     modes.apply(scene.mode);
     views.show(scene.view);
     if (scene.view === 'globe') {
+      showHomeWeather();
       globe.demoGlobe(scene.dayside);
-      showCaption(DEMO_MODE_CAPTION[scene.mode].title, DEMO_MODE_CAPTION[scene.mode].note);
+    } else if (scene.place === 'home' && weather.hasHome()) {
+      showHomeWeather();
+      globe.demoRegion();
     } else {
-      const home = el('clock-place-name').textContent ?? '';
-      if (scene.place === 'home' && home) {
-        globe.demoRegion();
-        showCaption(home, '設定した地点');
-      } else {
-        const kind = scene.place === 'night' ? 'night' : 'day';
-        const picked = pickDemoPlace(kind, globe.sunLonLat(), next[kind]);
-        next[kind] = picked.next;
-        globe.demoRegion(picked.place);
-        showCaption(picked.place.name, '地表と街明かりは合成画像で、今の様子ではありません');
-      }
+      const kind = scene.place === 'home' || !scene.place ? 'city' : scene.place;
+      const place = pickDemoPlace(kind, globe.sunLonLat(), recent);
+      globe.demoRegion(place);
+      globe.demoMarker(place);
+      showCity(place);
     }
     const scale = (window as unknown as { __weatherNewsDebug: { demoTimeScale: number } }).__weatherNewsDebug.demoTimeScale;
     timer = window.setTimeout(runScene, scene.seconds * 1000 * scale);
@@ -1516,7 +1550,10 @@ function initDemo(
     window.removeEventListener('keydown', onInput, true);
     window.removeEventListener('mousemove', wake);
     document.body.classList.remove('demo', 'demo-idle');
-    caption.hidden = true;
+    start.setAttribute('aria-pressed', 'false');
+    start.setAttribute('aria-label', 'デモを再生');
+    start.title = 'デモを再生';
+    showHomeWeather();
     hint.hidden = true;
     globe.setDemoMotion(false);
     modes.apply(mode);
@@ -1526,21 +1563,35 @@ function initDemo(
     globe.returnToLocation();
   }
 
-  // 終了の操作が、その下のボタンや地球の操作として働かないようにする。スクリーンショットでは終わらない
+  // 地球の操作やキー操作で終わる。スクリーンショットと、パネルの開閉やスクロールでは終わらない
   function onInput(event: Event): void {
     if (event instanceof KeyboardEvent && event.key === 'F12') return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('#panels, #screenshot-toast')) return;
+    if (target?.closest('#start-demo')) stoppedByStartButton = true; // 続く click で再開しない
+    // 左上や右上のボタンはそのまま働かせる。地球は触った操作をドラッグとして始めない
+    if (!(event instanceof KeyboardEvent) && target?.closest('button')) {
+      stop();
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     stop();
   }
 
   start.addEventListener('click', () => {
+    if (stoppedByStartButton) {
+      stoppedByStartButton = false;
+      return;
+    }
     if (restore) return;
     restore = { mode: modes.get(), view: views.get() };
     step = 0;
     start.blur();
+    start.setAttribute('aria-pressed', 'true');
+    start.setAttribute('aria-label', 'デモを停止');
+    start.title = 'デモを停止';
     document.body.classList.add('demo');
-    caption.hidden = false;
     globe.setDemoMotion(true);
     window.addEventListener('pointerdown', onInput, true);
     window.addEventListener('wheel', onInput, { capture: true, passive: false });
@@ -1652,6 +1703,8 @@ async function init(): Promise<void> {
     status.classList.toggle('error', isError);
   }
 
+  let homeNews: NewsReport | null = null;
+  let showingCity = false;
   let requestId = 0;
   async function refreshNews(): Promise<void> {
     const id = ++requestId;
@@ -1660,7 +1713,8 @@ async function init(): Promise<void> {
     try {
       const news = await window.weatherApi.getNews();
       if (id !== requestId) return; // 地点変更などで新しい取得が始まっていたら捨てる
-      renderNews(news);
+      homeNews = news;
+      if (!showingCity) renderNews(news); // デモで都市を見せている間は、戻るときに出す
       setStatus('');
     } catch (err) {
       if (id !== requestId) return;
@@ -1699,6 +1753,28 @@ async function init(): Promise<void> {
     globe,
     { get: () => mode, apply: applyMode },
     { get: () => view, show: showView },
+    {
+      hasHome: () => hasLocation,
+      showHome(): void {
+        if (!showingCity) return;
+        showingCity = false;
+        clockOffsetSeconds = null;
+        updateClock();
+        if (homeNews) {
+          renderNews(homeNews);
+          showClockPlace(homeNews.location);
+        } else {
+          showClockPlace(null);
+        }
+      },
+      showCity(news: NewsReport): void {
+        showingCity = true;
+        clockOffsetSeconds = news.utc_offset_seconds;
+        updateClock();
+        renderNews(news);
+        showClockPlace(news.location);
+      },
+    },
   );
 
   try {

@@ -1,35 +1,44 @@
 // デモの場面と行き先の検証。実行: node --test tests/demo.test.ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DAY_PLACES, DEMO_SCENES, NIGHT_PLACES, pickDemoPlace, sunElevation } from '../src/renderer/demo.ts';
+import { CITIES, DEMO_SCENES, pickDemoPlace, sunElevation } from '../src/renderer/demo.ts';
 
 test('太陽の高度は真下で 90 度、裏側で -90 度', () => {
   assert.ok(Math.abs(sunElevation({ lat: 10, lon: 20 }, { lat: 10, lon: 20 }) - 90) < 1e-6);
   assert.ok(Math.abs(sunElevation({ lat: -10, lon: -160 }, { lat: 10, lon: 20 }) + 90) < 1e-6);
 });
 
-test('昼の場所は太陽が高い場所から選び、順番に進む', () => {
-  const sun = { lat: 0, lon: 80 }; // ヒマラヤが昼で、アメリカ大陸は夜
-  const first = pickDemoPlace('day', sun, 0);
-  assert.equal(first.place.name, 'ヒマラヤ山脈');
-  const second = pickDemoPlace('day', sun, first.next);
-  assert.notEqual(second.place.name, first.place.name);
-  assert.ok(sunElevation(second.place, sun) >= 15);
+test('昼の都市は太陽が高い場所から、夜の都市は太陽が沈んだ場所から選ぶ', () => {
+  const sun = { lat: 0, lon: 80 };
+  for (let i = 0; i < 50; i++) {
+    assert.ok(sunElevation(pickDemoPlace('day', sun, []), sun) >= 15);
+    assert.ok(sunElevation(pickDemoPlace('night', sun, []), sun) <= -6);
+  }
 });
 
-test('夜の場所は太陽が沈んだ場所から選ぶ', () => {
-  const sun = { lat: 0, lon: -60 }; // アメリカ大陸が昼で、東京は夜
-  const { place } = pickDemoPlace('night', sun, 0);
-  assert.equal(place.name, '東京');
-  assert.ok(sunElevation(place, sun) <= -6);
+test('都市は昼夜を問わず選ばれる', () => {
+  const sun = { lat: 0, lon: 80 };
+  const picked = new Set(Array.from({ length: 300 }, () => pickDemoPlace('city', sun, []).name));
+  assert.equal(picked.size, CITIES.length);
 });
 
-test('どの太陽の位置でも昼と夜の場所が見つかる', () => {
+test('最近行った場所を避ける', () => {
+  const sun = { lat: 0, lon: 0 };
+  const recent: string[] = [];
+  const names: string[] = [];
+  for (let i = 0; i < 40; i++) names.push(pickDemoPlace('city', sun, recent).name);
+  names.forEach((name, index) => {
+    assert.ok(!names.slice(Math.max(0, index - 5), index).includes(name), `${index}: ${name}`);
+  });
+  assert.equal(recent.length, 5);
+});
+
+test('どの太陽の位置でも昼と夜の都市が見つかる', () => {
   for (let lon = -180; lon < 180; lon += 15) {
     for (const lat of [-23, 0, 23]) {
       const sun = { lat, lon };
-      assert.ok(DAY_PLACES.some((place) => sunElevation(place, sun) >= 15), `昼 ${lat},${lon}`);
-      assert.ok(NIGHT_PLACES.some((place) => sunElevation(place, sun) <= -6), `夜 ${lat},${lon}`);
+      assert.ok(CITIES.some((place) => sunElevation(place, sun) >= 15), `昼 ${lat},${lon}`);
+      assert.ok(CITIES.some((place) => sunElevation(place, sun) <= -6), `夜 ${lat},${lon}`);
     }
   }
 });

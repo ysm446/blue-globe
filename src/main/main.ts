@@ -166,6 +166,9 @@ const jsonPut = (body: unknown): RequestInit => ({
 });
 
 ipcMain.handle('news:get', () => backendRequest('/news'));
+ipcMain.handle('news:place', (_event, name: string, latitude: number, longitude: number) =>
+  backendRequest(`/news/place?name=${encodeURIComponent(name)}&latitude=${latitude}&longitude=${longitude}`),
+);
 ipcMain.handle('settings:get', () => backendRequest('/settings'));
 ipcMain.handle('settings:set', (_event, settings: unknown) =>
   backendRequest('/settings', jsonPut(settings)),

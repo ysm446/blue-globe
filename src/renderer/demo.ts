@@ -8,10 +8,12 @@ export interface DemoPlace {
 export interface DemoScene {
   mode: 'normal' | 'weather' | 'wind';
   view: 'globe' | 'region';
-  place?: 'home' | 'day' | 'night';
+  place?: 'home' | DemoPlaceKind;
   dayside?: boolean; // 雲や海の反射が見えるよう、地域ビューから昼側へ移って回る
   seconds: number;
 }
+
+export type DemoPlaceKind = 'day' | 'night' | 'city';
 
 export const DEMO_SCENES: DemoScene[] = [
   { mode: 'normal', view: 'globe', seconds: 40 },
@@ -21,34 +23,47 @@ export const DEMO_SCENES: DemoScene[] = [
   { mode: 'normal', view: 'globe', dayside: true, seconds: 25 },
   { mode: 'normal', view: 'region', place: 'night', seconds: 40 },
   { mode: 'wind', view: 'globe', seconds: 40 },
+  { mode: 'normal', view: 'region', place: 'city', seconds: 40 },
 ];
 
-// 昼に見て面白い地形
-export const DAY_PLACES: DemoPlace[] = [
-  { name: 'ヒマラヤ山脈', lat: 28, lon: 86 },
-  { name: 'サハラ砂漠', lat: 24, lon: 12 },
-  { name: 'アルプス山脈', lat: 46, lon: 10 },
-  { name: 'アマゾン川の河口', lat: -1, lon: -50 },
-  { name: 'バハマの浅瀬', lat: 24, lon: -77 },
-  { name: 'グランドキャニオン', lat: 36, lon: -112 },
-  { name: 'グレートバリアリーフ', lat: -18, lon: 148 },
-  { name: 'ナイル川', lat: 27, lon: 32 },
-];
-
-// 夜に街明かりが広がる場所
-export const NIGHT_PLACES: DemoPlace[] = [
+// 世界の都市。選ばれると、その都市の天気をパネルに出す
+export const CITIES: DemoPlace[] = [
   { name: '東京', lat: 35.7, lon: 139.7 },
-  { name: 'ニューヨーク', lat: 40.7, lon: -74 },
-  { name: 'パリ', lat: 48.9, lon: 2.4 },
-  { name: 'カイロ', lat: 30, lon: 31.2 },
-  { name: 'デリー', lat: 28.6, lon: 77.2 },
-  { name: 'サンパウロ', lat: -23.5, lon: -46.6 },
   { name: 'ソウル', lat: 37.6, lon: 127 },
+  { name: '上海', lat: 31.2, lon: 121.5 },
+  { name: '香港', lat: 22.3, lon: 114.2 },
+  { name: 'シンガポール', lat: 1.4, lon: 103.8 },
+  { name: 'バンコク', lat: 13.8, lon: 100.5 },
+  { name: 'デリー', lat: 28.6, lon: 77.2 },
+  { name: 'ムンバイ', lat: 19.1, lon: 72.9 },
+  { name: 'ドバイ', lat: 25.2, lon: 55.3 },
+  { name: 'イスタンブール', lat: 41, lon: 29 },
+  { name: 'カイロ', lat: 30, lon: 31.2 },
+  { name: 'モスクワ', lat: 55.8, lon: 37.6 },
+  { name: 'パリ', lat: 48.9, lon: 2.4 },
+  { name: 'ロンドン', lat: 51.5, lon: -0.1 },
+  { name: 'ローマ', lat: 41.9, lon: 12.5 },
+  { name: 'ベルリン', lat: 52.5, lon: 13.4 },
+  { name: 'ラゴス', lat: 6.5, lon: 3.4 },
+  { name: 'ナイロビ', lat: -1.3, lon: 36.8 },
+  { name: 'ケープタウン', lat: -33.9, lon: 18.4 },
+  { name: 'ニューヨーク', lat: 40.7, lon: -74 },
+  { name: 'シカゴ', lat: 41.9, lon: -87.6 },
   { name: 'ロサンゼルス', lat: 34, lon: -118.2 },
+  { name: 'バンクーバー', lat: 49.3, lon: -123.1 },
+  { name: 'メキシコシティ', lat: 19.4, lon: -99.1 },
+  { name: 'ハバナ', lat: 23.1, lon: -82.4 },
+  { name: 'リマ', lat: -12, lon: -77 },
+  { name: 'サンパウロ', lat: -23.5, lon: -46.6 },
+  { name: 'ブエノスアイレス', lat: -34.6, lon: -58.4 },
+  { name: 'シドニー', lat: -33.9, lon: 151.2 },
+  { name: 'オークランド', lat: -36.9, lon: 174.8 },
+  { name: 'ホノルル', lat: 21.3, lon: -157.9 },
 ];
 
-const DAY_MIN_ELEVATION = 15; // 太陽がこれより高ければ、地形がよく見える
+const DAY_MIN_ELEVATION = 15; // 太陽がこれより高ければ、地表がよく見える
 const NIGHT_MAX_ELEVATION = -6; // 太陽がこれより低ければ、街明かりがはっきり見える
+const RECENT_LIMIT = 5; // 同じ場所が続かないよう、最近行った場所を避ける
 const DEG = Math.PI / 180;
 
 export function sunElevation(place: { lat: number; lon: number }, sun: { lat: number; lon: number }): number {
@@ -58,19 +73,22 @@ export function sunElevation(place: { lat: number; lon: number }, sun: { lat: nu
   return Math.asin(Math.max(-1, Math.min(1, cosine))) / DEG;
 }
 
-// start の次から順に、今の太陽で見頃の場所を探す。なければ順番どおりの場所にする
+// 昼や夜の都市は、今の太陽で見頃の都市からランダムに選ぶ。recent は新しい順で、選んだ場所を先頭に足す
 export function pickDemoPlace(
-  kind: 'day' | 'night',
+  kind: DemoPlaceKind,
   sun: { lat: number; lon: number },
-  start: number,
-): { place: DemoPlace; next: number } {
-  const places = kind === 'day' ? DAY_PLACES : NIGHT_PLACES;
-  for (let offset = 0; offset < places.length; offset++) {
-    const index = (start + offset) % places.length;
-    const elevation = sunElevation(places[index], sun);
-    if (kind === 'day' ? elevation >= DAY_MIN_ELEVATION : elevation <= NIGHT_MAX_ELEVATION) {
-      return { place: places[index], next: index + 1 };
-    }
-  }
-  return { place: places[start % places.length], next: start + 1 };
+  recent: string[],
+  random: () => number = Math.random,
+): DemoPlace {
+  const suitable = CITIES.filter((place) => {
+    if (kind === 'day') return sunElevation(place, sun) >= DAY_MIN_ELEVATION;
+    return kind === 'city' || sunElevation(place, sun) <= NIGHT_MAX_ELEVATION;
+  });
+  const candidates = suitable.length > 0 ? suitable : CITIES;
+  const fresh = candidates.filter((place) => !recent.includes(place.name));
+  const pool = fresh.length > 0 ? fresh : candidates;
+  const place = pool[Math.floor(random() * pool.length)];
+  recent.unshift(place.name);
+  recent.length = Math.min(recent.length, RECENT_LIMIT);
+  return place;
 }

@@ -154,3 +154,62 @@ class SettingsApiTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlaceNewsTest(unittest.TestCase):
+    FORECAST = {
+        "utc_offset_seconds": 14400,
+        "current": {
+            "time": "2026-11-02T20:15",
+            "temperature_2m": 28.4,
+            "apparent_temperature": 30.1,
+            "relative_humidity_2m": 60,
+            "precipitation": 0,
+            "weather_code": 0,
+            "is_day": 0,
+            "wind_speed_10m": 3.2,
+            "wind_direction_10m": 90,
+            "wind_gusts_10m": 6.0,
+        },
+        "hourly": {
+            "time": [f"2026-11-{2 + h // 24:02d}T{h % 24:02d}:00" for h in range(72)],
+            "temperature_2m": [25.0] * 72,
+            "precipitation_probability": [10] * 72,
+            "weather_code": [0] * 72,
+            "is_day": [1] * 72,
+        },
+        "daily": {
+            "time": [f"2026-11-{d:02d}" for d in range(2, 9)],
+            "weather_code": [0] * 7,
+            "temperature_2m_max": [30.0] * 7,
+            "temperature_2m_min": [22.0] * 7,
+            "precipitation_probability_max": [10] * 7,
+            "sunrise": ["2026-11-02T06:20"] * 7,
+            "sunset": ["2026-11-02T17:40"] * 7,
+        },
+    }
+
+    def setUp(self):
+        self.client = TestClient(api.app)
+
+    def test_returns_the_weather_of_the_city_without_changing_settings(self):
+        before = self.client.get("/settings").json()
+        with mock.patch.object(api.sources, "fetch_forecast", return_value=self.FORECAST) as fetch:
+            response = self.client.get("/news/place", params={"name": "ドバイ", "latitude": 25.2, "longitude": 55.3})
+        self.assertEqual(response.status_code, 200)
+        fetch.assert_called_once_with(25.2, 55.3)
+        report = response.json()
+        self.assertEqual(report["location"]["name"], "ドバイ")
+        self.assertEqual(report["utc_offset_seconds"], 14400)
+        self.assertEqual(report["current"]["sunrise"], "06:20")
+        self.assertIsNone(report["outlook"])
+        self.assertEqual(self.client.get("/settings").json(), before)
+
+    def test_invalid_coordinates_are_rejected(self):
+        response = self.client.get("/news/place", params={"name": "x", "latitude": 95, "longitude": 0})
+        self.assertEqual(response.status_code, 422)
+
+    def test_failed_fetch_returns_an_error(self):
+        with mock.patch.object(api.sources, "fetch_forecast", side_effect=ValueError("bad")):
+            response = self.client.get("/news/place", params={"name": "x", "latitude": 0, "longitude": 0})
+        self.assertEqual(response.status_code, 502)
