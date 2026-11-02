@@ -1,7 +1,8 @@
 // 地球儀の表示とカメラ操作。モード、地域ビュー、描画の設定をここで扱う
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import type { DemoPlace } from './demo';
+import { CityLabels } from './city-labels';
+import { CITIES, type DemoPlace } from './demo';
 import { el } from './dom';
 import { CLOUD_ALTITUDE, RealisticEarth } from './earth';
 import { adaptExposure, earthClearance, screenPresence, targetExposure } from './exposure';
@@ -76,6 +77,10 @@ const CAMERA_NEAR_MAX = 0.1;
 const CAMERA_NEAR_MIN = 0.005;
 const REGION_BLEND_SECONDS = 0.5;
 const DEMO_FLY_SECONDS = 6;
+// マーカーの地名が占める範囲 (style.css の .marker-label と合わせる)
+const MARKER_BOX_LEFT = 8;
+const MARKER_BOX_HEIGHT = 24;
+const MARKER_LABEL_OFFSET = 13;
 const DEMO_ROTATE_SPEED = 0.42; // OrbitControls の単位。毎秒約 2.5 度で、地表は実際の自転と同じ東向きに動く
 const DEMO_TURN_DEGREES_PER_SECOND = 1.2; // 地域ビューで中心のまわりを回る速さ
 const DEMO_TILT = 62;
@@ -91,7 +96,7 @@ const FLING_MAX_IDLE_MS = 80; // 止まってから指を離したら慣性を�
 
 export type GlobeController = ReturnType<typeof initGlobe>;
 
-export function initGlobe() {
+export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const container = el('app');
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -275,8 +280,11 @@ export function initGlobe() {
   const marker = el('marker');
   const markerPos = new THREE.Vector3();
   const projected = new THREE.Vector3();
-  let markerNormal: THREE.Vector3 | null = null;
+  let markerShown = false;
+  let markerLabelWidth = 0;
   let focused: WeatherLocation | null = null;
+  const cityLabels = new CityLabels(el('city-labels'), CITIES, EARTH_SURFACE_RADIUS, onSelectCity);
+  let cityLabelsEnabled = false;
 
   // 地域ビュー。null の間は地球ビューで、OrbitControls がカメラを動かす
   let regionView: RegionView | null = null;
@@ -510,10 +518,34 @@ export function initGlobe() {
   }
 
   function placeMarker(name: string, lat: number, lon: number): void {
-    el('marker-label').textContent = name;
+    const label = el('marker-label');
+    label.textContent = name;
     lonLatToVector3(lon, lat, EARTH_SURFACE_RADIUS, markerPos);
-    markerNormal = markerPos.clone().normalize();
     marker.hidden = false;
+    markerShown = true;
+    markerLabelWidth = label.offsetWidth;
+    cityLabels.setExcluded(name);
+  }
+
+  function hideMarker(): void {
+    marker.hidden = true;
+    markerShown = false;
+    cityLabels.setExcluded(null);
+  }
+
+  // 地球の裏側やカメラの後ろにあるときは null を返す
+  function toScreen(world: THREE.Vector3): { x: number; y: number } | null {
+    const distance = camera.position.length();
+    const facing = world.dot(camera.position) / (world.length() * distance);
+    projected.copy(world).project(camera);
+    // 斜めの視点では、地平線より手前でもカメラの後ろにあることがある (このとき z は 1 を超える)
+    if (facing <= GLOBE_RADIUS / distance || projected.z >= 1) return null;
+    return { x: ((projected.x + 1) / 2) * window.innerWidth, y: ((1 - projected.y) / 2) * window.innerHeight };
+  }
+
+  // デモの間は出さない。デモは行き先の都市だけをマーカーで見せる
+  function syncCityLabels(): void {
+    cityLabels.setVisible(cityLabelsEnabled && !demoMotion);
   }
 
   function focusLocation(location: WeatherLocation): void {
@@ -579,18 +611,16 @@ export function initGlobe() {
   }
 
   function updateMarker(): void {
-    if (!markerNormal) return;
-    // 地球の裏側にあるときは隠す
-    const distance = camera.position.length();
-    const facing = markerNormal.dot(camera.position) / distance;
-    projected.copy(markerPos).project(camera);
-    // 斜めの視点では、地平線より手前でもカメラの後ろにあることがある (このとき z は 1 を超える)
-    const visible = facing > GLOBE_RADIUS / distance && projected.z < 1;
-    marker.style.visibility = visible ? 'visible' : 'hidden';
-    if (!visible) return;
-    const x = ((projected.x + 1) / 2) * window.innerWidth;
-    const y = ((1 - projected.y) / 2) * window.innerHeight;
-    marker.style.transform = `translate(${x}px, ${y}px)`;
+    const point = markerShown ? toScreen(markerPos) : null;
+    if (markerShown) {
+      marker.style.visibility = point ? 'visible' : 'hidden';
+      if (point) marker.style.transform = `translate(${point.x}px, ${point.y}px)`;
+    }
+    // 都市のラベルをマーカーの地名に重ねない
+    const markerBox = point
+      ? [{ x: point.x - MARKER_BOX_LEFT, y: point.y - MARKER_BOX_HEIGHT / 2, width: MARKER_BOX_LEFT + MARKER_LABEL_OFFSET + markerLabelWidth, height: MARKER_BOX_HEIGHT }]
+      : [];
+    cityLabels.update(toScreen, markerBox);
   }
 
   window.addEventListener('resize', () => {
@@ -636,6 +666,8 @@ export function initGlobe() {
     else if (regionView && !regionFlight?.leaving) startRegionDetail();
     showMapLines = graphics.show_map_lines;
     syncMapLines();
+    cityLabelsEnabled = graphics.show_city_labels;
+    syncCityLabels();
     fpsCounter.hidden = !graphics.show_fps;
     const ratio = (Math.min(window.devicePixelRatio, 2) * graphics.render_scale) / 100;
     if (ratio !== renderer.getPixelRatio()) {
@@ -773,14 +805,24 @@ export function initGlobe() {
     sunLonLat,
     setDemoMotion(on: boolean): void {
       demoMotion = on;
+      syncCityLabels();
       controls.autoRotate = on;
       controls.autoRotateSpeed = DEMO_ROTATE_SPEED;
     },
     // place を省くと設定地点に戻す
-    demoMarker(place?: DemoPlace): void {
+    setMarker(place?: DemoPlace): void {
       if (place) placeMarker(place.name, place.lat, place.lon);
       else if (focused) placeMarker(focused.name, focused.latitude, focused.longitude);
-      else marker.hidden = true;
+      else hideMarker();
+    },
+    // 設定地点は変えずに、都市へカメラとマーカーを移す。向きと高さは今のまま
+    showPlace(place: DemoPlace): void {
+      placeMarker(place.name, place.lat, place.lon);
+      if (regionView) {
+        if (!regionFlight?.leaving) flyRegion({ ...regionView, lat: place.lat, lon: place.lon }, false);
+        return;
+      }
+      flyTo(markerPos.clone().normalize().multiplyScalar(viewDistance(mode)));
     },
     // place を省くと設定地点へ向かう
     demoRegion(place?: LonLat): void {

@@ -27,7 +27,7 @@ export const DEMO_SCENES: DemoScene[] = [
   { mode: 'weather', view: 'region', place: 'city', seconds: 40 },
 ];
 
-// 世界の都市。選ばれると、その都市の天気をパネルに出す
+// 世界の都市。デモの行き先と、地球儀のラベルに使う。ラベルが重なるときは前の都市を優先する
 export const CITIES: DemoPlace[] = [
   { name: '東京', lat: 35.7, lon: 139.7 },
   { name: 'ソウル', lat: 37.6, lon: 127 },

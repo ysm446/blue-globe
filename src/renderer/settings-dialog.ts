@@ -137,6 +137,7 @@ export function initSettingsDialog(
     auto_exposure: el<HTMLInputElement>('exposure-toggle'),
     show_fps: el<HTMLInputElement>('fps-toggle'),
     show_map_lines: el<HTMLInputElement>('map-lines-toggle'),
+    show_city_labels: el<HTMLInputElement>('city-labels-toggle'),
     region_detail: el<HTMLInputElement>('region-detail-toggle'),
     volume_clouds: el<HTMLInputElement>('volume-clouds-toggle'),
   };

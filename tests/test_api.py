@@ -47,6 +47,7 @@ class SettingsApiTest(unittest.TestCase):
         "auto_exposure": False,
         "show_fps": True,
         "show_map_lines": False,
+        "show_city_labels": False,
         "star_brightness": 2.0,
         "cloud_shadow": 0.8,
         "region_bloom": 0.3,
@@ -101,6 +102,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["fps_limit"], 60)
         self.assertEqual(graphics["star_brightness"], 1.0)
         self.assertTrue(graphics["show_map_lines"])
+        self.assertTrue(graphics["show_city_labels"])
         self.assertEqual(graphics["cloud_shadow"], 0.55)
         self.assertTrue(graphics["region_detail"])
         self.assertTrue(graphics["volume_clouds"])

@@ -1,3 +1,4 @@
+import type { DemoPlace } from './demo';
 import { initDemo } from './demo-controller';
 import { el, errorMessage, setStatus } from './dom';
 import { initGlobe } from './globe-view';
@@ -79,7 +80,7 @@ async function init(): Promise<void> {
   initNewsView();
   initScreenshotToast();
   const applyPanels = initPanelFolds();
-  const globe = initGlobe();
+  const globe = initGlobe(selectCity);
   window.__weatherNewsDebug.renderHourly = renderHourly;
   const mapLayers = initMapLayers(globe);
   let mode: MapMode = 'normal';
@@ -146,7 +147,7 @@ async function init(): Promise<void> {
       const news = await window.weatherApi.getNews();
       if (id !== requestId) return; // 地点変更などで新しい取得が始まっていたら捨てる
       homeNews = news;
-      if (!showingCity) renderNews(news); // デモで都市を見せている間は、戻るときに出す
+      if (!showingCity) renderNews(news); // 都市を見せている間は、戻るときに出す
       setStatus(status, '');
     } catch (err) {
       if (id !== requestId) return;
@@ -156,9 +157,56 @@ async function init(): Promise<void> {
     }
   }
 
+  function showCity(news: NewsReport): void {
+    showingCity = true;
+    setClockOffset(news.utc_offset_seconds);
+    renderNews(news);
+    showClockPlace(news.location);
+  }
+
+  function showHome(): void {
+    cityRequest++;
+    if (selectedCity) setStatus(status, '');
+    selectedCity = null;
+    if (!showingCity) return;
+    showingCity = false;
+    setClockOffset(null);
+    if (homeNews) {
+      renderNews(homeNews);
+      showClockPlace(homeNews.location);
+    } else {
+      hideNews(); // 地点が未設定のときは、都市の文を残さない
+      showClockPlace(null);
+    }
+  }
+
+  // ラベルで選んだ都市の天気。設定地点は変えず、「地点へ戻る」で元に戻す
+  let selectedCity: DemoPlace | null = null;
+  let cityRequest = 0;
+  async function loadCity(place: DemoPlace): Promise<void> {
+    const request = ++cityRequest;
+    setStatus(status, `${place.name}の天気を取得しています…`);
+    try {
+      const news = await window.weatherApi.getPlaceNews(place.name, place.lat, place.lon);
+      if (request !== cityRequest) return; // 別の都市を選んだり、地点へ戻ったりしていたら捨てる
+      showCity(news);
+      setStatus(status, '');
+    } catch (err) {
+      console.error('city weather failed', place.name, err);
+      if (request === cityRequest) setStatus(status, `${place.name}の天気を取得できませんでした`, true);
+    }
+  }
+
+  function selectCity(place: DemoPlace): void {
+    selectedCity = place;
+    globe.showPlace(place);
+    void loadCity(place);
+  }
+
   let hasLocation = false;
   const settingsDialog = initSettingsDialog(
     (settings) => {
+      showHome();
       hasLocation = settings.location !== null;
       showClockPlace(settings.location);
       hideNews();
@@ -169,35 +217,21 @@ async function init(): Promise<void> {
   );
 
   refreshBtn.addEventListener('click', () => {
-    if (hasLocation) void refreshNews();
+    if (selectedCity) void loadCity(selectedCity);
+    else if (hasLocation) void refreshNews();
     else void settingsDialog.open();
   });
   el('open-settings').addEventListener('click', () => void settingsDialog.open());
-  el('return-home').addEventListener('click', () => globe.returnToLocation());
+  el('return-home').addEventListener('click', () => {
+    showHome();
+    globe.setMarker();
+    globe.returnToLocation();
+  });
   initDemo(
     globe,
     { get: () => mode, apply: applyMode },
     { get: () => view, show: showView },
-    {
-      hasHome: () => hasLocation,
-      showHome(): void {
-        if (!showingCity) return;
-        showingCity = false;
-        setClockOffset(null);
-        if (homeNews) {
-          renderNews(homeNews);
-          showClockPlace(homeNews.location);
-        } else {
-          showClockPlace(null);
-        }
-      },
-      showCity(news: NewsReport): void {
-        showingCity = true;
-        setClockOffset(news.utc_offset_seconds);
-        renderNews(news);
-        showClockPlace(news.location);
-      },
-    },
+    { hasHome: () => hasLocation, showHome, showCity },
   );
 
   try {
@@ -222,6 +256,7 @@ async function init(): Promise<void> {
 
   window.setInterval(() => {
     if (hasLocation) void refreshNews();
+    if (selectedCity) void loadCity(selectedCity);
   }, NEWS_REFRESH_MS);
 }
 

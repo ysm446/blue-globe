@@ -48,7 +48,7 @@ export function initDemo(
   function showHomeWeather(): void {
     cityRequest++;
     weather.showHome();
-    globe.demoMarker();
+    globe.setMarker();
     showCaption('');
   }
 
@@ -67,7 +67,7 @@ export function initDemo(
       const kind = scene.place === 'home' || !scene.place ? 'city' : scene.place;
       const place = pickDemoPlace(kind, globe.sunLonLat(), recent);
       globe.demoRegion(place);
-      globe.demoMarker(place);
+      globe.setMarker(place);
       showCity(place);
     }
     timer = window.setTimeout(runScene, scene.seconds * 1000 * window.__weatherNewsDebug.demoTimeScale);
