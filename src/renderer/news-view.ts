@@ -206,11 +206,10 @@ export function renderNews(news: NewsReport): void {
     weatherIcon(news.current.icon, news.current.is_day, news.current.weather, 52),
   );
   el('clock-icon').replaceChildren(
-    weatherIcon(news.current.icon, news.current.is_day, news.current.weather, 60),
+    weatherIcon(news.current.icon, news.current.is_day, news.current.weather, 84),
   );
   el('clock-temperature').textContent = `${Math.round(news.current.temperature)}°`;
   el('clock-weather').hidden = false;
-  el('clock-apparent').textContent = `体感 ${Math.round(news.current.apparent)}°`;
   el('detail-sunrise').textContent = news.current.sunrise ?? '–';
   el('detail-sunset').textContent = news.current.sunset ?? '–';
   el('detail-rain').textContent = rainText(news.current.rain);
@@ -262,7 +261,7 @@ function revealClockWeather(location: WeatherLocation): void {
   if (place === clockWeatherPlace) return;
   clockWeatherPlace = place;
   revealInOrder(
-    [el('clock-icon'), el('clock-temperature'), el('clock-apparent'), ...document.querySelectorAll('#clock-details .detail-row > div')],
+    [el('clock-icon'), el('clock-temperature'), ...document.querySelectorAll('#clock-details .detail-row > div')],
     CLOCK_PLACE_ITEMS,
   );
 }

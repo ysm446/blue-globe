@@ -129,6 +129,7 @@ a:hover {
 #news,
 .forecast-panel,
 #layer-info,
+#music-popup,
 #settings::before {
   box-shadow: var(--panel-glow);
 }
@@ -306,9 +307,11 @@ a:hover {
   pointer-events: none;
 }
 
+/* 時刻を小さくしてもパネルの幅は保ち、スライダーを操作しやすくする */
 #time-head {
   display: flex;
   justify-content: space-between;
+  min-width: 258px;
   align-items: baseline;
   gap: 12px;
 }
@@ -317,8 +320,8 @@ a:hover {
 #clock-time {
   display: block;
   font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
-  font-size: 64px;
-  font-weight: 100;
+  font-size: 40px;
+  font-weight: 200;
   font-variant-numeric: tabular-nums;
   line-height: 1.1;
   white-space: nowrap;
@@ -354,9 +357,20 @@ body.demo #time-control {
   align-items: center;
   gap: 8px;
   width: max-content;
-  max-width: max(200px, calc(100vw - 518px));
+  max-width: calc(100vw - 644px); /* 左上のパネルの右端 (時刻のパネルの 306px) の分を左右に空ける */
   transform: translateX(-50%);
   pointer-events: none;
+}
+
+/* 中央に置くと左上のパネルに重なるので、右上のアイコンや操作部との間に収める */
+@media (max-width: 1000px) {
+  #top-center {
+    left: 322px;
+    right: 232px;
+    width: auto;
+    max-width: none;
+    transform: none;
+  }
 }
 
 #view-hint,
@@ -424,14 +438,6 @@ body.demo #time-control {
   align-items: center;
   gap: 12px;
   margin-top: 2px;
-}
-
-#clock-apparent {
-  align-self: flex-end;
-  margin-bottom: 10px;
-  color: var(--text-2);
-  font-size: 13px;
-  white-space: nowrap;
 }
 
 /* 詳細のパネルは時刻のパネルと同じ幅にする。閉じたら見出しの幅まで縮める */
@@ -522,12 +528,13 @@ body.demo #time-control {
 
 #clock-icon {
   flex: none;
-  height: 60px;
+  height: 84px;
 }
 
 #clock-temperature {
-  font-size: 56px;
-  font-weight: 200;
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  font-size: 80px;
+  font-weight: 100;
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
   white-space: nowrap;
@@ -576,9 +583,8 @@ body.demo #view-hint {
   right: 16px;
   width: min(300px, calc(100vw - 32px));
   padding: 10px 12px;
-  background: var(--panel-strong);
+  background: var(--panel);
   border-radius: 8px;
-  box-shadow: var(--panel-glow), 0 6px 20px rgba(4, 7, 11, 0.6);
 }
 
 #music-name {
