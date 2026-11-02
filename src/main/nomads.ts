@@ -7,12 +7,10 @@
 //     ?file=gfs.t06z.pgrb2.1p00.f000&var_UGRD=on&var_VGRD=on
 //     &lev_10_m_above_ground=on&dir=%2Fgfs.20260612%2F06%2Fatmos
 
+import { candidateRuns, nearestForecastHour } from './gfs-time';
 import { decodeGrib2, Grib2Message } from './grib2';
 
 const FILTER_BASE = 'https://nomads.ncep.noaa.gov/cgi-bin';
-const STEP_HOURS = 3; // gfs 1.00° の予報時間刻み
-const MAX_FORECAST_HOUR = 384;
-const PUBLISH_DELAY_HOURS = 5; // ランが NOMADS に並ぶまでのおおよその遅れ
 
 interface GfsRecordHeader {
   discipline: number;
@@ -41,34 +39,10 @@ export interface GfsCloudResult {
   data: Uint8Array; // 1 格子 1 バイトの雲量 (0〜255)。北端から南へ、経度 0 度から東へ
 }
 
-// 直近の GFS ラン(00/06/12/18Z)を新しい順に列挙する
-function candidateRuns(now: Date = new Date()): Date[] {
-  const base = now.getTime() - PUBLISH_DELAY_HOURS * 3600_000;
-  const d = new Date(base);
-  let t = Date.UTC(
-    d.getUTCFullYear(),
-    d.getUTCMonth(),
-    d.getUTCDate(),
-    Math.floor(d.getUTCHours() / 6) * 6,
-  );
-  const runs: Date[] = [];
-  for (let i = 0; i < 4; i++) {
-    runs.push(new Date(t));
-    t -= 6 * 3600_000;
-  }
-  return runs;
-}
-
-// ランの中で現在時刻に最も近い予報時間
-function nearestForecastHour(run: Date): number {
-  const hours = (Date.now() - run.getTime()) / 3600_000;
-  return Math.max(0, Math.min(MAX_FORECAST_HOUR, Math.round(hours / STEP_HOURS) * STEP_HOURS));
-}
-
-function filterUrl(grid: '1p00' | '0p25', run: Date, variables: Record<string, string>): string {
+function filterUrl(grid: '1p00' | '0p25', run: Date, target: Date, variables: Record<string, string>): string {
   const yyyymmdd = run.toISOString().slice(0, 10).replace(/-/g, '');
   const hh = String(run.getUTCHours()).padStart(2, '0');
-  const fff = String(nearestForecastHour(run)).padStart(3, '0');
+  const fff = String(nearestForecastHour(run, target)).padStart(3, '0');
   const params = new URLSearchParams({
     file: `gfs.t${hh}z.pgrb2.${grid}.f${fff}`,
     ...variables,
@@ -103,14 +77,15 @@ function assertExpectedGrid(msg: Grib2Message): void {
   }
 }
 
-// 最新の利用可能なランを探す。read が null を返すと、1 つ古いランを試す。
+// target を含む最新の利用可能なランを探す。read が null を返すと、1 つ古いランを試す。
 // signal で中断できる (中断時は 'cancelled' を投げる)
 async function fetchFromLatestRun<T>(
+  target: Date,
   urlOf: (run: Date) => string,
   read: (messages: Grib2Message[]) => T | null,
   signal: AbortSignal,
 ): Promise<T> {
-  for (const run of candidateRuns()) {
+  for (const run of candidateRuns(target)) {
     const bytes = await fetchBinary(urlOf(run), signal);
     if (signal.aborted) throw new Error('cancelled');
     if (!bytes || !isGrib(bytes)) continue; // ラン未公開時は HTML エラーページが返る
@@ -140,10 +115,11 @@ function gribMessageToRecord(msg: Grib2Message): GfsRecord {
   };
 }
 
-// 現在時刻に最も近い全層雲量を 0.25° 格子 (約 1.7MB) で取得する
-export function fetchCurrentGfsCloud(signal: AbortSignal): Promise<GfsCloudResult> {
+// target に最も近い全層雲量を 0.25° 格子 (約 1.7MB) で取得する
+export function fetchGfsCloud(signal: AbortSignal, target: Date = new Date()): Promise<GfsCloudResult> {
   return fetchFromLatestRun(
-    (run) => filterUrl('0p25', run, { var_TCDC: 'on', lev_entire_atmosphere: 'on' }),
+    target,
+    (run) => filterUrl('0p25', run, target, { var_TCDC: 'on', lev_entire_atmosphere: 'on' }),
     (messages) => {
       const msg = messages.find((m) => m.parameterCategory === 6 && m.parameterNumber === 1);
       if (!msg) return null;
@@ -158,10 +134,11 @@ export function fetchCurrentGfsCloud(signal: AbortSignal): Promise<GfsCloudResul
   );
 }
 
-// 現在時刻に最も近い予報時間の地上10m風を約 160KB で取得する
-export function fetchCurrentGfsWind(signal: AbortSignal): Promise<GfsRecord[]> {
+// target に最も近い 3 時間の区切りの地上10m風を約 160KB で取得する
+export function fetchGfsWind(signal: AbortSignal, target: Date = new Date()): Promise<GfsRecord[]> {
   return fetchFromLatestRun(
-    (run) => filterUrl('1p00', run, { var_UGRD: 'on', var_VGRD: 'on', lev_10_m_above_ground: 'on' }),
+    target,
+    (run) => filterUrl('1p00', run, target, { var_UGRD: 'on', var_VGRD: 'on', lev_10_m_above_ground: 'on' }),
     (messages) => {
       const windMessage = (parameterNumber: number): Grib2Message | undefined =>
         messages.find((m) => m.parameterCategory === 2 && m.parameterNumber === parameterNumber && m.levelType === 103);

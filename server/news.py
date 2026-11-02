@@ -5,7 +5,7 @@
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 PREFIX = "気象庁によると、"
 
@@ -71,14 +71,39 @@ def headline(name: str, time: datetime) -> str:
     return f"{name} {time.month}月{time.day}日 {clock_label(time)}"
 
 
-def current_sentence(current: dict) -> str:
+def current_sentence(current: dict, past_time: datetime | None = None) -> str:
+    """past_time を渡すと、その時刻の値として過去形で書く。"""
     weather = weather_label(current["weather_code"])
-    first = f"現在の気温は{current['temperature_2m']:.1f}℃で、{weather}です。"
+    lead = f"{past_time.hour}時の" if past_time else "現在の"
+    ending = "でした" if past_time else "です"
+    first = f"{lead}気温は{current['temperature_2m']:.1f}℃で、{weather}{ending}。"
     speed = current["wind_speed_10m"]
     if speed < CALM_WIND_MS:
-        return f"{first}風はほとんどありません。"
+        return f"{first}風はほとんどありませんでした。" if past_time else f"{first}風はほとんどありません。"
     direction = wind_direction(current["wind_direction_10m"])
-    return f"{first}{direction}寄りの風{speed:.1f}m/s、最大瞬間風速は{current['wind_gusts_10m']:.1f}m/sです。"
+    return f"{first}{direction}寄りの風{speed:.1f}m/s、最大瞬間風速は{current['wind_gusts_10m']:.1f}m/s{ending}。"
+
+
+def local_hour(at: datetime, utc_offset_seconds: int) -> datetime:
+    """時刻を地点の現地時刻へ直し、一番近い 1 時間に丸める (時間別予報の刻み)。"""
+    local = at.astimezone(timezone.utc).replace(tzinfo=None) + timedelta(seconds=utc_offset_seconds)
+    return (local + timedelta(minutes=30)).replace(minute=0, second=0, microsecond=0)
+
+
+def past_current(hourly: dict, time: datetime) -> dict | None:
+    """時間別予報から、現在の値と同じ形でその時刻の値を取り出す。予報にない時刻なら None。"""
+    key = time.strftime("%Y-%m-%dT%H:%M")
+    if key not in hourly["time"]:
+        return None
+    index = hourly["time"].index(key)
+    return {name: values[index] for name, values in hourly.items()}
+
+
+def from_today(daily: dict, now: datetime) -> dict:
+    """前日の分も含む日別予報から、今日より前を除く。"""
+    today = now.strftime("%Y-%m-%d")
+    start = daily["time"].index(today) if today in daily["time"] else 0
+    return {key: values[start:] for key, values in daily.items()}
 
 
 def focus_index(now: datetime) -> int:

@@ -3,7 +3,7 @@ import json
 import tempfile
 import threading
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -221,6 +221,70 @@ class PlaceNewsTest(unittest.TestCase):
         self.assertEqual(report["current"]["sunrise"], "06:20")
         self.assertIsNone(report["outlook"])
         self.assertEqual(self.client.get("/settings").json(), before)
+
+    PAST_HOURLY = {
+        **FORECAST["hourly"],
+        "apparent_temperature": [20.0] * 72,
+        "relative_humidity_2m": [55] * 72,
+        "wind_speed_10m": [4.0] * 72,
+        "wind_direction_10m": [180] * 72,
+        "wind_gusts_10m": [9.0] * 72,
+    }
+
+    def past_forecast(self):
+        # 前日の 2026-11-02 から始まる。現地時刻は 11-03 20:15
+        hourly = dict(self.PAST_HOURLY)
+        hourly["temperature_2m"] = [float(i) for i in range(72)]
+        daily = {key: list(values) for key, values in self.FORECAST["daily"].items()}
+        return {
+            **self.FORECAST,
+            "current": {**self.FORECAST["current"], "time": "2026-11-03T20:15"},
+            "hourly": hourly,
+            "daily": {**daily, "time": [f"2026-11-{d:02d}" for d in range(2, 9)]},
+        }
+
+    def get_past(self, at, forecast=None):
+        with mock.patch.object(api.sources, "fetch_forecast", return_value=forecast or self.past_forecast()) as fetch, mock.patch.object(
+            api, "_past_time", side_effect=lambda value: value
+        ):
+            response = self.client.get(
+                "/news/place", params={"name": "ドバイ", "latitude": 25.2, "longitude": 55.3, "at": at}
+            )
+        return response, fetch
+
+    def test_past_time_shows_the_values_of_that_hour(self):
+        # 2026-11-03T02:10Z は現地 (UTC+4) の 06:10 で、一番近い 1 時間は 06:00
+        response, fetch = self.get_past("2026-11-03T02:10:00Z")
+        self.assertEqual(response.status_code, 200)
+        fetch.assert_called_once_with(25.2, 55.3, past=True)
+        report = response.json()
+        self.assertEqual(report["current"]["temperature"], 30.0)  # 11-02 00:00 から 30 時間目
+        self.assertEqual(report["current"]["humidity"], 55)
+        self.assertEqual(report["hourly"][0]["time"], "9時")
+        self.assertIn("11月3日 午前6時", report["headline"])
+        self.assertTrue(report["current_text"].startswith("6時の気温は30.0℃で"))
+        self.assertTrue(report["current_text"].endswith("でした。"))
+        self.assertEqual(report["day_text"], "")
+        self.assertIsNone(report["outlook"])
+        self.assertIn("過去の時刻", report["note"])
+        self.assertIsNotNone(report["at"])
+
+    def test_past_time_keeps_todays_weekly_forecast(self):
+        report = self.get_past("2026-11-03T02:10:00Z")[0].json()
+        self.assertEqual(report["weekly"][0]["label"], "今日")
+
+    def test_past_time_outside_the_forecast_is_an_error(self):
+        self.assertEqual(self.get_past("2026-10-01T02:10:00Z")[0].status_code, 502)
+
+    def test_future_and_too_old_times_are_rejected(self):
+        now = datetime.now(timezone.utc)
+        for at in (now + timedelta(hours=2), now - timedelta(hours=30)):
+            response = self.client.get("/news/place", params={"name": "x", "latitude": 0, "longitude": 0, "at": at.isoformat()})
+            self.assertEqual(response.status_code, 400)
+
+    def test_time_without_timezone_is_rejected(self):
+        response = self.client.get("/news/place", params={"name": "x", "latitude": 0, "longitude": 0, "at": "2026-11-03T02:10:00"})
+        self.assertEqual(response.status_code, 400)
 
     def test_invalid_coordinates_are_rejected(self):
         response = self.client.get("/news/place", params={"name": "x", "latitude": 95, "longitude": 0})

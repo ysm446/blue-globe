@@ -100,6 +100,7 @@ a:hover {
 #mode-switch,
 #view-switch,
 #return-home,
+#time-control,
 #view-hint,
 #view-status,
 #fps-counter,
@@ -254,6 +255,47 @@ a:hover {
 
 #return-home {
   background: var(--panel);
+}
+
+#time-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 6px 4px 12px;
+  color: var(--text-2);
+  font-size: 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+#time-control .range-row {
+  width: 150px;
+}
+
+#time-offset {
+  min-width: 76px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+#time-control.past #time-offset {
+  color: var(--accent);
+}
+
+#time-now {
+  padding: 2px 8px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+#time-now:disabled {
+  visibility: hidden; /* 幅が変わらないよう、場所は残す */
+}
+
+/* デモは今の様子を見せる */
+body.demo #time-control {
+  display: none;
 }
 
 #view-hint,
@@ -761,6 +803,11 @@ body.demo-idle * {
   vertical-align: -2px;
 }
 
+/* 列に余裕があれば数字から離す。% は列の幅。最も狭い列 (約 41px) に「100%」が並ぶと 1px しか空けられない */
+#hourly-rain .rain-drop {
+  margin-right: clamp(1px, calc((100% - 41px) / 4 + 1px), 4px);
+}
+
 .forecast-table td.today {
   font-weight: 600;
 }
@@ -1072,7 +1119,7 @@ body.demo-idle * {
   appearance: none;
 }
 
-/* --fill はつまみの左側の割合。main.ts の showSlider が決める */
+/* --fill はつまみの左側の割合 */
 .range-row input::-webkit-slider-runnable-track {
   height: 3px;
   background: linear-gradient(

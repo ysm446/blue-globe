@@ -3,8 +3,9 @@ import { initDemo } from './demo-controller';
 import { el, errorMessage, setStatus } from './dom';
 import { initGlobe } from './globe-view';
 import { initMapLayers } from './map-layers';
-import { hideNews, initNewsView, renderHourly, renderNews, setClockOffset, showClockPlace } from './news-view';
+import { hideNews, initNewsView, renderHourly, renderNews, setClockOffset, setClockTime, showClockPlace } from './news-view';
 import { initSettingsDialog } from './settings-dialog';
+import { initTimeControl } from './time-control';
 
 const NEWS_REFRESH_MS = 15 * 60_000; // Open-Meteo の現在値は 15 分刻み
 
@@ -144,7 +145,7 @@ async function init(): Promise<void> {
     refreshBtn.disabled = true;
     setStatus(status, '最新の天気をまとめています…');
     try {
-      const news = await window.weatherApi.getNews();
+      const news = await window.weatherApi.getNews(viewAt?.toISOString());
       if (id !== requestId) return; // 地点変更などで新しい取得が始まっていたら捨てる
       homeNews = news;
       if (!showingCity) renderNews(news); // 都市を見せている間は、戻るときに出す
@@ -187,7 +188,7 @@ async function init(): Promise<void> {
     const request = ++cityRequest;
     setStatus(status, `${place.name}の天気を取得しています…`);
     try {
-      const news = await window.weatherApi.getPlaceNews(place.name, place.lat, place.lon);
+      const news = await window.weatherApi.getPlaceNews(place.name, place.lat, place.lon, viewAt?.toISOString());
       if (request !== cityRequest) return; // 別の都市を選んだり、地点へ戻ったりしていたら捨てる
       showCity(news);
       setStatus(status, '');
@@ -204,6 +205,22 @@ async function init(): Promise<void> {
   }
 
   let hasLocation = false;
+
+  // 過去の時刻。null は今で、動かしている間は太陽と時計だけが追従し、止めるとデータを取りに行く
+  let viewAt: Date | null = null;
+  const timeControl = initTimeControl(
+    (at) => {
+      globe.setViewTime(at);
+      setClockTime(at);
+    },
+    (at) => {
+      viewAt = at;
+      mapLayers.setTime(at);
+      if (hasLocation) void refreshNews();
+      if (selectedCity) void loadCity(selectedCity);
+    },
+  );
+
   const settingsDialog = initSettingsDialog(
     (settings) => {
       showHome();
@@ -231,7 +248,7 @@ async function init(): Promise<void> {
     globe,
     { get: () => mode, apply: applyMode },
     { get: () => view, show: showView },
-    { hasHome: () => hasLocation, showHome, showCity },
+    { hasHome: () => hasLocation, showHome, showCity, backToNow: () => timeControl.reset() },
   );
 
   try {
@@ -255,6 +272,7 @@ async function init(): Promise<void> {
   }
 
   window.setInterval(() => {
+    if (viewAt) return; // 過去の値は変わらない
     if (hasLocation) void refreshNews();
     if (selectedCity) void loadCity(selectedCity);
   }, NEWS_REFRESH_MS);

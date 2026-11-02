@@ -21,9 +21,18 @@ function validTimeLabel(refTime: string, forecastHours: number): string {
   return formatDateTime(new Date(new Date(refTime).getTime() + forecastHours * 3600_000));
 }
 
-async function loadWind(setWind: (field: WindField) => void): Promise<LayerCaption> {
+// at は過去の時刻で、null は今。isCurrent が false なら新しい取得が始まっているので、結果を捨てる
+async function loadWind(
+  setWind: (field: WindField) => void,
+  at: Date | null,
+  isCurrent: () => boolean,
+): Promise<LayerCaption | null> {
   try {
-    const result = await window.weatherApi.getWind();
+    const result = await window.weatherApi.getWind(at?.toISOString());
+    if (!isCurrent()) return null;
+    if (result.source === 'unavailable') {
+      return { text: 'この時刻の風を取得できず、前の表示のままです', warn: true };
+    }
     const field = WindField.fromGfsJson(result.records);
     if (!field) throw new Error('invalid wind data');
     setWind(field);
@@ -35,6 +44,8 @@ async function loadWind(setWind: (field: WindField) => void): Promise<LayerCapti
     return { text: `NOAA GFS ${label} 時点${stale ? '(取得できず前回のデータ)' : ''}`, warn: stale };
   } catch (err) {
     console.error('wind load failed', err);
+    if (!isCurrent()) return null;
+    if (at) return { text: 'この時刻の風を読み込めず、前の表示のままです', warn: true };
     setWind(makeSyntheticWind());
     return { text: '風データを読み込めず、合成データを表示中', warn: true };
   }
@@ -42,10 +53,13 @@ async function loadWind(setWind: (field: WindField) => void): Promise<LayerCapti
 
 async function loadClouds(
   setClouds: (nx: number, ny: number, data: Uint8Array) => void,
-): Promise<LayerCaption> {
+  at: Date | null,
+  isCurrent: () => boolean,
+): Promise<LayerCaption | null> {
   try {
-    const result = await window.weatherApi.getClouds();
-    if (!result) return { text: '雲データを取得できませんでした', warn: true };
+    const result = await window.weatherApi.getClouds(at?.toISOString());
+    if (!isCurrent()) return null;
+    if (!result) return { text: at ? 'この時刻の雲を取得できず、前の表示のままです' : '雲データを取得できませんでした', warn: true };
     setClouds(result.nx, result.ny, result.data);
     const label = validTimeLabel(result.validTime, 0);
     if (result.source === 'gfs') {
@@ -57,18 +71,29 @@ async function loadClouds(
     };
   } catch (err) {
     console.error('cloud load failed', err);
-    return { text: '雲データを読み込めませんでした', warn: true };
+    if (!isCurrent()) return null;
+    return { text: at ? 'この時刻の雲を読み込めず、前の表示のままです' : '雲データを読み込めませんでした', warn: true };
   }
 }
 
 type DataMode = Exclude<MapMode, 'normal'>;
 
 export function initMapLayers(globe: Pick<GlobeController, 'setClouds' | 'setWind'>) {
-  const layers: Record<DataMode, { caption: LayerCaption | null; loadedAt: number; loading: boolean; load: () => Promise<LayerCaption> }> = {
-    weather: { caption: null, loadedAt: 0, loading: false, load: () => loadClouds(globe.setClouds) },
-    wind: { caption: null, loadedAt: 0, loading: false, load: () => loadWind(globe.setWind) },
+  interface Layer {
+    caption: LayerCaption | null;
+    loadedAt: number;
+    loadedKey: string | null; // 読み込んだ時刻。今は 'now'、過去は時間の番号
+    pendingKey: string | null;
+    request: number;
+    load: (at: Date | null, isCurrent: () => boolean) => Promise<LayerCaption | null>;
+  }
+  const newLayer = (load: Layer['load']): Layer => ({ caption: null, loadedAt: 0, loadedKey: null, pendingKey: null, request: 0, load });
+  const layers: Record<DataMode, Layer> = {
+    weather: newLayer((at, isCurrent) => loadClouds(globe.setClouds, at, isCurrent)),
+    wind: newLayer((at, isCurrent) => loadWind(globe.setWind, at, isCurrent)),
   };
   let mode: MapMode = 'normal';
+  let viewAt: Date | null = null;
 
   function renderLayerInfo(): void {
     const info = el('layer-info');
@@ -87,10 +112,21 @@ export function initMapLayers(globe: Pick<GlobeController, 'setClouds' | 'setWin
   async function loadLayer(target: MapMode): Promise<void> {
     if (target === 'normal') return;
     const layer = layers[target];
-    if (layer.loading || Date.now() - layer.loadedAt < LAYER_REFRESH_MS) return;
-    layer.loading = true;
-    layer.caption = await layer.load();
-    layer.loading = false;
+    const key = viewAt ? String(Math.round(viewAt.getTime() / 3600_000)) : 'now';
+    // 過去のデータは変わらないので取り直さない
+    const fresh = layer.loadedKey === key && (viewAt !== null || Date.now() - layer.loadedAt < LAYER_REFRESH_MS);
+    if (fresh || layer.pendingKey === key) return;
+    const request = ++layer.request;
+    layer.pendingKey = key;
+    if (layer.loadedKey !== key) { // 取得している間、前の時刻の説明を残さない
+      layer.caption = null;
+      renderLayerInfo();
+    }
+    const caption = await layer.load(viewAt, () => request === layer.request);
+    if (request !== layer.request) return;
+    layer.pendingKey = null;
+    layer.caption = caption;
+    layer.loadedKey = key;
     layer.loadedAt = Date.now();
     renderLayerInfo();
   }
@@ -102,6 +138,10 @@ export function initMapLayers(globe: Pick<GlobeController, 'setClouds' | 'setWin
       mode = next;
       renderLayerInfo();
       void loadLayer(next);
+    },
+    setTime(at: Date | null): void {
+      viewAt = at;
+      void loadLayer(mode);
     },
   };
 }

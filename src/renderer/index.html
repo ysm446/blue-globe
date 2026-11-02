@@ -54,6 +54,12 @@
         <button type="button" data-view="globe" aria-pressed="true">地球</button>
         <button type="button" data-view="region" aria-pressed="false">地域</button>
       </div>
+      <div id="time-control">
+        <label for="time-slider">過去の時刻</label>
+        <div class="range-row"><input id="time-slider" type="range" aria-describedby="time-offset" /></div>
+        <output id="time-offset" for="time-slider"></output>
+        <button id="time-now" type="button" disabled>今に戻る</button>
+      </div>
       <button id="return-home" type="button">地点へ戻る</button>
       <div id="view-hint" hidden>左ドラッグで移動、右ドラッグで回転と傾き、ホイールで拡大縮小</div>
       <div id="view-status" role="status" hidden></div>
@@ -104,7 +110,7 @@
     <div id="forecasts" hidden>
       <section class="forecast-panel">
         <details id="fold-hourly" class="panel-fold" open>
-        <summary>これから24時間</summary>
+        <summary id="hourly-title">これから24時間</summary>
         <table class="forecast-table hourly-table">
           <tbody>
             <tr id="hourly-time" aria-label="時刻"></tr>

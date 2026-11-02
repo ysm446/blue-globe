@@ -189,8 +189,10 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     borders.group.visible = visible;
   }
 
+  let viewTime: Date | null = null; // 過去の時刻を見ている間は、その時刻の太陽と星にする
+
   function updateSky(): void {
-    sky.setTime(new Date());
+    sky.setTime(viewTime ?? new Date());
     earth.setSunDirection(sky.sunDir);
   }
 
@@ -283,6 +285,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let markerShown = false;
   let markerLabelWidth = 0;
   let focused: WeatherLocation | null = null;
+  let selectedCity: DemoPlace | null = null; // ラベルで選んだ都市。地域ビューの行き先になる
   const cityLabels = new CityLabels(el('city-labels'), CITIES, EARTH_SURFACE_RADIUS, onSelectCity);
   let cityLabelsEnabled = false;
 
@@ -327,7 +330,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   // 真上から見た地球ビューの姿勢から続けて、傾きながら地点へ寄る
   function regionHomeOf(from: LonLat): RegionView {
-    const { lat, lon } = homeLonLat(from);
+    const { lat, lon } = selectedCity ?? homeLonLat(from);
     return {
       lat,
       lon,
@@ -550,6 +553,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   function focusLocation(location: WeatherLocation): void {
     focused = location;
+    selectedCity = null;
     placeMarker(location.name, location.latitude, location.longitude);
     if (regionView) {
       if (!regionFlight?.leaving) flyRegion(regionHomeOf(regionView), false);
@@ -793,6 +797,10 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   return {
     applyGraphics,
     changeMode,
+    setViewTime(at: Date | null): void {
+      viewTime = at;
+      updateSky();
+    },
     setWind,
     setClouds: earth.setCloudData.bind(earth),
     focusLocation,
@@ -811,12 +819,14 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     },
     // place を省くと設定地点に戻す
     setMarker(place?: DemoPlace): void {
+      if (!place) selectedCity = null;
       if (place) placeMarker(place.name, place.lat, place.lon);
       else if (focused) placeMarker(focused.name, focused.latitude, focused.longitude);
       else hideMarker();
     },
     // 設定地点は変えずに、都市へカメラとマーカーを移す。向きと高さは今のまま
     showPlace(place: DemoPlace): void {
+      selectedCity = place;
       placeMarker(place.name, place.lat, place.lon);
       if (regionView) {
         if (!regionFlight?.leaving) flyRegion({ ...regionView, lat: place.lat, lon: place.lon }, false);

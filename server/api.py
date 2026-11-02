@@ -3,7 +3,7 @@ import os
 import sys
 import threading
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import httpx
@@ -28,6 +28,21 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+
+PAST_LIMIT = timedelta(hours=25)  # 画面は 24 時間まで。操作の間に少し過ぎても受け付ける
+PAST_NOTE = "過去の時刻の値です。Open-Meteo の時間別データで、観測値そのものとは限りません"
+
+
+def _past_time(at: datetime | None) -> datetime | None:
+    """at を確かめる。過去の時刻だけを受け付ける。"""
+    if at is None:
+        return None
+    if at.tzinfo is None:
+        raise HTTPException(400, "時刻にはタイムゾーンが必要です")
+    age = datetime.now(timezone.utc) - at
+    if age < timedelta(minutes=-1) or age > PAST_LIMIT:
+        raise HTTPException(400, "見られるのは過去 24 時間までです")
+    return at
 
 
 class Location(BaseModel):
@@ -105,9 +120,13 @@ def get_graphics_defaults() -> dict:
 
 
 @app.get("/clouds/satellite")
-def get_satellite_clouds() -> dict:
+def get_satellite_clouds(
+    at: datetime | None = None,
+    gfs: str | None = Query(default=None, pattern=r"^gfs-\d{10}$"),
+) -> dict:
+    target = _past_time(at)
     try:
-        return clouds.update_satellite_map()
+        return clouds.past_satellite_map(target, gfs) if target else clouds.update_satellite_map()
     except clouds.CloudError as e:
         raise HTTPException(502, str(e)) from e
 
@@ -150,19 +169,24 @@ def _outlook(location: dict, now: datetime) -> tuple[dict | None, str | None]:
     )
 
 
-def _fetch_forecast(latitude: float, longitude: float) -> dict:
+def _fetch_forecast(latitude: float, longitude: float, at: datetime | None = None) -> dict:
     try:
+        if at:
+            return sources.fetch_forecast(latitude, longitude, past=True)
         return sources.fetch_forecast(latitude, longitude)
     except (httpx.HTTPError, ValueError) as e:
         raise HTTPException(502, f"天気データを取得できませんでした: {e}") from e
 
 
 @app.get("/news")
-def get_news() -> dict:
+def get_news(at: datetime | None = None) -> dict:
+    target = _past_time(at)
     location = load_settings()["location"]
     if not location:
         raise HTTPException(409, "地点が設定されていません")
-    forecast = _fetch_forecast(location["latitude"], location["longitude"])
+    forecast = _fetch_forecast(location["latitude"], location["longitude"], target)
+    if target:  # 気象庁の文は今の発表しかない
+        return _report(location, forecast, None, PAST_NOTE, target)
     now = datetime.fromisoformat(forecast["current"]["time"])
     outlook, note = _outlook(location, now)
     return _report(location, forecast, outlook, note)
@@ -174,7 +198,9 @@ def get_place_news(
     name: str,
     latitude: float = Query(ge=-90, le=90),
     longitude: float = Query(ge=-180, le=180),
+    at: datetime | None = None,
 ) -> dict:
+    target = _past_time(at)
     location = {
         "name": name,
         "admin1": None,
@@ -183,19 +209,30 @@ def get_place_news(
         "latitude": latitude,
         "longitude": longitude,
     }
-    return _report(location, _fetch_forecast(latitude, longitude), None, None)
+    forecast = _fetch_forecast(latitude, longitude, target)
+    return _report(location, forecast, None, PAST_NOTE if target else None, target)
 
 
-def _report(location: dict, forecast: dict, outlook: dict | None, note: str | None) -> dict:
+def _report(
+    location: dict, forecast: dict, outlook: dict | None, note: str | None, at: datetime | None = None
+) -> dict:
     current = forecast["current"]
-    now = datetime.fromisoformat(current["time"])
-    daily = news.daily_from_now(forecast["daily"], forecast["hourly"], now)
+    real_now = datetime.fromisoformat(current["time"])
+    # 週間予報はいつの時刻を見ていても今の予報を出す
+    daily = news.daily_from_now(news.from_today(forecast["daily"], real_now), forecast["hourly"], real_now)
+    now = real_now
+    if at:
+        now = news.local_hour(at, forecast["utc_offset_seconds"])
+        current = news.past_current(forecast["hourly"], now)
+        if current is None:
+            raise HTTPException(502, "この時刻の天気データがありません")
     return {
         "location": location,
         "utc_offset_seconds": forecast["utc_offset_seconds"],
+        "at": at.isoformat() if at else None,
         "headline": news.headline(location["name"], now),
-        "current_text": news.current_sentence(current),
-        "day_text": news.day_sentence(daily, news.focus_index(now)),
+        "current_text": news.current_sentence(current, now if at else None),
+        "day_text": "" if at else news.day_sentence(daily, news.focus_index(now)),
         "outlook": outlook,
         "note": note,
         "current": {

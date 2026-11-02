@@ -231,7 +231,8 @@ export function renderNews(news: NewsReport): void {
   el('original-box').hidden = !outlook?.original || outlook.method === 'verbatim';
   el('original-text').textContent = outlook?.original ?? '';
 
-  const parts = ['予報値: Open-Meteo'];
+  el('hourly-title').textContent = news.at ? 'この時刻から24時間' : 'これから24時間';
+  const parts = [news.at ? '過去の値: Open-Meteo' : '予報値: Open-Meteo'];
   if (outlook) {
     parts.push(METHOD_LABEL[outlook.method]);
     if (outlook.reported_at) parts.push(`${formatDateTime(new Date(outlook.reported_at), 'Asia/Tokyo')} 発表`);
@@ -277,11 +278,12 @@ export function hideNews(): void {
 
 // PC の時刻を表示する。スリープ復帰後もすぐ合うよう、毎秒確かめて変わったときだけ書き換える
 let clockOffsetSeconds: number | null = null; // デモで都市を見せている間は、その都市の現地時刻にする
+let clockViewTime: Date | null = null; // 過去の時刻を見ている間は、その時刻で止める
 
 function updateClock(): void {
   const timeEl = el('clock-time');
   const shifted = clockOffsetSeconds !== null;
-  const now = new Date(Date.now() + (clockOffsetSeconds ?? 0) * 1000);
+  const now = new Date((clockViewTime?.getTime() ?? Date.now()) + (clockOffsetSeconds ?? 0) * 1000);
   const timeZone = shifted ? 'UTC' : undefined;
   const time = now.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone });
   const date = now.toLocaleDateString('ja-JP', {
@@ -292,6 +294,12 @@ function updateClock(): void {
   });
   const text = `${date} ${time}`;
   if (timeEl.textContent !== text) timeEl.textContent = text;
+}
+
+// 過去の時刻を見ている間は、その時刻を渡す。null で今の時刻に戻す
+export function setClockTime(at: Date | null): void {
+  clockViewTime = at;
+  updateClock();
 }
 
 // デモで都市を見せている間は、その都市の時差を渡す。null でパソコンの時刻に戻す

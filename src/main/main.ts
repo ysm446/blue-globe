@@ -2,11 +2,13 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell } from 'electron'
 import path from 'node:path';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { fetchCurrentGfsCloud, fetchCurrentGfsWind } from './nomads';
+import { nearestStepStamp, parsePastTime } from './gfs-time';
+import { fetchGfsCloud, fetchGfsWind } from './nomads';
 import { backendRequest, startBackend, stopBackend } from './backend';
 
 const GFS_MAX_AGE_MS = 3 * 3600_000; // GFS 1.0° は 3 時間刻み
 const GFS_FETCH_TIMEOUT_MS = 30_000;
+const PAST_KEEP_MS = 48 * 3600_000; // 見られるのは 24 時間前まで。古いものは残しておいても使わない
 
 // 動作検証時に実際の設定を汚さないよう、環境変数で差し替えられる
 function dataDir(): string {
@@ -34,14 +36,39 @@ async function writeFileAtomic(filePath: string, data: string | Uint8Array): Pro
   await fs.promises.rename(tempPath, filePath);
 }
 
+// 過去の時刻のデータは溜まり続けないよう、古いものを消す
+async function prunePast(dir: string): Promise<void> {
+  for (const name of await fs.promises.readdir(dir).catch(() => [])) {
+    const filePath = path.join(dir, name);
+    if ((await fileAgeMs(filePath)) > PAST_KEEP_MS) await fs.promises.rm(filePath, { force: true });
+  }
+}
+
+// 過去の風は、一番近い 3 時間の区切りのものを使う。取得できなければ records が null
+async function getPastWind(at: Date): Promise<unknown> {
+  const dir = path.join(dataDir(), 'wind-cache', 'past');
+  const filePath = path.join(dir, `${nearestStepStamp(at)}.json`);
+  if (Number.isFinite(await fileAgeMs(filePath))) return { source: 'cache', records: await readJson(filePath) };
+  try {
+    const records = await fetchGfsWind(AbortSignal.timeout(GFS_FETCH_TIMEOUT_MS), at);
+    await writeFileAtomic(filePath, JSON.stringify(records));
+    await prunePast(dir);
+    return { source: 'nomads', records };
+  } catch (err) {
+    console.error('past wind fetch failed', err);
+    return { source: 'unavailable', records: null };
+  }
+}
+
 // 風データの探索順: 新しいキャッシュ → NOMADS → 古いキャッシュ → アプリ同梱サンプル
-ipcMain.handle('wind:get', async () => {
+ipcMain.handle('wind:get', async (_event, at?: unknown) => {
+  if (at !== undefined) return getPastWind(parsePastTime(at));
   const cachePath = path.join(dataDir(), 'wind-cache', 'current-wind.json');
   const cacheAge = await fileAgeMs(cachePath);
   if (cacheAge < GFS_MAX_AGE_MS) return { source: 'cache', records: await readJson(cachePath) };
 
   try {
-    const records = await fetchCurrentGfsWind(AbortSignal.timeout(GFS_FETCH_TIMEOUT_MS));
+    const records = await fetchGfsWind(AbortSignal.timeout(GFS_FETCH_TIMEOUT_MS));
     await writeFileAtomic(cachePath, JSON.stringify(records));
     return { source: 'nomads', records };
   } catch (err) {
@@ -67,7 +94,7 @@ async function ensureGfsCloud(): Promise<boolean> {
   if (cached && binAge < GFS_MAX_AGE_MS) return true;
 
   try {
-    const { data, ...meta } = await fetchCurrentGfsCloud(AbortSignal.timeout(GFS_FETCH_TIMEOUT_MS));
+    const { data, ...meta } = await fetchGfsCloud(AbortSignal.timeout(GFS_FETCH_TIMEOUT_MS));
     await writeFileAtomic(binPath, data);
     await writeFileAtomic(metaPath, JSON.stringify(meta));
     return true;
@@ -78,14 +105,14 @@ async function ensureGfsCloud(): Promise<boolean> {
 }
 
 // 衛星の雲マップを取れないときは、GFS だけで表示する。経度 0 度始まりなので -180 度始まりへ回す
-async function readGfsFallback(): Promise<unknown> {
-  const meta = (await readJson(cloudCachePath('current-cloud.json'))) as {
+async function readGfsFallback(name = 'current-cloud'): Promise<unknown> {
+  const meta = (await readJson(cloudCachePath(`${name}.json`))) as {
     nx: number;
     ny: number;
     refTime: string;
     forecastTime: number;
   };
-  const raw = await fs.promises.readFile(cloudCachePath('current-cloud.bin'));
+  const raw = await fs.promises.readFile(cloudCachePath(`${name}.bin`));
   const data = new Uint8Array(raw.length);
   const half = meta.nx / 2;
   for (let y = 0; y < meta.ny; y++) {
@@ -97,7 +124,45 @@ async function readGfsFallback(): Promise<unknown> {
   return { source: 'gfs', nx: meta.nx, ny: meta.ny, validTime: new Date(validMs).toISOString(), stale: false, data };
 }
 
-ipcMain.handle('clouds:get', async () => {
+// 過去の時刻の GFS の雲量を用意する。返すのは cloud-cache/past の中の名前で、取得できなければ null
+async function ensurePastGfsCloud(at: Date): Promise<string | null> {
+  const name = `gfs-${nearestStepStamp(at)}`;
+  const metaPath = cloudCachePath(`past/${name}.json`);
+  if (Number.isFinite(await fileAgeMs(metaPath))) return name;
+  try {
+    const { data, ...meta } = await fetchGfsCloud(AbortSignal.timeout(GFS_FETCH_TIMEOUT_MS), at);
+    await writeFileAtomic(cloudCachePath(`past/${name}.bin`), data);
+    await writeFileAtomic(metaPath, JSON.stringify(meta));
+    return name;
+  } catch (err) {
+    console.error('past cloud fetch failed', err);
+    return null;
+  }
+}
+
+// 過去の雲は、一番近い 1 時間の衛星画像から作る。GFS は今の雲マップと同じ補助に使う
+async function getPastClouds(at: Date): Promise<unknown> {
+  const gfs = await ensurePastGfsCloud(at);
+  try {
+    const params = new URLSearchParams({ at: at.toISOString(), ...(gfs ? { gfs } : {}) });
+    const sat = (await backendRequest(`/clouds/satellite?${params.toString()}`)) as {
+      nx: number;
+      ny: number;
+      valid_time: string;
+      file: string;
+    };
+    const data = new Uint8Array(await fs.promises.readFile(cloudCachePath(`past/${sat.file}`)));
+    return { source: 'satellite', nx: sat.nx, ny: sat.ny, validTime: sat.valid_time, stale: false, data };
+  } catch (err) {
+    console.error('past satellite cloud failed', err);
+    return gfs ? readGfsFallback(`past/${gfs}`) : null;
+  } finally {
+    await prunePast(cloudCachePath('past'));
+  }
+}
+
+ipcMain.handle('clouds:get', async (_event, at?: unknown) => {
+  if (at !== undefined) return getPastClouds(parsePastTime(at));
   const hasGfs = await ensureGfsCloud();
   try {
     const sat = (await backendRequest('/clouds/satellite')) as {
@@ -171,9 +236,12 @@ const jsonPut = (body: unknown): RequestInit => ({
   body: JSON.stringify(body),
 });
 
-ipcMain.handle('news:get', () => backendRequest('/news'));
-ipcMain.handle('news:place', (_event, name: string, latitude: number, longitude: number) =>
-  backendRequest(`/news/place?name=${encodeURIComponent(name)}&latitude=${latitude}&longitude=${longitude}`),
+// 過去の時刻を見ているときは at を付ける
+const atQuery = (at?: unknown): string => (at === undefined ? '' : `at=${encodeURIComponent(parsePastTime(at).toISOString())}`);
+
+ipcMain.handle('news:get', (_event, at?: unknown) => backendRequest(`/news?${atQuery(at)}`));
+ipcMain.handle('news:place', (_event, name: string, latitude: number, longitude: number, at?: unknown) =>
+  backendRequest(`/news/place?name=${encodeURIComponent(name)}&latitude=${latitude}&longitude=${longitude}&${atQuery(at)}`),
 );
 ipcMain.handle('settings:get', () => backendRequest('/settings'));
 ipcMain.handle('settings:set', (_event, settings: unknown) =>

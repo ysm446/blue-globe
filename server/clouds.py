@@ -11,6 +11,7 @@ GFS の取得はメインプロセスが行い、data/cloud-cache/ に置く。
 import json
 import re
 from datetime import datetime, timedelta, timezone
+import threading
 
 import h5py
 import httpx
@@ -50,20 +51,31 @@ def _keys_of(listing: str) -> list[str]:
     return re.findall(r"<Key>([^<]+\.nc)</Key>", listing)
 
 
+def _list_keys(day: datetime) -> list[str]:
+    response = httpx.get(
+        GMGSI_BASE,
+        params={"list-type": "2", "prefix": f"GMGSI_LW/{day:%Y/%m/%d}/"},
+        timeout=TIMEOUT_SECONDS,
+    )
+    response.raise_for_status()
+    return _keys_of(response.text)
+
+
 def latest_key(now: datetime) -> str:
     """最新のファイルを探す。日付が変わった直後は前日分になる。"""
     for offset in (0, 1):
-        day = now - timedelta(days=offset)
-        response = httpx.get(
-            GMGSI_BASE,
-            params={"list-type": "2", "prefix": f"GMGSI_LW/{day:%Y/%m/%d}/"},
-            timeout=TIMEOUT_SECONDS,
-        )
-        response.raise_for_status()
-        keys = _keys_of(response.text)
+        keys = _list_keys(now - timedelta(days=offset))
         if keys:
             return max(keys)
     raise CloudError("衛星画像が見つかりませんでした")
+
+
+def nearest_key(target: datetime) -> str:
+    """target に最も近い時刻のファイルを探す。日付の境目では隣の日のファイルが近いことがある。"""
+    keys = [key for offset in (-1, 0, 1) for key in _list_keys(target + timedelta(days=offset))]
+    if not keys:
+        raise CloudError("衛星画像が見つかりませんでした")
+    return min(keys, key=lambda key: abs(datetime.fromisoformat(valid_time_of(key)) - target))
 
 
 def valid_time_of(key: str) -> str:
@@ -201,9 +213,9 @@ def compose(ir: np.ndarray, gfs: np.ndarray | None) -> np.ndarray:
     return density * (1 - edge) + target * POLE_COVER * edge
 
 
-def _read_gfs() -> np.ndarray | None:
-    meta_path = _cache_dir() / "current-cloud.json"
-    bin_path = _cache_dir() / "current-cloud.bin"
+def _read_gfs(name: str = "current-cloud") -> np.ndarray | None:
+    meta_path = _cache_dir() / f"{name}.json"
+    bin_path = _cache_dir() / f"{name}.bin"
     try:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
         raw = np.frombuffer(bin_path.read_bytes(), dtype=np.uint8)
@@ -240,3 +252,47 @@ def update_satellite_map(now: datetime | None = None) -> dict:
     meta = {"version": MAP_VERSION, "key": key, "nx": density.shape[1], "ny": density.shape[0], "valid_time": valid_time_of(key)}
     atomic_write(meta_path, json.dumps(meta).encode("utf-8"))
     return {**meta, "stale": False}
+
+
+# 同じ時刻を続けて頼まれても、取得と変換を一度で済ませる
+_past_lock = threading.Lock()
+
+
+def past_satellite_map(target: datetime, gfs_name: str | None = None) -> dict:
+    """target に最も近い時刻の雲マップを data/cloud-cache/past/ に作り、メタ情報を返す。
+
+    中身は変わらないので、作ったものは取り直さない。古いものはメインプロセスが消す。
+    """
+    past = _cache_dir() / "past"
+    hour = (target.astimezone(timezone.utc) + timedelta(minutes=30)).strftime("%Y%m%d%H")
+    meta_path = past / f"sat-{hour}.json"
+    bin_path = past / f"sat-{hour}.bin"
+    with _past_lock:
+        if meta_path.exists() and bin_path.exists():
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            if meta.get("version") == MAP_VERSION:
+                return meta
+        past.mkdir(parents=True, exist_ok=True)
+        download = past / f"sat-{hour}.nc"
+        try:
+            key = nearest_key(target)
+            response = httpx.get(f"{GMGSI_BASE}/{key}", timeout=TIMEOUT_SECONDS)
+            response.raise_for_status()
+            atomic_write(download, response.content)
+            gfs = _read_gfs(f"past/{gfs_name}") if gfs_name else None
+            density = compose(read_gmgsi(download), gfs)
+        except (httpx.HTTPError, OSError, ValueError, KeyError) as e:
+            raise CloudError(f"衛星画像を取得できませんでした: {e}") from e
+        finally:
+            download.unlink(missing_ok=True)
+        atomic_write(bin_path, (np.clip(density, 0, 1) * 255).astype(np.uint8).tobytes())
+        meta = {
+            "version": MAP_VERSION,
+            "key": key,
+            "nx": density.shape[1],
+            "ny": density.shape[0],
+            "valid_time": valid_time_of(key),
+            "file": bin_path.name,
+        }
+        atomic_write(meta_path, json.dumps(meta).encode("utf-8"))
+        return meta

@@ -3,7 +3,7 @@
 実行: .venv\\Scripts\\python -m unittest discover tests
 """
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 
 from server import news, sources
 
@@ -31,6 +31,12 @@ class CurrentSentenceTest(unittest.TestCase):
             "現在の気温は16.8℃で、快晴です。北寄りの風1.5m/s、最大瞬間風速は4.5m/sです。",
         )
 
+    def test_past_time_is_written_in_past_tense(self):
+        text = news.current_sentence(CURRENT, datetime(2026, 11, 1, 15, 0))
+        self.assertEqual(text, "15時の気温は16.8℃で、快晴でした。北寄りの風1.5m/s、最大瞬間風速は4.5m/sでした。")
+        calm = news.current_sentence({**CURRENT, "wind_speed_10m": 0.1}, datetime(2026, 11, 1, 15, 0))
+        self.assertTrue(calm.endswith("風はほとんどありませんでした。"))
+
     def test_calm_wind(self):
         calm = {**CURRENT, "wind_speed_10m": 0.1}
         self.assertTrue(news.current_sentence(calm).endswith("風はほとんどありません。"))
@@ -39,6 +45,25 @@ class CurrentSentenceTest(unittest.TestCase):
         self.assertEqual(news.headline("東京", datetime(2026, 11, 1, 9, 45)), "東京 11月1日 午前9時45分")
         self.assertEqual(news.headline("東京", datetime(2026, 11, 1, 12, 0)), "東京 11月1日 午後0時")
         self.assertEqual(news.headline("東京", datetime(2026, 11, 1, 0, 5)), "東京 11月1日 午前0時5分")
+
+
+class PastTimeTest(unittest.TestCase):
+    def test_local_hour_rounds_to_the_nearest_hour_in_local_time(self):
+        at = datetime(2026, 11, 1, 23, 29, tzinfo=timezone.utc)
+        self.assertEqual(news.local_hour(at, 9 * 3600), datetime(2026, 11, 2, 8, 0))
+        at = datetime(2026, 11, 1, 23, 31, tzinfo=timezone.utc)
+        self.assertEqual(news.local_hour(at, 9 * 3600), datetime(2026, 11, 2, 9, 0))
+        self.assertEqual(news.local_hour(at, -5 * 3600), datetime(2026, 11, 1, 19, 0))
+
+    def test_past_current_reads_the_row_of_that_hour(self):
+        hourly = {"time": ["2026-11-01T08:00", "2026-11-01T09:00"], "temperature_2m": [10.0, 11.0]}
+        self.assertEqual(news.past_current(hourly, datetime(2026, 11, 1, 9, 0))["temperature_2m"], 11.0)
+        self.assertIsNone(news.past_current(hourly, datetime(2026, 11, 1, 10, 0)))
+
+    def test_from_today_removes_the_past_days(self):
+        daily = {"time": ["2026-11-01", "2026-11-02", "2026-11-03"], "weather_code": [1, 2, 3]}
+        self.assertEqual(news.from_today(daily, datetime(2026, 11, 2, 9, 0))["weather_code"], [2, 3])
+        self.assertEqual(news.from_today(daily, datetime(2026, 12, 1, 9, 0))["weather_code"], [1, 2, 3])
 
 
 class WeatherIconTest(unittest.TestCase):

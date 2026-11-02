@@ -10,7 +10,7 @@ export function initDemo(
   globe: GlobeController,
   modes: { get(): MapMode; apply(mode: MapMode): void },
   views: { get(): GlobeView; show(view: GlobeView): void },
-  weather: { hasHome(): boolean; showHome(): void; showCity(news: NewsReport): void },
+  weather: { hasHome(): boolean; showHome(): void; showCity(news: NewsReport): void; backToNow(): void },
 ): void {
   const start = el<HTMLButtonElement>('start-demo');
   const caption = el('demo-caption');
@@ -129,6 +129,7 @@ export function initDemo(
       return;
     }
     if (restore) return;
+    weather.backToNow();
     restore = { mode: modes.get(), view: views.get() };
     step = 0;
     start.blur();

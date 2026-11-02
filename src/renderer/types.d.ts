@@ -1,5 +1,5 @@
 interface WindResult {
-  source: 'cache' | 'nomads' | 'stale' | 'sample';
+  source: 'cache' | 'nomads' | 'stale' | 'sample' | 'unavailable'; // unavailable は過去の風を取得できなかったとき
   records: unknown;
 }
 
@@ -68,6 +68,7 @@ interface NewsOutlook {
 interface NewsReport {
   location: WeatherLocation;
   utc_offset_seconds: number;
+  at: string | null; // 過去の時刻を見ているときの時刻
   headline: string;
   current_text: string;
   day_text: string;
@@ -108,16 +109,16 @@ interface NewsReport {
 interface Window {
   __weatherNewsDebug: { demoTimeScale: number; [key: string]: unknown }; // 動作検証用
   weatherApi: {
-    getWind(): Promise<WindResult>;
-    getClouds(): Promise<CloudResult | null>;
+    getWind(at?: string): Promise<WindResult>;
+    getClouds(at?: string): Promise<CloudResult | null>;
     setMode(mode: MapMode): Promise<unknown>;
     setGraphics(graphics: GraphicsSettings): Promise<AppSettings>;
     setPanels(panels: PanelSettings): Promise<AppSettings>;
     getGraphicsDefaults(): Promise<GraphicsSettings>;
     getTexture(name: EarthTextureName): Promise<Uint8Array>;
     getEarthTile(layer: EarthTileLayer, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null
-    getNews(): Promise<NewsReport>;
-    getPlaceNews(name: string, latitude: number, longitude: number): Promise<NewsReport>;
+    getNews(at?: string): Promise<NewsReport>;
+    getPlaceNews(name: string, latitude: number, longitude: number, at?: string): Promise<NewsReport>;
     getSettings(): Promise<AppSettings>;
     saveSettings(settings: AppSettings): Promise<AppSettings>;
     searchLocations(query: string): Promise<WeatherLocation[]>;

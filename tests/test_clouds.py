@@ -163,6 +163,43 @@ class UpdateTest(unittest.TestCase):
         (self.cache / "current-sat.json").write_text(json.dumps(meta), encoding="utf-8")
         (self.cache / "current-sat.bin").write_bytes(bytes(8))
 
+    def test_nearest_key_picks_the_closest_time_across_days(self):
+        keys = {
+            "2026/11/01": ["GMGSI_LW/x_s202611012300000.nc", "GMGSI_LW/x_s202611012200000.nc"],
+            "2026/11/02": ["GMGSI_LW/x_s202611020000000.nc", "GMGSI_LW/x_s202611020100000.nc"],
+        }
+        with mock.patch.object(clouds, "_list_keys", side_effect=lambda day: keys.get(f"{day:%Y/%m/%d}", [])):
+            near_midnight = datetime(2026, 11, 1, 23, 50, tzinfo=timezone.utc)
+            self.assertEqual(clouds.nearest_key(near_midnight), "GMGSI_LW/x_s202611020000000.nc")
+            morning = datetime(2026, 11, 2, 0, 40, tzinfo=timezone.utc)
+            self.assertEqual(clouds.nearest_key(morning), "GMGSI_LW/x_s202611020100000.nc")
+
+    def test_nearest_key_without_files_is_an_error(self):
+        with mock.patch.object(clouds, "_list_keys", return_value=[]):
+            with self.assertRaises(clouds.CloudError):
+                clouds.nearest_key(datetime(2026, 11, 2, tzinfo=timezone.utc))
+
+    def write_past(self, version=clouds.MAP_VERSION):
+        past = self.cache / "past"
+        past.mkdir()
+        meta = {"version": version, "key": "k.nc", "nx": 4, "ny": 2, "valid_time": "2026-11-02T00:00:00+00:00", "file": "sat-2026110200.bin"}
+        (past / "sat-2026110200.json").write_text(json.dumps(meta), encoding="utf-8")
+        (past / "sat-2026110200.bin").write_bytes(bytes(8))
+
+    def test_past_map_is_not_downloaded_again(self):
+        self.write_past()
+        with mock.patch.object(clouds.httpx, "get") as get:
+            meta = clouds.past_satellite_map(datetime(2026, 11, 1, 23, 40, tzinfo=timezone.utc))
+        get.assert_not_called()
+        self.assertEqual(meta["file"], "sat-2026110200.bin")
+
+    def test_past_map_of_an_old_version_is_rebuilt(self):
+        self.write_past(version=clouds.MAP_VERSION - 1)
+        with mock.patch.object(clouds.httpx, "get", side_effect=httpx.ConnectError("down")) as get:
+            with self.assertRaises(clouds.CloudError):
+                clouds.past_satellite_map(datetime(2026, 11, 2, 0, 10, tzinfo=timezone.utc))
+        get.assert_called()
+
     def test_failure_with_previous_map_returns_stale(self):
         self.write_previous()
         with mock.patch.object(clouds.httpx, "get", side_effect=httpx.ConnectError("down")):

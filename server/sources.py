@@ -48,7 +48,13 @@ def _get_json(url: str, **params) -> dict | list:
     return response.json()
 
 
-def fetch_forecast(latitude: float, longitude: float) -> dict:
+def fetch_forecast(latitude: float, longitude: float, past: bool = False) -> dict:
+    """past を付けると前日からの時間別予報も返し、現在の値と同じ項目を時間別でも返す。"""
+    hourly = "temperature_2m,precipitation_probability,weather_code,is_day"
+    extra = {}
+    if past:
+        hourly += ",apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m"
+        extra["past_days"] = 1
     return _get_json(
         "https://api.open-meteo.com/v1/forecast",
         latitude=latitude,
@@ -58,8 +64,9 @@ def fetch_forecast(latitude: float, longitude: float) -> dict:
         forecast_days=7,
         current="temperature_2m,apparent_temperature,relative_humidity_2m,"
         "weather_code,is_day,wind_speed_10m,wind_direction_10m,wind_gusts_10m",
-        hourly="temperature_2m,precipitation_probability,weather_code,is_day",
+        hourly=hourly,
         daily="weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset",
+        **extra,
     )
 
 
