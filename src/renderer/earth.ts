@@ -29,6 +29,7 @@ const VOLUME_START_ALTITUDE = 0.85;
 const SHADOW_ON_HAZE = 0.8; // 立体の雲の影が大気の青を暗くする割合
 const SHADOW_LIFT = 0.006; // 立体の雲の影をずらすために足す高さ (約 38km)
 const SHADOW_MIN_SLOPE = 0.5; // 太陽が真上に近くても、この傾きの分は影をずらす
+const CITY_LIGHT_EXTINCTION = 3; // 雲が街明かりを遮る強さ。厚い雲 (濃さ 1) で約 5% まで弱まる
 
 const VS = /* glsl */ `
 varying vec3 vPos;
@@ -163,7 +164,13 @@ void main() {
 
   // 街明かりは夜側だけ
   float lights = pow(smoothstep(0.1, 1.0, night), 1.4) * (1.0 - dayMask);
-  color += vec3(1.0, 0.6, 0.26) * lights * 4.5; // 画面の白より明るくして、にじませる
+  // 街明かりは画面の白より明るいので、雲を半透明で重ねるだけでは透けて見える。光そのものを雲の濃さで弱める。
+  // 視線が雲の層を通る点の濃さを引くと、描かれている雲と位置が揃う
+  if (uShadowAmount > 0.0) {
+    vec3 throughCloud = normalize(n + view * uCloudAltitude / max(dot(n, view), 0.25));
+    lights *= exp(-cloudAt(throughCloud, dFdx(vUv), dFdy(vUv)) * ${CITY_LIGHT_EXTINCTION.toFixed(1)} * uShadowAmount);
+  }
+  color +=vec3(1.0, 0.6, 0.26) * lights * 4.5; // 画面の白より明るくして、にじませる
 
   // 回して触ったときに場所が分かるよう、夜側でも陸と海がうっすら見える光を残す。
   // 地域ビューの陸の画像は明るいので、陸だけ暗くする
