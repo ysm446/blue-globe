@@ -106,6 +106,7 @@ a:hover {
 #detail-panel,
 #view-hint,
 #view-status,
+#demo-hint,
 #fps-counter,
 #top-right button,
 #news,
@@ -342,14 +343,30 @@ body.demo #time-control {
   display: none;
 }
 
+/* 一時的な案内は上の中央に出す。狭い画面では、左上のパネルに重ならないよう折り返す */
+#top-center {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: max-content;
+  max-width: max(200px, calc(100vw - 518px));
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
 #view-hint,
-#view-status {
-  padding: 2px 8px;
+#view-status,
+#demo-hint {
+  padding: 4px 12px;
   color: var(--text-2);
   font-size: 13px;
+  text-align: center;
   background: var(--panel);
-  border-radius: 4px;
-  pointer-events: none;
+  border-radius: 8px;
 }
 
 #view-status.warn {
@@ -567,20 +584,6 @@ body.demo-idle * {
   text-shadow: 0 1px 8px rgba(4, 7, 11, 0.9);
 }
 
-
-#demo-hint {
-  position: fixed;
-  top: 16px;
-  left: 50%;
-  padding: 4px 12px;
-  color: var(--text-2);
-  font-size: 13px;
-  background: var(--panel);
-  border-radius: 8px;
-  backdrop-filter: var(--glass);
-  transform: translateX(-50%);
-  pointer-events: none;
-}
 
 /* 地球を画面の中央に置き、左右の空きにパネルを置く */
 #panels {

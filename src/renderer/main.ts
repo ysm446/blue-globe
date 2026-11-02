@@ -46,8 +46,8 @@ function initScreenshotToast(): void {
 
 const PANELS_RIGHT_MIN_WIDTH = 901; // これより狭い画面ではパネルを下に置く (style.css と合わせる)
 // これ以下の高さでは、左下の予報が左上のパネルに重なるので右の列へ移す
-const PANELS_RIGHT_HEIGHT = 870;
-const PANELS_RIGHT_HEIGHT_DETAILS_CLOSED = 766;
+const PANELS_RIGHT_HEIGHT = 810;
+const PANELS_RIGHT_HEIGHT_DETAILS_CLOSED = 710;
 
 // パネルの開閉。閉じた状態は次に起動したときも残す
 function initPanelFolds(): (panels: PanelSettings) => void {
