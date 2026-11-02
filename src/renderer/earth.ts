@@ -30,6 +30,9 @@ const SHADOW_ON_HAZE = 0.8; // 立体の雲の影が大気の青を暗くする�
 const SHADOW_LIFT = 0.006; // 立体の雲の影をずらすために足す高さ (約 38km)
 const SHADOW_MIN_SLOPE = 0.5; // 太陽が真上に近くても、この傾きの分は影をずらす
 const CITY_LIGHT_EXTINCTION = 3; // 雲が街明かりを遮る強さ。厚い雲 (濃さ 1) で約 5% まで弱まる
+// 夜側の補助光で明るい地表を抑える。この明るさ (線形) までの陸と海は変えない
+const NIGHT_FILL_KNEE = 0.1;
+const NIGHT_FILL_FALLOFF = 0.7; // 氷床 (約 0.97) で約 5 分の 1 になる。強くすると濃淡が消えて、わずかな色味の差が目立つ
 
 const VS = /* glsl */ `
 varying vec3 vPos;
@@ -175,7 +178,10 @@ void main() {
   // 回して触ったときに場所が分かるよう、夜側でも陸と海がうっすら見える光を残す。
   // 地域ビューの陸の画像は明るいので、陸だけ暗くする
   float nightFill = mix(1.0, mix(0.7, 1.0, ocean), uRegion);
-  color += (day * vec3(0.22, 0.27, 0.4) + vec3(0.003, 0.006, 0.014)) * (1.0 - dayMask) * nightFill;
+  // 地表の色に比例させるだけだと、昼の画像で白い氷床や雪が夜でも光って見える。明るい地表ほど抑える
+  float dayPeak = max(max(day.r, max(day.g, day.b)), ${NIGHT_FILL_KNEE.toFixed(1)});
+  vec3 nightDay = day * pow(dayPeak / ${NIGHT_FILL_KNEE.toFixed(1)}, -${NIGHT_FILL_FALLOFF.toFixed(1)});
+  color += (nightDay * vec3(0.22, 0.27, 0.4) + vec3(0.003, 0.006, 0.014)) * (1.0 - dayMask) * nightFill;
 
   // 地表から見える大気 (縁ほど青い)。昼側だけ
   float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.2);
