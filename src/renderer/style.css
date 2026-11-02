@@ -258,24 +258,20 @@ a:hover {
   border-color: transparent;
 }
 
-/* 上のパネルと幅を揃える。時刻の左端をスライダーの左端に合わせるので、列を共有する。
-   上のパネルの幅は天気の値で変わるので、操作中につまみが動かないようスライダーの幅は固定する */
+/* スライダーの幅は時刻と日付の幅で決まる */
 #time-panel {
-  align-self: stretch;
-  display: grid;
-  grid-template-columns: auto 260px auto;
-  justify-content: start;
-  align-items: center;
-  gap: 2px 10px;
-  padding: 6px 12px 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 16px 8px;
   background: var(--panel);
   border-radius: 8px;
   pointer-events: none;
 }
 
 #time-head {
-  grid-column: 2 / -1;
   display: flex;
+  justify-content: space-between;
   align-items: baseline;
   gap: 12px;
 }
@@ -291,36 +287,24 @@ a:hover {
   white-space: nowrap;
 }
 
+/* 日付の桁数で幅が変わると、さかのぼっている途中でスライダーの幅が変わる。
+   一番長い日付の幅を取り、短い日付は右へ寄せて、スライダーの右端と揃える */
 #clock-date {
+  min-width: 5.8em;
   color: var(--text-2);
-  font-size: 14px;
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
   white-space: nowrap;
 }
 
 #time-control {
-  display: contents;
-  color: var(--text-2);
-  font-size: 13px;
   pointer-events: auto;
-}
-
-#time-offset {
-  min-width: 76px;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-}
-
-#time-control.past #time-offset {
-  color: var(--accent);
 }
 
 /* デモは今の様子を見せる */
 body.demo #time-control {
   display: none;
-}
-
-body.demo #time-head {
-  grid-column: 1 / -1;
 }
 
 #view-hint,

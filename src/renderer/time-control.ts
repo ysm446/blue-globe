@@ -9,7 +9,6 @@ export function initTimeControl(
   onCommit: (at: Date | null) => void,
 ) {
   const slider = el<HTMLInputElement>('time-slider');
-  const label = el('time-offset');
   let timer = 0;
   let view: Date | null = null;
   let committed: Date | null = null;
@@ -21,9 +20,8 @@ export function initTimeControl(
 
   function show(): void {
     const minutesBefore = -Number(slider.value);
-    label.textContent = offsetLabel(minutesBefore);
+    slider.setAttribute('aria-valuetext', offsetLabel(minutesBefore)); // 画面には出さず、読み上げに使う
     slider.style.setProperty('--fill', `${(1 - minutesBefore / TIME_RANGE_MINUTES) * 100}%`);
-    el('time-control').classList.toggle('past', minutesBefore !== 0);
     view = viewTimeAt(minutesBefore);
     onPreview(view);
   }
@@ -46,7 +44,7 @@ export function initTimeControl(
     window.clearTimeout(timer);
     timer = window.setTimeout(commit, COMMIT_DELAY_MS);
   });
-  label.textContent = offsetLabel(0);
+  slider.setAttribute('aria-valuetext', offsetLabel(0));
   slider.style.setProperty('--fill', '100%');
 
   return { reset };
