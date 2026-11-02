@@ -77,6 +77,7 @@ class GraphicsUpdate(BaseModel):
     region_bloom: float = Field(ge=0, le=1)
     glint_strength: float = Field(ge=0, le=3)
     region_detail: bool
+    volume_clouds: bool
 
 
 @app.get("/health")

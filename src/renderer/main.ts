@@ -31,6 +31,7 @@ import {
 import { RegionDetail } from './region-detail';
 import { linePath, linePoints } from './hourly-chart';
 import { DEMO_SCENES, pickDemoPlace, type DemoPlace } from './demo';
+import { formatFrameStats, GpuTimer } from './frame-timer';
 
 const COLORS = {
   ocean: '#0c1422',
@@ -498,7 +499,7 @@ function initGlobe() {
   function updateRegionBlend(dt: number): void {
     const goal = regionView && !regionFlight?.leaving ? 1 : 0;
     regionBlend += (goal - regionBlend) * (1 - Math.exp(-dt / REGION_BLEND_SECONDS));
-    earth.setRegionBlend(regionBlend);
+    earth.setRegionBlend(regionBlend, camera.position.length() - GLOBE_RADIUS);
     // 風速モードでは粒子の面より上に線を置く必要があるので、元の高さのまま
     const lineRadius = (radius: number): number =>
       THREE.MathUtils.lerp(radius, mode === 'wind' ? radius : REGION_LINE_RADIUS, regionBlend) / radius;
@@ -639,6 +640,7 @@ function initGlobe() {
     sky.setStarBrightness(graphics.star_brightness);
     earth.setCloudShadow(graphics.cloud_shadow);
     earth.setGlintStrength(graphics.glint_strength);
+    earth.setVolumeCloudsEnabled(graphics.volume_clouds);
     regionBloom = graphics.region_bloom;
     regionDetailEnabled = graphics.region_detail;
     if (!regionDetailEnabled) stopRegionDetail();
@@ -662,6 +664,10 @@ function initGlobe() {
   let renderedFrames = 0;
   let fpsWindowStart = 0;
   let fpsWindowFrames = 0;
+  let fpsWindowCpuMs = 0;
+  let fpsWindowGpuMs = 0;
+  let fpsWindowGpuFrames = 0;
+  const gpuTimer = new GpuTimer(renderer.getContext() as WebGL2RenderingContext);
   renderer.setAnimationLoop((time: number) => {
     if (time < nextFrameTime - FRAME_TOLERANCE_MS) return;
     // 余りを持ち越し、リフレッシュレートが上限の整数倍でなくても平均を上限に合わせる
@@ -670,13 +676,24 @@ function initGlobe() {
     const dt = lastFrameTime === 0 ? 0.016 : Math.min(0.1, (time - lastFrameTime) / 1000);
     lastFrameTime = time;
 
+    const frameStart = performance.now();
     renderedFrames++;
     fpsWindowFrames++;
     if (time - fpsWindowStart >= 1000) {
-      fpsCounter.textContent = `${Math.round((fpsWindowFrames * 1000) / (time - fpsWindowStart))} FPS`;
+      fpsCounter.textContent = formatFrameStats(
+        (fpsWindowFrames * 1000) / (time - fpsWindowStart),
+        fpsWindowCpuMs / fpsWindowFrames,
+        fpsWindowGpuFrames > 0 ? fpsWindowGpuMs / fpsWindowGpuFrames : null,
+      );
       fpsWindowStart = time;
       fpsWindowFrames = 0;
+      fpsWindowCpuMs = 0;
+      fpsWindowGpuMs = 0;
+      fpsWindowGpuFrames = 0;
     }
+    // GPU のタイマーは表示しているときだけ使う
+    const measureGpu = !fpsCounter.hidden;
+    if (measureGpu) gpuTimer.begin();
 
     if (regionView) updateRegion(dt);
     else updateFlight(dt);
@@ -701,12 +718,21 @@ function initGlobe() {
     if (mode !== 'wind' && earthReady) {
       earth.updateClouds(dt);
       updateExposure(dt);
+      earth.renderVolumeClouds(renderer, camera);
       hdr.render();
     } else {
       renderer.render(scene, camera);
     }
     if (mode === 'wind') gpuParticles?.composite();
     updateMarker();
+    if (measureGpu) {
+      gpuTimer.end();
+      for (const ms of gpuTimer.collect()) {
+        fpsWindowGpuMs += ms;
+        fpsWindowGpuFrames++;
+      }
+    }
+    fpsWindowCpuMs += performance.now() - frameStart;
   });
 
   // 動作検証用: 太陽や月が地球の横に見える位置へカメラを動かす
@@ -717,6 +743,12 @@ function initGlobe() {
     sky,
     earth,
     regionView: () => regionView,
+    setRegionView(next: Partial<RegionView>): void {
+      if (!regionView) return;
+      regionFlight = null;
+      regionView = clampRegionView({ ...regionView, ...next });
+      regionDistanceGoal = regionView.distance;
+    },
     regionDetailProgress: () => regionDetail?.progress ?? null,
     demoTimeScale: 1,
     renderHourly,
@@ -1216,6 +1248,7 @@ function initSettingsDialog(
   const regionBloomSlider = el<HTMLInputElement>('region-bloom');
   const glintSlider = el<HTMLInputElement>('glint-strength');
   const regionDetailToggle = el<HTMLInputElement>('region-detail-toggle');
+  const volumeCloudsToggle = el<HTMLInputElement>('volume-clouds-toggle');
 
   function showCloudShadow(): void {
     el('cloud-shadow-value').textContent = `${shadowSlider.value}%`;
@@ -1261,6 +1294,7 @@ function initSettingsDialog(
       region_bloom: Number(regionBloomSlider.value) / 100,
       glint_strength: Number(glintSlider.value) / 100,
       region_detail: regionDetailToggle.checked,
+      volume_clouds: volumeCloudsToggle.checked,
     };
   }
 
@@ -1272,6 +1306,7 @@ function initSettingsDialog(
     fpsToggle.checked = graphics.show_fps;
     mapLinesToggle.checked = graphics.show_map_lines;
     regionDetailToggle.checked = graphics.region_detail;
+    volumeCloudsToggle.checked = graphics.volume_clouds;
     starSlider.value = String(Math.log2(graphics.star_brightness));
     shadowSlider.value = String(Math.round(graphics.cloud_shadow * 100));
     regionBloomSlider.value = String(Math.round(graphics.region_bloom * 100));
@@ -1302,7 +1337,7 @@ function initSettingsDialog(
       syncResetButtons();
     });
   }
-  for (const control of [fpsSelect, scaleSelect, bloomToggle, exposureToggle, mapLinesToggle, regionDetailToggle, fpsToggle, starSlider, shadowSlider, regionBloomSlider, glintSlider]) {
+  for (const control of [fpsSelect, scaleSelect, bloomToggle, exposureToggle, mapLinesToggle, regionDetailToggle, volumeCloudsToggle, fpsToggle, starSlider, shadowSlider, regionBloomSlider, glintSlider]) {
     control.addEventListener('change', commitGraphics);
   }
 

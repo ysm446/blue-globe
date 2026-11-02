@@ -1,10 +1,12 @@
 // 写実的な地球。地表写真、夜の街明かり、大気の縁、雲の層を描く。
 // 雲は天気モードのときだけ表示し (setCloudsEnabled)、地表より少し高い別の球に載せる。
-// 回すと地面とずれて動くので、ボリューム雲を使わなくても高さが感じられる
+// 回すと地面とずれて動くので、ボリューム雲を使わなくても高さが感じられる。
+// 地域ビューで近づくと立体の雲 (volume-clouds.ts) に入れ替える
 import * as THREE from 'three';
 import { easeFade, stepFade } from './fade';
 import type { RegionDetail } from './region-detail';
 import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
+import { CLOUD_UV_GLSL, VolumeClouds } from './volume-clouds';
 
 const CLOUD_ALTITUDE = 0.012; // 実際より高い。視差が見える程度に誇張している
 const DEFAULT_CLOUD_SHADOW = 0.55;
@@ -20,6 +22,9 @@ const GLINT_MAX = 0.4;
 const REGION_CLOUD_ALTITUDE = 0.002; // 斜めに見ると誇張した分だけ雲が地面からずれるので、地域ビューでは実際に近づける
 const REGION_HAZE = 0.3; // 縁の青は地球全体を見るためのもので、斜めの視点では画面の大半に乗ってしまう
 const REGION_ATMOSPHERE_THINNESS = 3; // 大気の層も地球全体を見るために厚い。そのままだと空全体が青くなる
+// 立体の雲は遠くから見ても差が出ないので、この高さより上では平らな雲に戻す
+const VOLUME_FULL_ALTITUDE = 0.6;
+const VOLUME_START_ALTITUDE = 0.85;
 
 const VS = /* glsl */ `
 varying vec3 vPos;
@@ -35,11 +40,7 @@ void main() {
 // 別の点の UV を引くときは atan の継ぎ目でミップマップが乱れないよう、元の UV の微分を渡す
 const CLOUD_SAMPLING_GLSL = /* glsl */ `
 uniform sampler2D uCloud;
-vec2 cloudUvOf(vec3 n) {
-  float angle = atan(n.z, -n.x);
-  float u = angle / 6.28318530718 + (angle < 0.0 ? 1.0 : 0.0);
-  return vec2(u, 0.5 - asin(clamp(n.y, -1.0, 1.0)) / 3.14159265359);
-}
+${CLOUD_UV_GLSL}
 float cloudAt(vec3 n, vec2 dx, vec2 dy) {
   return textureGrad(uCloud, cloudUvOf(n), dx, dy).r;
 }
@@ -272,6 +273,9 @@ export class RealisticEarth {
   private cloudFade = 0;
   private readonly haze = { value: 1 };
   private readonly atmosphereThinness = { value: 1 };
+  private readonly volume: VolumeClouds;
+  private volumeEnabled = false;
+  private volumeMix = 0; // 0 は平らな雲だけ、1 は立体の雲だけ
 
   constructor(private readonly radius: number) {
     this.material = new THREE.ShaderMaterial({
@@ -319,6 +323,9 @@ export class RealisticEarth {
     this.cloudMesh.visible = false;
     this.group.add(this.cloudMesh);
 
+    this.volume = new VolumeClouds(radius, this.sunDir, this.haze);
+    this.group.add(this.volume.mesh);
+
     this.group.add(
       new THREE.Mesh(
         new THREE.SphereGeometry(radius * 1.07, 128, 96),
@@ -345,14 +352,27 @@ export class RealisticEarth {
     this.sunDir.copy(direction);
   }
 
-  // blend は 0 が地球ビュー、1 が地域ビュー
-  setRegionBlend(blend: number): void {
+  // blend は 0 が地球ビュー、1 が地域ビュー。cameraAltitude は地表からのカメラの高さ
+  setRegionBlend(blend: number, cameraAltitude: number): void {
     const altitude = THREE.MathUtils.lerp(CLOUD_ALTITUDE, REGION_CLOUD_ALTITUDE, blend);
     this.material.uniforms.uCloudAltitude.value = altitude;
     this.cloudMesh.scale.setScalar((this.radius + altitude) / (this.radius + CLOUD_ALTITUDE));
     this.haze.value = THREE.MathUtils.lerp(1, REGION_HAZE, blend);
     this.atmosphereThinness.value = THREE.MathUtils.lerp(1, REGION_ATMOSPHERE_THINNESS, blend);
     this.material.uniforms.uRegion.value = blend;
+    this.volumeMix = this.volumeEnabled
+      ? THREE.MathUtils.smoothstep(blend, 0.5, 0.95) *
+        (1 - THREE.MathUtils.smoothstep(cameraAltitude, VOLUME_FULL_ALTITUDE, VOLUME_START_ALTITUDE))
+      : 0;
+  }
+
+  setVolumeCloudsEnabled(enabled: boolean): void {
+    this.volumeEnabled = enabled;
+  }
+
+  // 画面を描く前に呼ぶ
+  renderVolumeClouds(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera): void {
+    this.volume.render(renderer, camera);
   }
 
   // 1 は NASA EPIC の地球の写真に合わせた強さ
@@ -392,6 +412,7 @@ export class RealisticEarth {
     this.cloudTexture = texture;
     this.material.uniforms.uCloud.value = texture;
     this.cloudMaterial.uniforms.uCloud.value = texture;
+    this.volume.setCloudTexture(texture);
   }
 
   setCloudsEnabled(enabled: boolean): void {
@@ -416,8 +437,10 @@ export class RealisticEarth {
 
   private applyCloudFade(): void {
     const amount = easeFade(this.cloudFade);
-    this.cloudMesh.visible = amount > 0;
-    this.cloudMaterial.uniforms.uFade.value = amount;
+    const flat = amount * (1 - this.volumeMix);
+    this.cloudMesh.visible = flat > 0;
+    this.cloudMaterial.uniforms.uFade.value = flat;
+    this.volume.setAmount(amount * this.volumeMix);
     this.material.uniforms.uShadowAmount.value = amount;
   }
 }

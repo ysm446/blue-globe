@@ -51,6 +51,7 @@ class SettingsApiTest(unittest.TestCase):
         "region_bloom": 0.3,
         "glint_strength": 2.0,
         "region_detail": False,
+        "volume_clouds": False,
     }
 
     def test_graphics_defaults(self):
@@ -101,6 +102,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertTrue(graphics["show_map_lines"])
         self.assertEqual(graphics["cloud_shadow"], 0.55)
         self.assertTrue(graphics["region_detail"])
+        self.assertTrue(graphics["volume_clouds"])
         self.assertEqual(graphics["region_bloom"], 0.5)
         self.assertEqual(graphics["glint_strength"], 1.3)
 

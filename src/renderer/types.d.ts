@@ -39,6 +39,7 @@ interface GraphicsSettings {
   glint_strength: number; // 海の太陽の反射の強さ。1 が地球の写真に合わせた強さ (0〜3)
   region_bloom: number; // 地域ビューの光のにじみの強さ。地球ビューを 1 とした倍率 (0〜1)
   region_detail: boolean; // 地域ビューで高解像度の画像を取得して使う
+  volume_clouds: boolean; // 地域ビューの雲を立体で描く
 }
 
 interface PanelSettings {

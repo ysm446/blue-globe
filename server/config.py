@@ -26,6 +26,7 @@ DEFAULT_SETTINGS = {
         "region_bloom": 0.5,
         "glint_strength": 1.3,  # 1 が地球の写真に合わせた強さ
         "region_detail": True,
+        "volume_clouds": True,
     },
     "panels": {"news": True, "hourly": True, "weekly": True},  # True で開いている
     "models_dir": r"D:\ai-models\llm",
