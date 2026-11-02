@@ -165,9 +165,6 @@ async function init(): Promise<void> {
       if (settings.location) globe.focusLocation(settings.location);
       void refreshNews();
     },
-    () => {
-      if (hasLocation) void refreshNews();
-    },
     (graphics) => globe.applyGraphics(graphics),
   );
 

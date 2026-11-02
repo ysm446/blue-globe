@@ -1,12 +1,11 @@
 // 時計、現在の天気、天気ニュース、24 時間と週間の予報の表示
-import { el, formatDateTime } from './dom';
-import { linePath, linePoints } from './hourly-chart';
+import { el, formatDateTime, prefersReducedMotion } from './dom';
+import { linePath, linePoints, REVEAL_FADE_MS, revealDelayMs, revealTotalMs } from './hourly-chart';
 import { svgElement, weatherIcon } from './icons';
 import { streamParagraphs } from './stream';
 
 const METHOD_LABEL: Record<NewsOutlook['method'], string> = {
   rule: '気象庁の文を整形',
-  llm: '気象庁の文を LLM で要約',
   verbatim: '気象庁の原文',
 };
 
@@ -56,12 +55,39 @@ function rainDrop(rain: number, key: number | string): SVGSVGElement {
 
 // 線の座標は実際の幅で計算する。伸縮させると印が楕円になる
 let hourlyShown: NewsReport['hourly'] = [];
+// 列を左から順に見せる。場所は最初から確保するので、途中で行が動かない。
+// 見えるようになったときと内容が変わったときだけで、同じ内容の更新や幅の変更では流し直さない
+let hourlyRevealDue = true;
+let hourlyRevealStart = Number.NEGATIVE_INFINITY;
+
+function revealColumn(element: Element, column: number, elapsed: number): void {
+  element.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], {
+    duration: REVEAL_FADE_MS,
+    delay: revealDelayMs(column) - elapsed,
+    easing: 'ease-out',
+    fill: 'backwards',
+  });
+}
+
+// 線は左から伸ばす。横方向に一定の速さなので、各列が現れ始めるときに線の先が列の中央へ届く。
+// 線の太さの分だけ外まで見せる。気温が一定だと線の高さが 0 になる
+function revealLine(line: Element, columns: number, elapsed: number): void {
+  line.animate([{ clipPath: 'inset(-4px 100% -4px -4px)' }, { clipPath: 'inset(-4px -4px -4px -4px)' }], {
+    duration: revealDelayMs(columns - 1),
+    delay: -elapsed,
+    fill: 'backwards',
+  });
+}
 
 function drawHourlyLine(): void {
   const cell = el<HTMLTableCellElement>('hourly-line-cell');
   const width = cell.clientWidth;
   cell.colSpan = Math.max(hourlyShown.length, 1);
-  if (width === 0 || hourlyShown.length === 0) return; // 閉じているときは、開いたときに描く
+  // 閉じているときは、開いたときに描く。閉じた中の要素は幅が 0 にならないので open で確かめる
+  if (!el<HTMLDetailsElement>('fold-hourly').open || width === 0 || hourlyShown.length === 0) {
+    hourlyRevealDue = true;
+    return;
+  }
   const points = linePoints(hourlyShown.map((hour) => hour.temperature), width, HOURLY_LINE_HEIGHT);
   const svg = svgElement('svg', {
     class: 'hourly-line',
@@ -70,7 +96,9 @@ function drawHourlyLine(): void {
     role: 'img',
     'aria-label': `気温の変化: ${hourlyShown.map((hour) => `${hour.time} ${hour.temperature}度`).join('、')}`,
   });
-  svg.append(svgElement('path', { d: linePath(points) }));
+  const line = svgElement('path', { d: linePath(points) });
+  svg.append(line);
+  const markers: SVGCircleElement[] = [];
   const column = width / points.length;
   points.forEach((point, index) => {
     const hour = hourlyShown[index];
@@ -79,13 +107,33 @@ function drawHourlyLine(): void {
     const title = svgElement('title', {});
     title.textContent = `${hour.time} ${hour.temperature}° ${hour.weather} 降水 ${rainText(hour.rain)}`;
     target.append(title);
-    svg.append(target, svgElement('circle', { cx: point.x, cy: point.y }));
+    const marker = svgElement('circle', { cx: point.x, cy: point.y });
+    markers.push(marker);
+    svg.append(target, marker);
   });
   cell.replaceChildren(svg);
+
+  if (hourlyRevealDue) {
+    hourlyRevealDue = false;
+    hourlyRevealStart = prefersReducedMotion() ? Number.NEGATIVE_INFINITY : performance.now();
+    if (Number.isFinite(hourlyRevealStart)) {
+      for (const id of ['hourly-time', 'hourly-icon', 'hourly-temperature', 'hourly-rain']) {
+        el(id).querySelectorAll('td').forEach((td, index) => revealColumn(td, index, 0));
+      }
+    }
+  }
+  // 流している途中で幅が変わって線を描き直しても、続きから流す
+  const elapsed = performance.now() - hourlyRevealStart;
+  if (elapsed < revealTotalMs(points.length)) {
+    markers.forEach((marker, index) => revealColumn(marker, index, elapsed));
+    revealLine(line, points.length, elapsed);
+  }
 }
 
 export function renderHourly(news: NewsReport): void {
-  const textRow = (id: string, format: (h: NewsReport['hourly'][number]) => string): void =>
+  // 同じ内容なら作り直さない。順次表示の途中で切れない
+  if (JSON.stringify(news.hourly) === JSON.stringify(hourlyShown)) return;
+  const textRow =(id: string, format: (h: NewsReport['hourly'][number]) => string): void =>
     fillRow(id, news.hourly, (cell, hour) => {
       cell.textContent = format(hour);
       cell.title = hour.weather;
@@ -100,6 +148,7 @@ export function renderHourly(news: NewsReport): void {
   fillRow('hourly-icon', news.hourly, (cell, hour) => {
     cell.append(weatherIcon(hour.icon, hour.is_day, hour.weather, 26));
   });
+  hourlyRevealDue = true;
   hourlyShown = news.hourly;
   el<HTMLTableCellElement>('hourly-line-cell').colSpan = news.hourly.length;
   drawHourlyLine();
@@ -154,7 +203,6 @@ export function renderNews(news: NewsReport): void {
   const parts = ['予報値: Open-Meteo'];
   if (outlook) {
     parts.push(METHOD_LABEL[outlook.method]);
-    if (outlook.model) parts.push(outlook.model);
     if (outlook.reported_at) parts.push(`${formatDateTime(new Date(outlook.reported_at), 'Asia/Tokyo')} 発表`);
   }
   el('outlook-source').textContent = parts.join('・');

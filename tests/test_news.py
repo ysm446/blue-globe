@@ -6,7 +6,6 @@ import unittest
 from datetime import datetime
 
 from server import news, sources
-from server.llm import LlmError
 
 CURRENT = {
     "temperature_2m": 16.8,
@@ -23,11 +22,6 @@ NAGANO = (
     "2日は、前線を伴った低気圧が西日本から東日本を東へ進む見込みです。"
     "このため、北部と中部は曇り昼前から昼過ぎ雨、南部は曇り朝から昼過ぎ雨となるでしょう。"
 )
-WAKAYAMA = "2日の和歌山県は、低気圧や前線の影響で曇り、朝から昼過ぎにかけて雨が降る見込みです。雷を伴う所があるでしょう。"
-
-
-def must_not_call(_system, _user):
-    raise AssertionError("整形で済む文に LLM を使ってはいけない")
 
 
 class CurrentSentenceTest(unittest.TestCase):
@@ -84,21 +78,21 @@ class TargetSegmentTest(unittest.TestCase):
 
 
 class ComposeOutlookTest(unittest.TestCase):
-    def test_single_sentence_skips_llm(self):
-        outlook = news.compose_outlook("2日は、低気圧や前線の影響により、曇りや雨となる見込みです。", 2, must_not_call)
+    def test_single_sentence_is_formatted(self):
+        outlook = news.compose_outlook("2日は、低気圧や前線の影響により、曇りや雨となる見込みです。")
         self.assertEqual(outlook.method, "rule")
         self.assertEqual(outlook.text, "気象庁によると、2日は低気圧や前線の影響により、曇りや雨となる見込みです。")
 
     def test_deshou_after_verb(self):
-        outlook = news.compose_outlook("2日は、次第に晴れとなるでしょう。", 2, must_not_call)
+        outlook = news.compose_outlook("2日は、次第に晴れとなるでしょう。")
         self.assertEqual(outlook.text, "気象庁によると、2日は次第に晴れとなる見込みです。")
 
     def test_deshou_after_noun(self):
-        outlook = news.compose_outlook("2日は、曇りでしょう。", 2, must_not_call)
+        outlook = news.compose_outlook("2日は、曇りでしょう。")
         self.assertEqual(outlook.text, "気象庁によると、2日は曇りの見込みです。")
 
     def test_konotame_is_merged_by_rule(self):
-        outlook = news.compose_outlook(NAGANO, 2, must_not_call)
+        outlook = news.compose_outlook(NAGANO)
         self.assertEqual(outlook.method, "rule")
         self.assertEqual(
             outlook.text,
@@ -106,56 +100,11 @@ class ComposeOutlookTest(unittest.TestCase):
             "北部と中部は曇り昼前から昼過ぎ雨、南部は曇り朝から昼過ぎ雨となる見込みです。",
         )
 
-    def test_llm_output_accepted(self):
-        good = (
-            "気象庁によると、2日は前線を伴った低気圧が西日本から東日本を東へ進む見込みで、"
-            "曇りで昼過ぎから夕方は雨となり、伊豆諸島では雨で雷を伴う所がある見込みです。"
-        )
-        outlook = news.compose_outlook(TOKYO, 2, lambda _s, _u: good)
-        self.assertEqual((outlook.method, outlook.text), ("llm", good))
-
-    def assert_rejected(self, segment, output, reason):
-        outlook = news.compose_outlook(segment, 2, lambda _s, _u: output)
+    def test_several_sentences_show_the_original(self):
+        outlook = news.compose_outlook(TOKYO)
         self.assertEqual(outlook.method, "verbatim")
-        self.assertIn(reason, outlook.note)
-        self.assertTrue(outlook.text.startswith("気象庁によると、"))
-
-    def test_rejects_dropped_region(self):
-        self.assert_rejected(
-            TOKYO,
-            "気象庁によると、2日は前線を伴った低気圧が西日本から東日本を東へ進むため、曇りで昼過ぎから夕方は雨となり、雷を伴う所がある見込みです。",
-            "伊豆諸島",
-        )
-
-    def test_rejects_stronger_thunder_claim(self):
-        # e4b の実際の出力。「一部で雷」が「雷を伴う雨」に強まっている
-        self.assert_rejected(
-            WAKAYAMA,
-            "気象庁によると、2日の和歌山県は低気圧や前線の影響で曇り、朝から昼過ぎにかけて雷を伴う雨が降る見込みです。",
-            "欠落:所",
-        )
-
-    def test_rejects_typo_of_hare(self):
-        # e4b の実際の出力。「晴れ」が「晴」に崩れている
-        self.assert_rejected(
-            "2日は、前線の影響で曇りや雨となります。高気圧に覆われて次第に晴れとなるでしょう。",
-            "気象庁によると、2日は前線の影響で曇りや雨となりますが、高気圧に覆われて次第に晴となる見込みです。",
-            "欠落:晴れ",
-        )
-
-    def test_rejects_added_fact(self):
-        self.assert_rejected(WAKAYAMA, "気象庁によると、2日は台風の影響で雨が降り、雷を伴う所がある見込みです。", "追加:台風")
-
-    def test_llm_failure_shows_original(self):
-        def fail(_system, _user):
-            raise LlmError("LLM を起動できません")
-
-        outlook = news.compose_outlook(TOKYO, 2, fail)
-        self.assertEqual((outlook.method, outlook.note), ("verbatim", "LLM を起動できません"))
-
-    def test_no_model_shows_original(self):
-        outlook = news.compose_outlook(TOKYO, 2, None)
-        self.assertEqual(outlook.method, "verbatim")
+        self.assertEqual(outlook.original, TOKYO)
+        self.assertTrue(outlook.text.startswith("気象庁によると、2日は前線"))
         self.assertIn("伊豆諸島", outlook.text)
 
 

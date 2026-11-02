@@ -1,5 +1,4 @@
 // Python バックエンド (.venv の uvicorn) の起動と呼び出し。
-// llama-server はバックエンドが管理するので、バックエンドを止めれば一緒に止まる。
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -32,7 +31,7 @@ async function launch(root: string, dataDir: string): Promise<void> {
   const logDir = path.join(dataDir, 'logs');
   fs.mkdirSync(logDir, { recursive: true });
   const log = fs.openSync(path.join(logDir, 'backend.log'), 'w');
-  // stdin は親の生存確認に使う。Electron が落ちると閉じ、バックエンドが LLM ごと終了する
+  // stdin は親の生存確認に使う。Electron が落ちると閉じ、バックエンドが終了する
   child = spawn(
     python,
     ['-m', 'uvicorn', 'server.api:app', '--host', '127.0.0.1', '--port', String(port)],
@@ -83,7 +82,7 @@ export async function backendRequest(pathname: string, init?: RequestInit): Prom
   return body;
 }
 
-// stdin を閉じて正常終了を待つ。応答がなければプロセスツリーごと止めて VRAM を残さない
+// stdin を閉じて正常終了を待つ。応答がなければプロセスツリーごと止める
 export function stopBackend(): Promise<void> {
   const target = child;
   if (!target) return Promise.resolve();

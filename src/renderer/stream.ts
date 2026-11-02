@@ -1,5 +1,7 @@
 // 文章を 1 文字ずつ順に見せる表示。文字の場所は最初から確保するので、途中で行が動かない。
 // 内容が変わった段落だけを、上から順に流す
+import { prefersReducedMotion } from './dom.ts';
+
 const CHAR_MS = 26;
 const PARAGRAPH_PAUSE_MS = 160;
 const CHAR_FADE_MS = 200; // style.css の .stream-char と合わせる
@@ -50,7 +52,7 @@ function startParagraph(element: HTMLElement, text: string, step: StreamStep): v
 }
 
 export function streamParagraphs(paragraphs: Array<[HTMLElement, string]>): void {
-  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const reduceMotion = prefersReducedMotion();
   const plan = planStream(
     paragraphs.map(([, text]) => text),
     paragraphs.map(([element]) => shownText.get(element) ?? ''),

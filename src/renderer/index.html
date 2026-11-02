@@ -154,7 +154,6 @@
 
       <div class="settings-tabs" role="tablist" aria-label="設定の項目">
         <button id="tab-location" type="button" role="tab" aria-controls="panel-location">地点</button>
-        <button id="tab-model" type="button" role="tab" aria-controls="panel-model">LLM モデル</button>
         <button id="tab-performance" type="button" role="tab" aria-controls="panel-performance">パフォーマンス</button>
         <button id="tab-graphics" type="button" role="tab" aria-controls="panel-graphics">グラフィックス</button>
         <button id="tab-credit" type="button" role="tab" aria-controls="panel-credit">出典</button>
@@ -171,19 +170,6 @@
         <ul id="location-results"></ul>
       </section>
 
-      <section id="panel-model" role="tabpanel" aria-labelledby="tab-model" hidden>
-        <label class="field-label" for="models-dir">モデルフォルダ</label>
-        <div class="field-row">
-          <input id="models-dir" type="text" spellcheck="false" />
-          <button id="pick-folder" type="button">参照</button>
-        </div>
-        <label class="field-label" for="model-select">使用するモデル</label>
-        <select id="model-select"></select>
-        <p id="model-status" class="settings-help" role="status"></p>
-        <p class="settings-help">
-          気象庁の文を1文にまとめる必要があるときだけ読み込み、しばらく使わないと VRAM を解放します。
-        </p>
-      </section>
       <section id="panel-performance" role="tabpanel" aria-labelledby="tab-performance" hidden>
         <div class="field-grid">
           <label for="fps-limit">FPS 上限</label>

@@ -52,29 +52,15 @@ interface PanelSettings {
 
 interface AppSettings {
   location: WeatherLocation | null;
-  models_dir: string;
-  model: string | null;
   mode?: MapMode;
   graphics?: GraphicsSettings;
   panels?: PanelSettings;
 }
 
-interface ModelEntry {
-  path: string;
-  name: string;
-  size_gb: number;
-}
-
-interface ModelList {
-  models: ModelEntry[];
-  error: string | null;
-}
-
 interface NewsOutlook {
   text: string;
-  method: 'rule' | 'llm' | 'verbatim';
+  method: 'rule' | 'verbatim';
   original: string | null;
-  model: string | null;
   reported_at: string | null;
 }
 
@@ -134,8 +120,6 @@ interface Window {
     getSettings(): Promise<AppSettings>;
     saveSettings(settings: AppSettings): Promise<AppSettings>;
     searchLocations(query: string): Promise<WeatherLocation[]>;
-    listModels(modelsDir: string): Promise<ModelList>;
-    pickFolder(defaultPath: string): Promise<string | null>;
     revealScreenshot(filePath: string): Promise<void>;
     onScreenshot(callback: (filePath: string | null) => void): void; // 保存に失敗したときは null
   };

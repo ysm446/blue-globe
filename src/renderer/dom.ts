@@ -9,6 +9,10 @@ export function errorMessage(err: unknown): string {
   return message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, '');
 }
 
+export function prefersReducedMotion(): boolean {
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
 export function setStatus(target: HTMLElement, message: string, isError = false): void {
   target.textContent = message;
   target.classList.toggle('error', isError);

@@ -1049,13 +1049,6 @@ body.demo-idle * {
   cursor: pointer;
 }
 
-.field-label {
-  display: block;
-  margin: 10px 0 4px;
-  color: var(--text-2);
-  font-size: 13px;
-}
-
 input[type='text'],
 input[type='search'],
 select {

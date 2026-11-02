@@ -1,16 +1,11 @@
 """ニュース文の組み立て。通信はせず、数値と文章だけを扱う。
 
-数値の文はテンプレートで作り、LLM には触らせない。
-気象庁の文は整形で済めばそのまま使い、複数の文をまとめる必要があるときだけ LLM を使う。
-LLM の出力が検査に落ちたら、原文を表示する。
+数値の文はテンプレートで作る。気象庁の文は 1 文に整形できれば整形し、できなければ原文を表示する。
 """
 import re
 import unicodedata
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
-
-from .llm import LlmError
 
 PREFIX = "気象庁によると、"
 
@@ -39,25 +34,6 @@ HOURLY_STEP = 3
 HOURLY_COUNT = 8
 DAY_NAMES = {0: "今日", 1: "明日"}
 
-SUMMARY_SYSTEM = """あなたは気象ニュースの編集者です。入力された気象庁の文章だけを根拠に、日本語で1文に要約します。
-- 「気象庁によると、{day}日は」で始め、「見込みです。」で終える。
-- 原因となる気圧配置、天気、時間帯を残す。
-- 雷、雪、地域ごとの違いなど、注意すべき情報を省かない。
-- 入力にない情報、数値、地名を加えない。
-- 要約文だけを出力する。"""
-
-# 出力に現れたら、原文にも現れているべき語
-NO_ADD = [
-    "雨", "雪", "雷", "晴", "曇", "霧", "台風", "低気圧", "前線", "高気圧", "気圧の谷",
-    "湿った空気", "寒気", "未明", "明け方", "朝", "昼前", "昼過ぎ", "夕方", "夜",
-    "北部", "南部", "東部", "西部", "中部", "日中", "午後",
-]
-# 原文にあれば、出力にも残っているべき語
-MUST_KEEP = [
-    "雨", "雪", "雷", "台風", "暴風", "大雨", "大雪", "竜巻", "高波", "晴れ", "曇り", "所",
-    "未明", "明け方", "朝", "昼前", "昼過ぎ", "夕方", "夜", "日中", "午後",
-]
-REGION_RE = re.compile(r"[一-龠々]*(?:地方|諸島|北部|南部|東部|西部|中部)")
 # 「でしょう」の前が動詞や形容詞なら「見込みです」、名詞なら「の見込みです」でつなぐ
 PREDICATE_ENDINGS = "うくぐすつぬぶむるい"
 
@@ -65,9 +41,8 @@ PREDICATE_ENDINGS = "うくぐすつぬぶむるい"
 @dataclass
 class Outlook:
     text: str
-    method: str  # rule / llm / verbatim
+    method: str  # rule / verbatim
     original: str | None = None
-    note: str | None = None
 
 
 def wind_direction(degrees: float) -> str:
@@ -246,28 +221,7 @@ def _with_forecast_ending(sentence: str) -> str:
     return f"{body}見込みです。" if body[-1:] in PREDICATE_ENDINGS else f"{body}の見込みです。"
 
 
-def summary_problems(output: str, segment: str) -> list[str]:
-    problems = []
-    if not re.match(rf"{PREFIX}\d+日", output):
-        problems.append("書き出し")
-    if not output.endswith("見込みです。") or output.count("。") != 1:
-        problems.append("文末")
-    if len(output) > len(PREFIX) + len(segment) + 10:
-        problems.append("長さ")
-    problems += [f"追加:{word}" for word in NO_ADD if word in output and word not in segment]
-    problems += [f"欠落:{word}" for word in MUST_KEEP if word in segment and word not in output]
-    for region in REGION_RE.findall(segment):
-        if region not in output:
-            problems.append(f"地域欠落:{region}")
-    return problems
-
-
-def compose_outlook(
-    segment: str,
-    day: int,
-    summarize: Callable[[str, str], str] | None,
-) -> Outlook:
-    """summarize(system, user) は LLM 呼び出し。None なら LLM を使わない。"""
+def compose_outlook(segment: str) -> Outlook:
     tidied = _tidy(segment)
     merged = tidied.replace("見込みです。このため、", "ため、")
     sentences = split_sentences(merged)
@@ -275,15 +229,4 @@ def compose_outlook(
         text = PREFIX + _with_forecast_ending(sentences[0])
         return Outlook(text=text, method="rule", original=segment)
 
-    verbatim = PREFIX + tidied
-    if summarize is None:
-        return Outlook(text=verbatim, method="verbatim", original=segment)
-    try:
-        output = summarize(SUMMARY_SYSTEM.format(day=day), segment)
-    except LlmError as e:
-        return Outlook(text=verbatim, method="verbatim", original=segment, note=str(e))
-    problems = summary_problems(output, segment)
-    if problems:
-        note = f"要約が検査に通らなかったため、原文を表示しています({'、'.join(problems)})"
-        return Outlook(text=verbatim, method="verbatim", original=segment, note=note)
-    return Outlook(text=output, method="llm", original=segment)
+    return Outlook(text=PREFIX + tidied, method="verbatim", original=segment)

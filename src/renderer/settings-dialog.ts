@@ -39,22 +39,12 @@ function percentSlider(id: string) {
 
 export function initSettingsDialog(
   onLocationChange: (settings: AppSettings) => void,
-  onModelChange: () => void,
   onGraphicsChange: (graphics: GraphicsSettings) => void,
 ) {
   const dialog = el<HTMLDialogElement>('settings');
-  const dirInput = el<HTMLInputElement>('models-dir');
-  const modelSelect = el<HTMLSelectElement>('model-select');
-  const modelStatus = el('model-status');
   const locationStatus = el('location-status');
   const results = el<HTMLUListElement>('location-results');
-  let settings: AppSettings = { location: null, models_dir: '', model: null };
-  let modelChanged = false;
-
-  dialog.addEventListener('close', () => {
-    if (modelChanged) onModelChange();
-    modelChanged = false;
-  });
+  let settings: AppSettings = { location: null };
 
   // 開いていたタブは、次に開いたときもそのままにする
   const tabs = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
@@ -99,60 +89,10 @@ export function initSettingsDialog(
       settings = await window.weatherApi.saveSettings(next);
       return true;
     } catch (err) {
-      setStatus(modelStatus, errorMessage(err), true);
+      setStatus(locationStatus, errorMessage(err), true);
       return false;
     }
   }
-
-  // 一覧を読み込む。フォルダを読めなかったら false を返す
-  async function loadModels(): Promise<boolean> {
-    modelSelect.replaceChildren(new Option('使わない(気象庁の原文を表示)', ''));
-    setStatus(modelStatus, '');
-    const { models, error } = await window.weatherApi.listModels(dirInput.value);
-    if (error) {
-      setStatus(modelStatus, error, true);
-    } else if (models.length === 0) {
-      setStatus(modelStatus, 'このフォルダにモデルが見つかりません。', true);
-    }
-    for (const model of models) {
-      const option = new Option(`${model.name}(${model.size_gb} GB)`, model.path);
-      option.title = model.path;
-      modelSelect.add(option);
-    }
-    const selected = settings.model;
-    if (selected && models.some((m) => m.path === selected)) {
-      modelSelect.value = selected;
-    } else {
-      if (selected && !error) {
-        setStatus(modelStatus, `選択中のモデルが見つかりません: ${selected}`, true);
-      }
-      modelSelect.value = '';
-    }
-    return !error;
-  }
-
-  async function changeModelsDir(dir: string): Promise<void> {
-    dirInput.value = dir;
-    // 打ち間違いで今の選択を失わないよう、読めないフォルダは保存しない
-    if (!(await loadModels())) return;
-    // 新しいフォルダにないモデルは選択を外してから保存する
-    if (await save({ ...settings, models_dir: dir, model: modelSelect.value || null })) {
-      modelChanged = true;
-      if (modelStatus.textContent === '') setStatus(modelStatus, '保存しました。');
-    }
-  }
-
-  dirInput.addEventListener('change', () => void changeModelsDir(dirInput.value.trim()));
-  el('pick-folder').addEventListener('click', async () => {
-    const dir = await window.weatherApi.pickFolder(dirInput.value);
-    if (dir) await changeModelsDir(dir);
-  });
-  modelSelect.addEventListener('change', async () => {
-    if (await save({ ...settings, model: modelSelect.value || null })) {
-      modelChanged = true;
-      setStatus(modelStatus, '保存しました。');
-    }
-  });
 
   el<HTMLFormElement>('location-form').addEventListener('submit', async (event) => {
     event.preventDefault();
@@ -175,7 +115,6 @@ export function initSettingsDialog(
             results.replaceChildren();
             el<HTMLInputElement>('location-query').value = '';
             showCurrentLocation();
-            modelChanged = false; // 地点変更の取得で新しいモデルも反映される
             dialog.close();
             onLocationChange(settings);
           }
@@ -293,7 +232,6 @@ export function initSettingsDialog(
 
   async function open(): Promise<void> {
     settings = await window.weatherApi.getSettings();
-    dirInput.value = settings.models_dir;
     showCurrentLocation();
     if (settings.graphics) showGraphics(settings.graphics);
     if (!settings.location) selectTab(tabs[0]); // 地点が未設定のときは、最初にそれを選んでもらう
@@ -305,7 +243,6 @@ export function initSettingsDialog(
     }
     syncResetButtons();
     dialog.showModal();
-    await loadModels();
   }
 
   return { open };

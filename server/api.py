@@ -4,7 +4,6 @@ import sys
 import threading
 from contextlib import asynccontextmanager
 from datetime import datetime
-from pathlib import Path
 from typing import Literal
 
 import httpx
@@ -13,16 +12,11 @@ from pydantic import BaseModel, Field
 
 from . import clouds, news, sources
 from .config import DEFAULT_SETTINGS, load_settings, update_settings
-from .llm import LlamaServer, LlmError, list_models
-
-llama = LlamaServer()
-summary_cache: dict[tuple[str, str, str], str] = {}
 
 
 def _watch_parent() -> None:
-    """親 (Electron) が終了すると stdin が閉じるので、LLM ごと確実に止める。"""
+    """親 (Electron) が終了すると stdin が閉じるので、確実に止まる。"""
     sys.stdin.buffer.read()
-    llama.stop()
     os._exit(0)
 
 
@@ -31,7 +25,6 @@ async def lifespan(_app: FastAPI):
     if os.environ.get("WEATHER_NEWS_WATCH_STDIN"):
         threading.Thread(target=_watch_parent, daemon=True).start()
     yield
-    llama.stop()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -48,8 +41,6 @@ class Location(BaseModel):
 
 class SettingsUpdate(BaseModel):
     location: Location | None = None
-    models_dir: str
-    model: str | None = None
 
 
 class ModeUpdate(BaseModel):
@@ -89,17 +80,9 @@ def get_settings() -> dict:
 
 @app.put("/settings")
 def put_settings(update: SettingsUpdate) -> dict:
-    if update.model is not None:
-        try:
-            available = {m["path"] for m in list_models(update.models_dir)}
-        except LlmError as e:
-            raise HTTPException(400, str(e)) from e
-        if update.model not in available:
-            raise HTTPException(400, f"フォルダ内にないモデルは選べません: {update.model}")
     return update_settings(update.model_dump())
 
 
-# モデルの検証を通さず、モードだけを保存する (モデルが消えていても切り替えられるように)
 @app.put("/settings/mode")
 def put_mode(update: ModeUpdate) -> dict:
     return update_settings({"mode": update.mode})
@@ -128,14 +111,6 @@ def get_satellite_clouds() -> dict:
         raise HTTPException(502, str(e)) from e
 
 
-@app.get("/models")
-def get_models(models_dir: str) -> dict:
-    try:
-        return {"models": list_models(models_dir), "error": None}
-    except LlmError as e:
-        return {"models": [], "error": str(e)}
-
-
 @app.get("/locations")
 def get_locations(q: str) -> list[dict]:
     try:
@@ -144,26 +119,7 @@ def get_locations(q: str) -> list[dict]:
         raise HTTPException(502, str(e)) from e
 
 
-def _summarizer(settings: dict, outcome: dict):
-    """選択中のモデルで要約する関数を返す。モデルがなければ None。"""
-    if not settings["model"]:
-        return None
-    model = Path(settings["models_dir"]) / settings["model"]
-    if not model.is_file():
-        outcome["note"] = f"選択中のモデルが見つからないため、原文を表示しています: {settings['model']}"
-        return None
-
-    def summarize(system: str, user: str) -> str:
-        key = (settings["model"], system, user)
-        if key not in summary_cache:
-            summary_cache[key] = llama.chat(model, system, user)
-        outcome["model"] = model.stem
-        return summary_cache[key]
-
-    return summarize
-
-
-def _outlook(location: dict, settings: dict, now: datetime) -> tuple[dict | None, str | None]:
+def _outlook(location: dict, now: datetime) -> tuple[dict | None, str | None]:
     """気象庁の文から見通しを作る。文がない地点や日は見通しなしで返す。"""
     office = sources.office_for(location)
     if not office:
@@ -181,17 +137,15 @@ def _outlook(location: dict, settings: dict, now: datetime) -> tuple[dict | None
     else:
         return None, None
 
-    outcome: dict = {"model": None, "note": None}
-    outlook = news.compose_outlook(segment, target.day, _summarizer(settings, outcome))
+    outlook = news.compose_outlook(segment)
     return (
         {
             "text": outlook.text,
             "method": outlook.method,
             "original": outlook.original,
-            "model": outcome["model"] if outlook.method == "llm" else None,
             "reported_at": overview.get("reportDatetime"),
         },
-        outlook.note or outcome["note"],
+        None,
     )
 
 
@@ -204,17 +158,16 @@ def _fetch_forecast(latitude: float, longitude: float) -> dict:
 
 @app.get("/news")
 def get_news() -> dict:
-    settings = load_settings()
-    location = settings["location"]
+    location = load_settings()["location"]
     if not location:
         raise HTTPException(409, "地点が設定されていません")
     forecast = _fetch_forecast(location["latitude"], location["longitude"])
     now = datetime.fromisoformat(forecast["current"]["time"])
-    outlook, note = _outlook(location, settings, now)
+    outlook, note = _outlook(location, now)
     return _report(location, forecast, outlook, note)
 
 
-# デモで選ばれた都市の天気。設定は変えない。見通しは LLM を起動することがあるので作らない
+# デモで選ばれた都市の天気。設定は変えない。見通しは作らない
 @app.get("/news/place")
 def get_place_news(
     name: str,

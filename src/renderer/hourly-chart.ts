@@ -1,10 +1,22 @@
 // 24 時間の気温の折れ線の計算。画面の計算から切り離して検証できるよう、DOM に依存しない
 const MIN_SPAN_DEGREES = 8; // 1℃ の差が大きな山に見えないよう、縦軸の幅に下限を設ける
 const VERTICAL_PADDING = 6; // 印が上下で切れないようにする
+const REVEAL_STEP_MS = 100; // 隣の列が現れ始めるまでの時間
+export const REVEAL_FADE_MS = 320; // 1 列が現れるのにかける時間
 
 export interface LinePoint {
   x: number;
   y: number;
+}
+
+// 列を左から順に見せるときの、その列が現れ始める時刻。折れ線はこの時刻に列の中央へ届く
+export function revealDelayMs(column: number): number {
+  return column * REVEAL_STEP_MS;
+}
+
+// 全部の列が現れ終わるまでの時間
+export function revealTotalMs(columns: number): number {
+  return revealDelayMs(columns - 1) + REVEAL_FADE_MS;
 }
 
 // 各列の中央に点を置く。気温が高いほど上 (y が小さい)。変化が小さいときは縦の中央に寄せる

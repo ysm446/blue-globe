@@ -3,6 +3,7 @@ import json
 import tempfile
 import threading
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -35,7 +36,7 @@ class SettingsApiTest(unittest.TestCase):
 
     def test_saving_settings_keeps_mode(self):
         self.client.put("/settings/mode", json={"mode": "weather"})
-        response = self.client.put("/settings", json={"models_dir": "D:\\models", "model": None})
+        response = self.client.put("/settings", json={"location": None})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.client.get("/settings").json()["mode"], "weather")
 
@@ -124,7 +125,7 @@ class SettingsApiTest(unittest.TestCase):
     def test_other_settings_keep_graphics(self):
         self.client.put("/settings/graphics", json=self.GRAPHICS)
         self.client.put("/settings/mode", json={"mode": "wind"})
-        self.client.put("/settings", json={"models_dir": "D:\\models", "model": None})
+        self.client.put("/settings", json={"location": None})
         self.assertEqual(self.client.get("/settings").json()["graphics"], self.GRAPHICS)
 
     def test_concurrent_updates_keep_the_file_valid(self):
@@ -148,10 +149,22 @@ class SettingsApiTest(unittest.TestCase):
         for index in range(8):
             self.assertEqual(saved[f"key{index}"], 39)  # どの変更も失われていない
 
-    def test_mode_can_change_when_selected_model_is_gone(self):
+    def test_old_settings_file_with_model_still_works(self):
         config.save_settings({**config.DEFAULT_SETTINGS, "models_dir": "D:\\no-such-folder", "model": "x.gguf"})
         self.assertEqual(self.client.put("/settings/mode", json={"mode": "wind"}).status_code, 200)
-        self.assertEqual(self.client.get("/settings").json()["model"], "x.gguf")
+        self.assertEqual(self.client.put("/settings", json={"location": None}).status_code, 200)
+        self.assertEqual(self.client.get("/settings").json()["mode"], "wind")
+
+    def test_several_sentences_show_the_original_outlook(self):
+        location = {"name": "東京", "admin1": "東京都", "country_code": "JP", "latitude": 35.7, "longitude": 139.7}
+        text = "2日は、晴れの見込みです。夜は雨が降るでしょう。"
+        overview = {"text": text, "reportDatetime": "2026-11-02T05:00:00+09:00"}
+        with mock.patch.object(api.sources, "fetch_overview", return_value=overview):
+            outlook, note = api._outlook(location, datetime(2026, 11, 2, 9, 0))
+        self.assertIsNone(note)
+        self.assertEqual(outlook["method"], "verbatim")
+        self.assertEqual(outlook["original"], text)
+        self.assertNotIn("model", outlook)
 
 
 if __name__ == "__main__":

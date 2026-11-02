@@ -1,10 +1,18 @@
 // 24 時間の気温の折れ線の検証。実行: node --test tests/hourly-chart.test.ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { linePath, linePoints } from '../src/renderer/hourly-chart.ts';
+import { linePath, linePoints, revealDelayMs, revealTotalMs } from '../src/renderer/hourly-chart.ts';
 
 const WIDTH = 320;
 const HEIGHT = 40;
+
+test('列は左から順に現れ、最後の列が現れ終わると全体が終わる', () => {
+  assert.equal(revealDelayMs(0), 0);
+  assert.ok(revealDelayMs(1) > 0);
+  assert.ok(revealDelayMs(7) > revealDelayMs(6));
+  assert.ok(revealTotalMs(8) > revealDelayMs(7));
+  assert.ok(revealTotalMs(8) < 1500, '待たされると感じない長さにする');
+});
 
 test('点は各列の中央に並ぶ', () => {
   const points = linePoints([10, 12, 14, 16], WIDTH, HEIGHT);

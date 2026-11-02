@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
@@ -192,20 +192,6 @@ ipcMain.handle('panels:set', (_event, panels: unknown) =>
 ipcMain.handle('locations:search', (_event, query: string) =>
   backendRequest(`/locations?q=${encodeURIComponent(query)}`),
 );
-ipcMain.handle('models:list', (_event, modelsDir: string) =>
-  backendRequest(`/models?models_dir=${encodeURIComponent(modelsDir)}`),
-);
-ipcMain.handle('dialog:pick-folder', async (event, defaultPath: string) => {
-  const win = BrowserWindow.fromWebContents(event.sender);
-  const options: Electron.OpenDialogOptions = {
-    title: 'モデルフォルダを選択',
-    defaultPath: defaultPath || undefined,
-    properties: ['openDirectory'],
-  };
-  const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
-  return result.canceled ? null : (result.filePaths[0] ?? null);
-});
-
 function screenshotDir(): string {
   return path.join(dataDir(), 'screenshots');
 }

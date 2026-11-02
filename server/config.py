@@ -7,9 +7,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 # 動作検証時に実際の設定を汚さないよう、環境変数で差し替えられる
 DATA_DIR = Path(os.environ.get("WEATHER_NEWS_DATA_DIR", ROOT / "data"))
-LOG_DIR = DATA_DIR / "logs"
 SETTINGS_FILE = DATA_DIR / "settings.json"
-LLAMA_SERVER = ROOT / "runtime" / "llama.cpp" / "llama-server.exe"
 
 DEFAULT_SETTINGS = {
     "location": None,
@@ -29,8 +27,6 @@ DEFAULT_SETTINGS = {
         "volume_clouds": True,
     },
     "panels": {"news": True, "hourly": True, "weekly": True},  # True で開いている
-    "models_dir": r"D:\ai-models\llm",
-    "model": r"lmstudio-community\gemma-4-E4B-it-GGUF\gemma-4-E4B-it-Q4_K_M.gguf",
 }
 
 
