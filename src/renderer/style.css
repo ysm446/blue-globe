@@ -3,9 +3,10 @@
   --bg: #0a0e14;
   /* すりガラスのパネル。透明にするだけでは明るい陸の上で文字が読めないので、後ろの明るさも落とす。
      その上に明るい色を薄く重ね、宇宙の上でも背景より少し明るく見せる */
-  --panel: rgba(170, 190, 225, 0.12);
-  --panel-strong: rgba(34, 42, 56, 0.75);
-  --glass: blur(16px) brightness(0.3) saturate(1.4);
+  --panel: rgba(170, 190, 225, 0.04);
+  --panel-strong: rgba(26, 33, 45, 0.75);
+  --glass: blur(8px) brightness(0.35) saturate(1.4);
+  --panel-glow: inset 0 0 16px rgba(190, 210, 240, 0.04); /* 内側の縁をぼかして明るくし、柔らかく見せる */
   --panel-solid: #111825;
   --field: #0c121c;
   --line: rgba(157, 180, 214, 0.18);
@@ -112,6 +113,20 @@ a:hover {
 #screenshot-toast,
 #settings::before {
   backdrop-filter: var(--glass);
+}
+
+#clock,
+#time-panel,
+#mode-switch,
+#view-switch,
+#return-home,
+#top-right button,
+#demo-hint,
+#news,
+.forecast-panel,
+#layer-info,
+#settings::before {
+  box-shadow: var(--panel-glow);
 }
 
 /* ------------------------------------------------ 地点マーカー */
@@ -928,7 +943,7 @@ body.demo-idle * {
   padding: 10px 14px;
   background: var(--panel-strong);
   border-radius: 8px;
-  box-shadow: 0 6px 20px rgba(4, 7, 11, 0.6);
+  box-shadow: var(--panel-glow), 0 6px 20px rgba(4, 7, 11, 0.6);
 }
 
 #screenshot-toast[hidden] {
@@ -1016,6 +1031,7 @@ body.demo-idle * {
   inset: 0;
   z-index: -1;
   background: var(--panel-strong);
+  border-radius: inherit;
 }
 
 #settings::backdrop {
