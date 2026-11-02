@@ -76,7 +76,7 @@ function columnReveal(foldId: string, rowIds: string[]) {
         startedAt = prefersReducedMotion() ? Number.NEGATIVE_INFINITY : performance.now();
         if (Number.isFinite(startedAt)) {
           for (const id of rowIds) {
-            el(id).querySelectorAll('td').forEach((td, index) => revealColumn(td, index, 0));
+            el(id).querySelectorAll('td').forEach((td, index) => revealItem(td, index, 0));
           }
         }
       }
@@ -96,10 +96,12 @@ function syncWeeklyReveal(): void {
   if (weeklyShown.length > 0 && weeklyReveal.isVisible()) weeklyReveal.play();
 }
 
-function revealColumn(element: Element, column: number, elapsed: number): void {
+// order 番目に現す。すばやく流し直しても、遅れて始まる前のアニメーションで要素が一瞬消えないよう、前のものは取り消す
+function revealItem(element: Element, order: number, elapsed: number): void {
+  for (const animation of element.getAnimations()) animation.cancel();
   element.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], {
     duration: REVEAL_FADE_MS,
-    delay: revealDelayMs(column) - elapsed,
+    delay: revealDelayMs(order) - elapsed,
     easing: 'ease-out',
     fill: 'backwards',
   });
@@ -148,7 +150,7 @@ function drawHourlyLine(): void {
   // 流している途中で幅が変わって線を描き直しても、続きから流す
   const elapsed = hourlyReveal.play();
   if (elapsed < revealTotalMs(points.length)) {
-    markers.forEach((marker, index) => revealColumn(marker, index, elapsed));
+    markers.forEach((marker, index) => revealItem(marker, index, elapsed));
     revealLine(line, points.length, elapsed);
   }
 }
@@ -217,6 +219,7 @@ export function renderNews(news: NewsReport): void {
   el('detail-wind').textContent = `${news.current.wind_speed.toFixed(1)}m/s`;
   el('detail-wind-item').title = `${news.current.wind_direction}寄りの風、最大瞬間 ${news.current.gust.toFixed(1)}m/s`;
   el('clock-details').hidden = false;
+  revealClockWeather(news.location);
   renderHourly(news);
   renderWeekly(news);
 
@@ -243,8 +246,29 @@ export function renderNews(news: NewsReport): void {
   ]);
 }
 
+// 左上のパネルを読む順に見せる。値は 15 分ごとにほぼ必ず変わるので、場所が変わったときだけ流す
+const CLOCK_PLACE_ITEMS = 2; // 地名と時刻。天気はその次から現す
+let clockPlaceName: string | null = null;
+let clockWeatherPlace: string | null = null;
+
+function revealInOrder(elements: Element[], first = 0): void {
+  if (prefersReducedMotion()) return;
+  elements.forEach((element, index) => revealItem(element, first + index, 0));
+}
+
+function revealClockWeather(location: WeatherLocation): void {
+  const place = `${location.latitude},${location.longitude}`;
+  if (place === clockWeatherPlace) return;
+  clockWeatherPlace = place;
+  revealInOrder(
+    [el('clock-icon'), el('clock-temperature'), el('clock-apparent'), ...document.querySelectorAll('#clock-details .detail-row > div')],
+    CLOCK_PLACE_ITEMS,
+  );
+}
+
 // 地点を変えたとき、前の地点の文を新しい地点のマーカーと並べて見せない
 export function hideNews(): void {
+  clockWeatherPlace = null;
   el('news-body').hidden = true;
   el('forecasts').hidden = true;
   el('clock-weather').hidden = true;
@@ -277,12 +301,18 @@ export function setClockOffset(seconds: number | null): void {
 }
 
 export function showClockPlace(location: WeatherLocation | null): void {
-  el('clock-place-name').textContent = location?.name ?? '';
+  const name = location?.name ?? '';
+  el('clock-place-name').textContent = name;
   el('clock-place').hidden = !location;
+  if (name === clockPlaceName) return;
+  // 起動時は時刻がすでに出ているので、地名だけを流す
+  revealInOrder(clockPlaceName === null ? [el('clock-place')] : [el('clock-place'), el('clock-time')]);
+  clockPlaceName = name;
 }
 
 export function initNewsView(): void {
   updateClock();
+  revealInOrder([el('clock-time')]);
   window.setInterval(updateClock, 1000);
   // パネルを開いたときや幅が変わったときに描き直す
   new ResizeObserver(drawHourlyLine).observe(el('fold-hourly'));
