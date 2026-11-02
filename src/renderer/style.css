@@ -514,6 +514,7 @@ body.demo-idle * {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  pointer-events: none; /* パネルのない隙間は、後ろの地球と都市のラベルへ通す */
 }
 
 #forecasts[hidden] {
@@ -566,6 +567,21 @@ body.demo-idle * {
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 8px;
+  pointer-events: auto;
+}
+
+/* 閉じたパネルは見出しの幅まで縮める。天気ニュースは右端、予報は左端に寄せたまま */
+#news:has(> #fold-news:not([open])) {
+  width: max-content;
+  max-width: 360px;
+}
+
+.forecast-panel:has(> .panel-fold:not([open])) {
+  align-self: flex-start;
+}
+
+.panel-fold:not([open]) > summary {
+  gap: 16px;
 }
 
 .news-status {
@@ -1152,6 +1168,12 @@ select option {
 
 /* 左下に置くと左上の操作部に重なる高さでは、右の列にまとめる */
 @media (min-width: 901px) and (max-height: 720px) {
+  /* 右の列にまとめるので、閉じたパネルも右端に寄せる */
+  #news:has(> #fold-news:not([open])),
+  .forecast-panel:has(> .panel-fold:not([open])) {
+    align-self: flex-end;
+  }
+
   #panels {
     position: fixed;
     top: 60px;
@@ -1178,6 +1200,10 @@ select option {
 
 /* 狭い画面では下にまとめ、地球を残りの領域の中央に寄せる (main.ts の PANEL_OVERLAP_WIDTH) */
 @media (max-width: 900px) {
+  #news:has(> #fold-news:not([open])) {
+    align-self: flex-start;
+  }
+
   #panels {
     position: fixed;
     left: 16px;

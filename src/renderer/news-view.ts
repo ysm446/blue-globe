@@ -53,12 +53,48 @@ function rainDrop(rain: number, key: number | string): SVGSVGElement {
   return svg;
 }
 
+// 予報の表の列を左から順に見せる。場所は最初から確保するので、途中で行が動かない。
+// 見えるようになったときと内容が変わったときだけで、同じ内容の更新や幅の変更では流し直さない
+function columnReveal(foldId: string, rowIds: string[]) {
+  let due = true;
+  let startedAt = Number.NEGATIVE_INFINITY;
+  return {
+    contentChanged(): void {
+      due = true;
+    },
+    // 閉じた中の要素は幅が 0 にならないので open でも確かめる
+    isVisible(): boolean {
+      const fold = el<HTMLDetailsElement>(foldId);
+      const visible = fold.open && fold.clientWidth > 0;
+      if (!visible) due = true;
+      return visible;
+    },
+    // 流し始める時期なら始める。流し始めてからの経過時間 (ms) を返す
+    play(): number {
+      if (due) {
+        due = false;
+        startedAt = prefersReducedMotion() ? Number.NEGATIVE_INFINITY : performance.now();
+        if (Number.isFinite(startedAt)) {
+          for (const id of rowIds) {
+            el(id).querySelectorAll('td').forEach((td, index) => revealColumn(td, index, 0));
+          }
+        }
+      }
+      return performance.now() - startedAt;
+    },
+  };
+}
+
 // 線の座標は実際の幅で計算する。伸縮させると印が楕円になる
 let hourlyShown: NewsReport['hourly'] = [];
-// 列を左から順に見せる。場所は最初から確保するので、途中で行が動かない。
-// 見えるようになったときと内容が変わったときだけで、同じ内容の更新や幅の変更では流し直さない
-let hourlyRevealDue = true;
-let hourlyRevealStart = Number.NEGATIVE_INFINITY;
+const hourlyReveal = columnReveal('fold-hourly', ['hourly-time', 'hourly-icon', 'hourly-temperature', 'hourly-rain']);
+
+let weeklyShown: NewsReport['weekly'] = [];
+const weeklyReveal = columnReveal('fold-weekly', ['weekly-day', 'weekly-icon', 'weekly-high', 'weekly-low', 'weekly-rain']);
+
+function syncWeeklyReveal(): void {
+  if (weeklyShown.length > 0 && weeklyReveal.isVisible()) weeklyReveal.play();
+}
 
 function revealColumn(element: Element, column: number, elapsed: number): void {
   element.animate([{ opacity: 0, transform: 'translateY(4px)' }, { opacity: 1, transform: 'none' }], {
@@ -83,11 +119,7 @@ function drawHourlyLine(): void {
   const cell = el<HTMLTableCellElement>('hourly-line-cell');
   const width = cell.clientWidth;
   cell.colSpan = Math.max(hourlyShown.length, 1);
-  // 閉じているときは、開いたときに描く。閉じた中の要素は幅が 0 にならないので open で確かめる
-  if (!el<HTMLDetailsElement>('fold-hourly').open || width === 0 || hourlyShown.length === 0) {
-    hourlyRevealDue = true;
-    return;
-  }
+  if (!hourlyReveal.isVisible() || hourlyShown.length === 0) return; // 閉じているときは、開いたときに描く
   const points = linePoints(hourlyShown.map((hour) => hour.temperature), width, HOURLY_LINE_HEIGHT);
   const svg = svgElement('svg', {
     class: 'hourly-line',
@@ -113,17 +145,8 @@ function drawHourlyLine(): void {
   });
   cell.replaceChildren(svg);
 
-  if (hourlyRevealDue) {
-    hourlyRevealDue = false;
-    hourlyRevealStart = prefersReducedMotion() ? Number.NEGATIVE_INFINITY : performance.now();
-    if (Number.isFinite(hourlyRevealStart)) {
-      for (const id of ['hourly-time', 'hourly-icon', 'hourly-temperature', 'hourly-rain']) {
-        el(id).querySelectorAll('td').forEach((td, index) => revealColumn(td, index, 0));
-      }
-    }
-  }
   // 流している途中で幅が変わって線を描き直しても、続きから流す
-  const elapsed = performance.now() - hourlyRevealStart;
+  const elapsed = hourlyReveal.play();
   if (elapsed < revealTotalMs(points.length)) {
     markers.forEach((marker, index) => revealColumn(marker, index, elapsed));
     revealLine(line, points.length, elapsed);
@@ -133,7 +156,7 @@ function drawHourlyLine(): void {
 export function renderHourly(news: NewsReport): void {
   // 同じ内容なら作り直さない。順次表示の途中で切れない
   if (JSON.stringify(news.hourly) === JSON.stringify(hourlyShown)) return;
-  const textRow =(id: string, format: (h: NewsReport['hourly'][number]) => string): void =>
+  const textRow = (id: string, format: (h: NewsReport['hourly'][number]) => string): void =>
     fillRow(id, news.hourly, (cell, hour) => {
       cell.textContent = format(hour);
       cell.title = hour.weather;
@@ -148,14 +171,16 @@ export function renderHourly(news: NewsReport): void {
   fillRow('hourly-icon', news.hourly, (cell, hour) => {
     cell.append(weatherIcon(hour.icon, hour.is_day, hour.weather, 26));
   });
-  hourlyRevealDue = true;
+  hourlyReveal.contentChanged();
   hourlyShown = news.hourly;
   el<HTMLTableCellElement>('hourly-line-cell').colSpan = news.hourly.length;
   drawHourlyLine();
 }
 
 function renderWeekly(news: NewsReport): void {
-  const textRow = (id: string, format: (d: NewsReport['weekly'][number]) => string): void =>
+  // 同じ内容なら作り直さない。順次表示の途中で切れない
+  if (JSON.stringify(news.weekly) === JSON.stringify(weeklyShown)) return;
+  const textRow =(id: string, format: (d: NewsReport['weekly'][number]) => string): void =>
     fillRow(id, news.weekly, (cell, day, index) => {
       cell.textContent = format(day);
       cell.title = day.weather;
@@ -168,6 +193,9 @@ function renderWeekly(news: NewsReport): void {
   fillRow('weekly-icon', news.weekly, (cell, day) => {
     cell.append(weatherIcon(day.icon, true, day.weather, 24));
   });
+  weeklyReveal.contentChanged();
+  weeklyShown = news.weekly;
+  syncWeeklyReveal();
 }
 
 export function renderNews(news: NewsReport): void {
@@ -258,4 +286,5 @@ export function initNewsView(): void {
   window.setInterval(updateClock, 1000);
   // パネルを開いたときや幅が変わったときに描き直す
   new ResizeObserver(drawHourlyLine).observe(el('fold-hourly'));
+  new ResizeObserver(syncWeeklyReveal).observe(el('fold-weekly'));
 }

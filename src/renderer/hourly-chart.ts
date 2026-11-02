@@ -9,7 +9,7 @@ export interface LinePoint {
   y: number;
 }
 
-// 列を左から順に見せるときの、その列が現れ始める時刻。折れ線はこの時刻に列の中央へ届く
+// 予報の表の列を左から順に見せるときの、その列が現れ始める時刻。折れ線はこの時刻に列の中央へ届く
 export function revealDelayMs(column: number): number {
   return column * REVEAL_STEP_MS;
 }
