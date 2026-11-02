@@ -1,5 +1,6 @@
 // 設定画面
 import { el, errorMessage, setStatus } from './dom';
+import { audioFileName } from './music-player';
 
 const RESET_ICON =
   '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>';
@@ -40,6 +41,7 @@ function percentSlider(id: string) {
 export function initSettingsDialog(
   onLocationChange: (settings: AppSettings) => void,
   onGraphicsChange: (graphics: GraphicsSettings) => void,
+  onAudioChange: (settings: AppSettings) => void,
 ) {
   const dialog = el<HTMLDialogElement>('settings');
   const locationStatus = el('location-status');
@@ -127,6 +129,28 @@ export function initSettingsDialog(
       setStatus(locationStatus, errorMessage(err), true);
     }
   });
+
+  function showAudioFile(): void {
+    const file = settings.audio_file ?? null;
+    el('audio-file-name').textContent = file ? `現在の音源: ${audioFileName(file)}` : '音源は選ばれていません。';
+    el<HTMLButtonElement>('audio-clear').disabled = !file;
+  }
+
+  async function changeAudioFile(change: () => Promise<AppSettings | null>): Promise<void> {
+    const status = el('audio-status');
+    try {
+      const saved = await change();
+      setStatus(status, '');
+      if (!saved) return; // ダイアログをキャンセルした
+      settings = saved;
+      showAudioFile();
+      onAudioChange(saved);
+    } catch (err) {
+      setStatus(status, errorMessage(err), true);
+    }
+  }
+  el('audio-choose').addEventListener('click', () => void changeAudioFile(window.weatherApi.chooseAudioFile));
+  el('audio-clear').addEventListener('click', () => void changeAudioFile(window.weatherApi.clearAudioFile));
 
   const selects = {
     fps_limit: el<HTMLSelectElement>('fps-limit'),
@@ -231,9 +255,13 @@ export function initSettingsDialog(
     button.addEventListener('click', () => resetGraphics(rowsOfSection(button)));
   }
 
-  async function open(): Promise<void> {
+  // tabId を渡すと、そのタブを開く
+  async function open(tabId?: string): Promise<void> {
     settings = await window.weatherApi.getSettings();
     showCurrentLocation();
+    showAudioFile();
+    const wanted = tabs.find((tab) => tab.id === tabId);
+    if (wanted) selectTab(wanted);
     if (settings.graphics) showGraphics(settings.graphics);
     if (!settings.location) selectTab(tabs[0]); // 地点が未設定のときは、最初にそれを選んでもらう
     if (!graphicsDefaults) {

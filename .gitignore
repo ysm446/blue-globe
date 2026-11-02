@@ -4,6 +4,9 @@ runtime/
 # --- アプリ生成データ (設定・キャッシュ・ログ)。src/renderer/data などは管理する ---
 /data/
 
+# --- 音源 (配布条件を確かめていないので公開しない) ---
+/assets/bgm/
+
 # --- Node / Electron ---
 node_modules/
 dist/

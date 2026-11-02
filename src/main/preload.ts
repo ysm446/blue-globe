@@ -14,6 +14,9 @@ contextBridge.exposeInMainWorld('weatherApi', {
     ipcRenderer.invoke('news:place', name, latitude, longitude, at),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   saveSettings: (settings: unknown) => ipcRenderer.invoke('settings:set', settings),
+  chooseAudioFile: () => ipcRenderer.invoke('audio:choose'),
+  clearAudioFile: () => ipcRenderer.invoke('audio:clear'),
+  setAudioVolume: (volume: number) => ipcRenderer.invoke('audio:volume', volume),
   searchLocations: (query: string) => ipcRenderer.invoke('locations:search', query),
   revealScreenshot: (filePath: string) => ipcRenderer.invoke('screenshot:reveal', filePath),
   onScreenshot: (callback: (filePath: string | null) => void) => {

@@ -40,6 +40,32 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.client.get("/settings").json()["mode"], "weather")
 
+    def test_audio_defaults(self):
+        settings = self.client.get("/settings").json()
+        self.assertIsNone(settings["audio_file"])
+        self.assertEqual(settings["audio_volume"], 0.5)
+
+    def test_audio_is_saved_separately(self):
+        self.client.put("/settings/audio-file", json={"file": "D:/music/a.mp3"})
+        self.client.put("/settings/audio-volume", json={"volume": 0.25})
+        settings = self.client.get("/settings").json()
+        self.assertEqual(settings["audio_file"], "D:/music/a.mp3")
+        self.assertEqual(settings["audio_volume"], 0.25)
+        self.client.put("/settings/audio-file", json={"file": None})
+        settings = self.client.get("/settings").json()
+        self.assertIsNone(settings["audio_file"])
+        self.assertEqual(settings["audio_volume"], 0.25)
+
+    def test_invalid_audio_volume_is_rejected(self):
+        for volume in (-0.1, 1.1):
+            self.assertEqual(self.client.put("/settings/audio-volume", json={"volume": volume}).status_code, 422)
+        self.assertEqual(self.client.get("/settings").json()["audio_volume"], 0.5)
+
+    def test_saving_settings_keeps_audio(self):
+        self.client.put("/settings/audio-file", json={"file": "D:/music/a.mp3"})
+        self.client.put("/settings", json={"location": None})
+        self.assertEqual(self.client.get("/settings").json()["audio_file"], "D:/music/a.mp3")
+
     GRAPHICS = {
         "fps_limit": 30,
         "render_scale": 75,

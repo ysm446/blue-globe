@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src weather-audio:"
     />
     <title>Weather News</title>
     <link rel="stylesheet" href="./style.css" />
@@ -62,6 +62,7 @@
     </div>
 
     <div id="top-right">
+      <button id="music-toggle" type="button" aria-expanded="false" aria-controls="music-popup" aria-label="音楽" title="音楽"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></svg></button>
       <button id="start-demo" type="button" aria-pressed="false" aria-label="デモを再生" title="デモを再生"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5Z" /></svg></button>
       <button id="refresh" type="button" aria-label="天気を更新" title="天気を更新"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /></svg></button>
       <button id="open-settings" type="button" aria-label="設定" title="設定"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-2.82 1.17V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-2.82-1.12l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 3.09 14H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.11-2.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 10 3.09V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 2.82 1.17l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 20.91 10H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg></button>
@@ -166,6 +167,22 @@
       <button id="screenshot-toast-close" type="button" aria-label="閉じる">✕</button>
     </div>
 
+    <div id="music-popup" hidden>
+      <button id="music-setup" type="button">設定で音源を選ぶ</button>
+      <div id="music-controls" hidden>
+        <div id="music-name"></div>
+        <div class="range-row">
+          <button id="music-play" type="button" aria-label="再生" title="再生">
+            <svg id="music-play-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4.5v15l12-7.5Z" /></svg>
+            <svg id="music-pause-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg>
+          </button>
+          <input id="music-volume" type="range" min="0" max="100" step="1" aria-label="音量" />
+          <output id="music-volume-value"></output>
+        </div>
+      </div>
+      <p id="music-status" class="settings-help" role="status"></p>
+    </div>
+
     <dialog id="settings">
       <form method="dialog" class="settings-head">
         <h2>設定</h2>
@@ -176,6 +193,7 @@
         <button id="tab-location" type="button" role="tab" aria-controls="panel-location">地点</button>
         <button id="tab-performance" type="button" role="tab" aria-controls="panel-performance">パフォーマンス</button>
         <button id="tab-graphics" type="button" role="tab" aria-controls="panel-graphics">グラフィックス</button>
+        <button id="tab-music" type="button" role="tab" aria-controls="panel-music">音楽</button>
         <button id="tab-credit" type="button" role="tab" aria-controls="panel-credit">出典</button>
       </div>
 
@@ -266,6 +284,16 @@
           <button class="reset-button" data-reset="show_city_labels" type="button" aria-label="都市ラベルの表示を既定に戻す" title="既定に戻す"></button>
         </div>
         <button class="reset-all" data-reset-section type="button">すべて既定に戻す</button>
+      </section>
+
+      <section id="panel-music" role="tabpanel" aria-labelledby="tab-music" hidden>
+        <p id="audio-file-name" class="settings-help"></p>
+        <div class="field-row audio-file-buttons">
+          <button id="audio-choose" type="button">音源ファイルを選ぶ</button>
+          <button id="audio-clear" type="button">外す</button>
+        </div>
+        <p class="settings-help">右上の音符のアイコンから再生と音量の調整ができます。起動しただけでは鳴らしません。</p>
+        <p id="audio-status" class="settings-help" role="status"></p>
       </section>
 
       <section id="panel-credit" class="settings-credit" role="tabpanel" aria-labelledby="tab-credit" hidden>

@@ -57,6 +57,8 @@ interface AppSettings {
   mode?: MapMode;
   graphics?: GraphicsSettings;
   panels?: PanelSettings;
+  audio_file?: string | null; // 設定画面で選んだ音源のパス
+  audio_volume?: number; // スライダーの位置 (0〜1)
 }
 
 interface NewsOutlook {
@@ -122,6 +124,9 @@ interface Window {
     getPlaceNews(name: string, latitude: number, longitude: number, at?: string): Promise<NewsReport>;
     getSettings(): Promise<AppSettings>;
     saveSettings(settings: AppSettings): Promise<AppSettings>;
+    chooseAudioFile(): Promise<AppSettings | null>; // キャンセルしたときは null
+    clearAudioFile(): Promise<AppSettings>;
+    setAudioVolume(volume: number): Promise<AppSettings>;
     searchLocations(query: string): Promise<WeatherLocation[]>;
     revealScreenshot(filePath: string): Promise<void>;
     onScreenshot(callback: (filePath: string | null) => void): void; // 保存に失敗したときは null

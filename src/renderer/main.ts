@@ -3,6 +3,7 @@ import { initDemo } from './demo-controller';
 import { el, errorMessage, setStatus } from './dom';
 import { initGlobe } from './globe-view';
 import { initMapLayers } from './map-layers';
+import { initMusicPlayer } from './music-player';
 import { hideNews, initNewsView, renderHourly, renderNews, setClockOffset, setClockTime, showClockPlace } from './news-view';
 import { initSettingsDialog } from './settings-dialog';
 import { initTimeControl } from './time-control';
@@ -246,7 +247,9 @@ async function init(): Promise<void> {
       void refreshNews();
     },
     (graphics) => globe.applyGraphics(graphics),
+    (settings) => music.apply(settings),
   );
+  const music = initMusicPlayer(() => void settingsDialog.open('tab-music'));
 
   refreshBtn.addEventListener('click', () => {
     if (selectedCity) void loadCity(selectedCity);
@@ -272,6 +275,7 @@ async function init(): Promise<void> {
     showClockPlace(settings.location);
     if (settings.graphics) globe.applyGraphics(settings.graphics);
     if (settings.panels) applyPanels(settings.panels);
+    music.apply(settings);
     applyMode(settings.mode ?? 'normal');
     if (settings.location) {
       globe.startFromOverview(settings.location);

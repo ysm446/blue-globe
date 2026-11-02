@@ -1,7 +1,9 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, protocol, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
+import { Readable } from 'node:stream';
+import { parseByteRange } from './byte-range';
 import { nearestStepStamp, parsePastTime } from './gfs-time';
 import { fetchGfsCloud, fetchGfsWind } from './nomads';
 import { backendRequest, startBackend, stopBackend } from './backend';
@@ -9,6 +11,11 @@ import { backendRequest, startBackend, stopBackend } from './backend';
 const GFS_MAX_AGE_MS = 3 * 3600_000; // GFS 1.0° は 3 時間刻み
 const GFS_FETCH_TIMEOUT_MS = 30_000;
 const PAST_KEEP_MS = 48 * 3600_000; // 見られるのは 24 時間前まで。古いものは残しておいても使わない
+const AUDIO_SCHEME = 'weather-audio';
+const AUDIO_EXTENSIONS = ['mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'flac'];
+
+// 音源を少しずつ読むための読み込み口。app の準備ができる前に登録する必要がある
+protocol.registerSchemesAsPrivileged([{ scheme: AUDIO_SCHEME, privileges: { standard: true, stream: true } }]);
 
 // 動作検証時に実際の設定を汚さないよう、環境変数で差し替えられる
 function dataDir(): string {
@@ -257,9 +264,38 @@ ipcMain.handle('graphics:defaults', () => backendRequest('/settings/graphics/def
 ipcMain.handle('panels:set', (_event, panels: unknown) =>
   backendRequest('/settings/panels', jsonPut(panels)),
 );
+// パスを決めるのはメインプロセスのダイアログだけにする。画面から任意のファイルを読めないように
+ipcMain.handle('audio:choose', async (event) => {
+  const options: Electron.OpenDialogOptions = {
+    title: '音源ファイルを選ぶ',
+    defaultPath: path.join(app.getAppPath(), 'assets', 'bgm'),
+    properties: ['openFile'],
+    filters: [{ name: '音声ファイル', extensions: AUDIO_EXTENSIONS }],
+  };
+  const win = BrowserWindow.fromWebContents(event.sender);
+  const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
+  if (result.canceled || result.filePaths.length === 0) return null;
+  return backendRequest('/settings/audio-file', jsonPut({ file: result.filePaths[0] }));
+});
+ipcMain.handle('audio:clear', () => backendRequest('/settings/audio-file', jsonPut({ file: null })));
+ipcMain.handle('audio:volume', (_event, volume: number) =>
+  backendRequest('/settings/audio-volume', jsonPut({ volume })),
+);
 ipcMain.handle('locations:search', (_event, query: string) =>
   backendRequest(`/locations?q=${encodeURIComponent(query)}`),
 );
+// ループの先頭へ戻るにはシークが要るので、Range に応える
+async function audioResponse(file: string, rangeHeader: string | null): Promise<Response> {
+  const size = await fs.promises.stat(file).then((stat) => stat.size, () => 0);
+  if (size === 0) return new Response(null, { status: 404 });
+  const range = parseByteRange(rangeHeader, size);
+  const { start, end } = range ?? { start: 0, end: size - 1 };
+  const headers: Record<string, string> = { 'Accept-Ranges': 'bytes', 'Content-Length': String(end - start + 1) };
+  if (range) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
+  const body = Readable.toWeb(fs.createReadStream(file, { start, end })) as ReadableStream;
+  return new Response(body, { status: range ? 206 : 200, headers });
+}
+
 function screenshotDir(): string {
   return path.join(dataDir(), 'screenshots');
 }
@@ -337,6 +373,11 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
+  // URL によらず、設定で選んだ音源だけを返す
+  protocol.handle(AUDIO_SCHEME, async (request) => {
+    const { audio_file: file } = (await backendRequest('/settings')) as { audio_file: string | null };
+    return file ? audioResponse(file, request.headers.get('range')) : new Response(null, { status: 404 });
+  });
   // 失敗は最初の API 呼び出しで画面に表示する
   startBackend(app.getAppPath(), dataDir()).catch((err) => console.error(err));
   createWindow();

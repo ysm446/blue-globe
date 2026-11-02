@@ -28,6 +28,8 @@ DEFAULT_SETTINGS = {
         "volume_clouds": True,
     },
     "panels": {"news": True, "hourly": True, "weekly": True, "details": True},  # True で開いている
+    "audio_file": None,  # 設定画面で選んだ音源のパス
+    "audio_volume": 0.5,  # スライダーの位置 (0〜1)
 }
 
 

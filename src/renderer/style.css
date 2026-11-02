@@ -113,6 +113,7 @@ a:hover {
 .forecast-panel,
 #layer-info,
 #screenshot-toast,
+#music-popup,
 #settings::before {
   backdrop-filter: var(--glass);
 }
@@ -563,8 +564,59 @@ body.demo #view-hint {
   display: none;
 }
 
-#start-demo[aria-pressed='true'] {
+#start-demo[aria-pressed='true'],
+#music-toggle.playing {
   color: var(--accent);
+}
+
+/* 通知と同じように、パネルより後ろに置いて上に重ねる */
+#music-popup {
+  position: fixed;
+  top: 60px;
+  right: 16px;
+  width: min(300px, calc(100vw - 32px));
+  padding: 10px 12px;
+  background: var(--panel-strong);
+  border-radius: 8px;
+  box-shadow: var(--panel-glow), 0 6px 20px rgba(4, 7, 11, 0.6);
+}
+
+#music-name {
+  margin-bottom: 6px;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#music-play {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+}
+
+/* SVG には hidden が効かない */
+#music-pause-icon,
+#music-play.playing #music-play-icon {
+  display: none;
+}
+
+#music-play.playing #music-pause-icon {
+  display: block;
+}
+
+#music-setup {
+  width: 100%;
+}
+
+.audio-file-buttons {
+  margin-top: 10px;
 }
 
 body.demo-idle * {

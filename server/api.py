@@ -69,6 +69,14 @@ class PanelsUpdate(BaseModel):
     details: bool
 
 
+class AudioFileUpdate(BaseModel):
+    file: str | None
+
+
+class AudioVolumeUpdate(BaseModel):
+    volume: float = Field(ge=0, le=1)
+
+
 class GraphicsUpdate(BaseModel):
     fps_limit: Literal[0, 30, 60, 120]
     render_scale: Literal[50, 75, 100]
@@ -113,6 +121,16 @@ def put_graphics(update: GraphicsUpdate) -> dict:
 @app.put("/settings/panels")
 def put_panels(update: PanelsUpdate) -> dict:
     return update_settings({"panels": update.model_dump()})
+
+
+@app.put("/settings/audio-file")
+def put_audio_file(update: AudioFileUpdate) -> dict:
+    return update_settings({"audio_file": update.file})
+
+
+@app.put("/settings/audio-volume")
+def put_audio_volume(update: AudioVolumeUpdate) -> dict:
+    return update_settings({"audio_volume": update.volume})
 
 
 @app.get("/settings/graphics/defaults")
