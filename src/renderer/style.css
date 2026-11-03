@@ -428,6 +428,7 @@ body.solar #camera-panel {
   color: var(--text-2);
   font-size: 13px;
   font-variant-numeric: tabular-nums;
+  white-space: pre; /* 2 行目に VRAM */
   background: var(--panel);
   border-radius: 4px;
 }

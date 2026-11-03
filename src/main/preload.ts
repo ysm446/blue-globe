@@ -22,4 +22,8 @@ contextBridge.exposeInMainWorld('weatherApi', {
   onScreenshot: (callback: (filePath: string | null) => void) => {
     ipcRenderer.on('screenshot:done', (_event, filePath: string | null) => callback(filePath));
   },
+  watchVram: (enabled: boolean) => ipcRenderer.invoke('vram:watch', enabled),
+  onVram: (callback: (bytes: number | null) => void) => {
+    ipcRenderer.on('vram:usage', (_event, bytes: number | null) => callback(bytes));
+  },
 });

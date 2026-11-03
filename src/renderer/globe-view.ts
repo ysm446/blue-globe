@@ -13,7 +13,7 @@ import type { DemoPlace } from './demo';
 import { el } from './dom';
 import { CLOUD_ALTITUDE, RealisticEarth } from './earth';
 import { adaptExposure, earthClearance, horizonReddening, screenPresence, targetExposure } from './exposure';
-import { formatFrameStats, GpuTimer } from './frame-timer';
+import { formatFrameStats, formatVram, GpuTimer } from './frame-timer';
 import { createBorders, createCoastlines, Globe, lonLatToVector3 } from './globe';
 import { GpuParticleSystem } from './gpu-particles';
 import { HdrPipeline } from './hdr';
@@ -1071,6 +1071,10 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   let fpsLimit = 0;
   const fpsCounter = el('fps-counter');
+  let vramBytes: number | null = null;
+  window.weatherApi.onVram((bytes) => {
+    vramBytes = bytes;
+  });
   function applyGraphics(graphics: GraphicsSettings): void {
     fpsLimit = graphics.fps_limit;
     lensFlare = graphics.lens_flare;
@@ -1113,7 +1117,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     cityLabelsEnabled = graphics.show_city_labels;
     planetLabelsEnabled = graphics.show_planet_labels;
     syncCityLabels();
-    fpsCounter.hidden = !graphics.show_fps;
+    if (fpsCounter.hidden === graphics.show_fps) {
+      fpsCounter.hidden = !graphics.show_fps;
+      vramBytes = null;
+      void window.weatherApi.watchVram(graphics.show_fps);
+    }
     const ratio = (Math.min(window.devicePixelRatio, 2) * graphics.render_scale) / 100;
     if (ratio !== renderer.getPixelRatio()) {
       renderer.setPixelRatio(ratio);
@@ -1147,11 +1155,12 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     renderedFrames++;
     fpsWindowFrames++;
     if (time - fpsWindowStart >= 1000) {
-      fpsCounter.textContent = formatFrameStats(
+      const stats = formatFrameStats(
         (fpsWindowFrames * 1000) / (time - fpsWindowStart),
         fpsWindowCpuMs / fpsWindowFrames,
         fpsWindowGpuFrames > 0 ? fpsWindowGpuMs / fpsWindowGpuFrames : null,
       );
+      fpsCounter.textContent = `${stats}\n${formatVram(vramBytes)}`;
       fpsWindowStart = time;
       fpsWindowFrames = 0;
       fpsWindowCpuMs = 0;

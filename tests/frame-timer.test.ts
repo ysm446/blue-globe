@@ -1,7 +1,7 @@
 // 1 フレームの処理時間の検証。実行: node --test tests/frame-timer.test.ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { formatFrameStats, GpuTimer } from '../src/renderer/frame-timer.ts';
+import { formatFrameStats, formatVram, GpuTimer } from '../src/renderer/frame-timer.ts';
 
 const TIME_ELAPSED = 1;
 const DISJOINT = 2;
@@ -85,4 +85,10 @@ test('タイマーがない環境でも動く', () => {
 test('表示は合計と内訳を出し、GPU を測れないときは CPU だけと分かるようにする', () => {
   assert.equal(formatFrameStats(59.6, 1.24, 3.1), '60 FPS 4.3 ms (CPU 1.2 / GPU 3.1)');
   assert.equal(formatFrameStats(30, 2, null), '30 FPS 2.0 ms (CPU)');
+});
+
+test('VRAM は 1 GB 以上を GB、未満を MB で出し、読めないときは - にする', () => {
+  assert.equal(formatVram(1.5 * 1024 ** 3), 'VRAM 1.50 GB');
+  assert.equal(formatVram(300 * 1024 ** 2), 'VRAM 300 MB');
+  assert.equal(formatVram(null), 'VRAM -');
 });

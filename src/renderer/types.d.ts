@@ -154,5 +154,7 @@ interface Window {
     searchLocations(query: string): Promise<WeatherLocation[]>;
     revealScreenshot(filePath: string): Promise<void>;
     onScreenshot(callback: (filePath: string | null) => void): void; // 保存に失敗したときは null
+    watchVram(enabled: boolean): Promise<void>;
+    onVram(callback: (bytes: number | null) => void): void; // 読めないときは null
   };
 }

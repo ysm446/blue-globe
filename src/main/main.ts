@@ -7,6 +7,7 @@ import { parseByteRange } from './byte-range';
 import { nearestStepStamp, parsePastTime } from './gfs-time';
 import { fetchGfsCloud, fetchGfsWind } from './nomads';
 import { backendRequest, startBackend, stopBackend } from './backend';
+import { startVramMonitor, stopVramMonitor } from './vram-monitor';
 
 const GFS_MAX_AGE_MS = 3 * 3600_000; // GFS 1.0° は 3 時間刻み
 const GFS_FETCH_TIMEOUT_MS = 30_000;
@@ -264,6 +265,17 @@ ipcMain.handle('graphics:defaults', () => backendRequest('/settings/graphics/def
 ipcMain.handle('panels:set', (_event, panels: unknown) =>
   backendRequest('/settings/panels', jsonPut(panels)),
 );
+// FPS の表示に出す VRAM の量。表示している間だけ読む (アプリを閉じるときは before-quit で止める)
+ipcMain.handle('vram:watch', (event, enabled: boolean) => {
+  if (!enabled) {
+    stopVramMonitor();
+    return;
+  }
+  const sender = event.sender;
+  startVramMonitor((bytes) => {
+    if (!sender.isDestroyed()) sender.send('vram:usage', bytes);
+  });
+});
 // パスを決めるのはメインプロセスのダイアログだけにする。画面から任意のファイルを読めないように
 ipcMain.handle('audio:choose', async (event) => {
   const options: Electron.OpenDialogOptions = {
@@ -358,6 +370,8 @@ function createWindow(): void {
     return { action: 'deny' };
   });
   win.webContents.on('will-navigate', (event) => event.preventDefault());
+  // 読み直した画面は FPS の表示の設定から改めて頼んでくる
+  win.webContents.on('did-start-loading', stopVramMonitor);
 
   win.webContents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown' || input.isAutoRepeat) return;
@@ -394,6 +408,7 @@ let stopped = false;
 app.on('before-quit', (event) => {
   if (stopped) return;
   event.preventDefault();
+  stopVramMonitor();
   void stopBackend().finally(() => {
     stopped = true;
     app.quit();

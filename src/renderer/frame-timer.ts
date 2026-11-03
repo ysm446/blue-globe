@@ -57,3 +57,10 @@ export function formatFrameStats(fps: number, cpuMs: number, gpuMs: number | nul
   if (gpuMs === null) return `${head} ${cpuMs.toFixed(1)} ms (CPU)`;
   return `${head} ${(cpuMs + gpuMs).toFixed(1)} ms (CPU ${cpuMs.toFixed(1)} / GPU ${gpuMs.toFixed(1)})`;
 }
+
+// FPS の表示の 2 行目。bytes は読めていないときに null
+export function formatVram(bytes: number | null): string {
+  if (bytes === null) return 'VRAM -';
+  const gb = bytes / 1024 ** 3;
+  return gb >= 1 ? `VRAM ${gb.toFixed(2)} GB` : `VRAM ${Math.round(bytes / 1024 ** 2)} MB`;
+}
