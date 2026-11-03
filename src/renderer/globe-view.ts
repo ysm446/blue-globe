@@ -66,7 +66,7 @@ const SKY_UPDATE_MS = 60_000; // 太陽も星も 1 分で 0.25° しか動かな
 const REFERENCE_HZ = 120; // 粒子の移動量と軌跡の長さ、カメラの慣性はこの更新回数を基準に合わせてある
 const MAX_PARTICLE_STEPS = 6; // 1 フレームで進める粒子の更新回数の上限
 const FRAME_TOLERANCE_MS = 1; // 垂直同期のゆらぎで 1 回分飛ばさないよう、少し早めに通す
-const DAMPING_AT_REFERENCE = 0.08;
+const DAMPING_AT_REFERENCE = 0.035; // 指を離したあと約 0.25 秒の時定数で止まる
 
 const MIN_DIST = 1.2;
 const MAX_DIST = 8;

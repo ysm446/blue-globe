@@ -115,8 +115,8 @@ test('慣性は FPS によらず同じ距離で止まる', () => {
   const at30 = run(30);
   const at120 = run(120);
   assert.ok(Math.abs(at30.lat - at120.lat) < 1e-6);
-  assert.ok(Math.abs(at30.lat - 1) < 1e-4); // 速さ × 0.1 秒で止まる
-  assert.ok(Math.abs(at30.lon + 2) < 1e-4);
+  assert.ok(Math.abs(at30.lat - 2.5) < 1e-4); // 速さ × 0.25 秒で止まる
+  assert.ok(Math.abs(at30.lon + 5) < 1e-4);
 });
 
 test('距離は FPS によらず同じように目標へ近づく', () => {

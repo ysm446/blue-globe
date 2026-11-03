@@ -22,7 +22,7 @@ const MAX_DISTANCE = 1;
 const MAX_TILT = 72;
 const MAX_LAT = 80; // 極の近くでは経度の移動が大きくなりすぎる
 const MAX_PAN_STEP = 10; // 地平線の近くをつかむと、1 回の移動で遠くまで飛ぶのを防ぐ
-const INERTIA_SECONDS = 0.1;
+const INERTIA_SECONDS = 0.5;
 const ZOOM_SECONDS = 0.1;
 
 export const REGION_STILL: RegionVelocity = { lat: 0, lon: 0, heading: 0, tilt: 0 };
