@@ -12,6 +12,7 @@ import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
 import { BAKED_SHADOW_GLSL, CLOUD_UV_GLSL, flatCloudAltitude, VolumeClouds, type CloudStyle } from './volume-clouds';
 
 export const CLOUD_ALTITUDE = 0.008; // 実際より高い。視差が見える程度に誇張している
+const SHADOW_ALTITUDE = 0.002; // 影の長さを決める高さ (約 13km)。描く高さの誇張をそのまま使うと、境目の近くの影が数百 km に伸びる
 const OPEN_SEA_COLOR = ['0.0006', '0.0015', '0.007']; // 地球ビューの地表の画像の沖の色 (線形)。世界中でほぼ同じ
 const COAST_MIP_LEVEL = 2; // 水域のマスクの縮小段階。1 画素が約 20km で、この範囲を海岸の近くとして扱う
 const COAST_TEXEL_U = 4 / 8192; // 縮小段階での 1 画素の大きさ
@@ -23,6 +24,7 @@ const GLINT_STRENGTH = 0.9;
 const GLINT_MAX = 0.4;
 const REGION_CLOUD_ALTITUDE = 0.002; // 斜めに見ると誇張した分だけ雲が地面からずれるので、地域ビューでは実際に近づける
 const REGION_HAZE = 0.3; // 縁の青は地球全体を見るためのもので、斜めの視点では画面の大半に乗ってしまう
+const ATMOSPHERE_SCALE_HEIGHT = 0.02; // 縁の青い光が 1/e になる高さ (約 130km)。明るさは 2 乗で効くので半分になるのは約 45km
 const REGION_ATMOSPHERE_THINNESS = 3; // 大気の層も地球全体を見るために厚い。そのままだと空全体が青くなる
 // 縁の青と大気の層は、視点 (地球・地域) ではなくカメラの高さで変える。視点の切り替えに合わせると、
 // 寄り始めた直後のまだ高い位置で急に変わって見える。この高さより下で地域ビューの見た目、上で地球ビューの見た目
@@ -33,7 +35,6 @@ const VOLUME_FULL_ALTITUDE = 0.6;
 const VOLUME_START_ALTITUDE = 0.85;
 const SHADOW_ON_HAZE = 0.8; // 立体の雲の影が大気の青を暗くする割合
 const SHADOW_LIFT = 0.006; // 立体の雲の影をずらすために足す高さ (約 38km)
-const SHADOW_MIN_SLOPE = 0.5; // 太陽が真上に近くても、この傾きの分は影をずらす
 const CITY_LIGHT_EXTINCTION = 3; // 雲が街明かりを遮る強さ。厚い雲 (濃さ 1) で約 5% まで弱まる
 // 街明かりの暈。低い大気で散った光が、街のまわりをふんわり明るくする。
 // 街明かりの画像には氷や雪の淡い明るさも写っているので、街明かりだけを取り出した縮小画像を先に作り、その縮小段階を引いてぼかす
@@ -107,6 +108,7 @@ uniform float uCityGlow;
 uniform sampler2D uGlowMap;
 varying vec3 vPos;
 ${MOONLIGHT_GLSL}
+${CLOUD_SUN_COLOR_GLSL}
 varying vec2 vUv;
 ${CLOUD_SAMPLING_GLSL}
 ${BAKED_SHADOW_GLSL}
@@ -176,18 +178,19 @@ void main() {
     day = mix(day, sea, ocean * uRegion);
   }
 
-  // 雲の影。太陽が低いほど長く伸びる
+  // 雲の影。太陽が低いほど長く伸びる。長さは描く高さではなく実際に近い高さで決める
   float shadow = 0.0;
   if (uShadowAmount > 0.0 && dayMask > 0.0) {
     vec3 toSun = normalize(uSunDir - n * ndl + vec3(1e-5));
     float sinZenith = sqrt(max(1.0 - ndl * ndl, 0.0));
-    float reach = min(uCloudAltitude * sinZenith / max(ndl, 0.12), 0.08);
+    float reach = min(min(uCloudAltitude, ${SHADOW_ALTITUDE.toFixed(4)}) * sinZenith / max(ndl, 0.12), 0.08);
     float caster = cloudAt(normalize(n + toSun * reach), dFdx(vUv), dFdy(vUv));
     shadow = smoothstep(0.15, 0.75, caster) * uShadowStrength * uShadowAmount;
     // 立体の雲の影。太陽から見た雲の濃さの画像から引く。範囲の外は上の影のまま
     if (uBakedShadowMix > 0.0) {
-      // 実際の高さのままだと影はほぼ雲の真下に隠れるので、雲がもっと高いものとして影をずらす
-      float lift = min(${SHADOW_LIFT.toFixed(4)} * max(sinZenith, ${SHADOW_MIN_SLOPE.toFixed(1)}) / max(ndl, 0.12), 0.08);
+      // 実際の高さのままだと影はほぼ雲の真下に隠れるので、雲がもっと高いものとして影をずらす。
+      // 太陽が真上のときは真下に落とす。真上でもずらすと、向きが定まらず天頂を越えるときに反転した
+      float lift = min(${SHADOW_LIFT.toFixed(4)} * sinZenith / max(ndl, 0.12), 0.08);
       vec2 bakeUv = bakedUvOf(vPos + toSun * lift - uBakeCenter);
       // 雲の陰に隠れない部分が少ないので、スライダーの同じ値でも平らな雲の影より濃くする
       float strength = 1.0 - pow(1.0 - uShadowStrength, 1.5);
@@ -196,7 +199,9 @@ void main() {
     }
   }
 
-  vec3 color = day * 1.5 * light * (1.0 - shadow);
+  // 境目の近くでは雲と同じく太陽の色を赤くする。雲だけ橙で地表が昼の色のままだと釣り合わない
+  vec3 sunColor = cloudSunColor(ndl);
+  vec3 color = day * 1.5 * light * sunColor * (1.0 - shadow);
 
   // 太陽の映り込み (水域だけ)。波の傾きの分布 (Cox-Munk) と、水面の反射率 (Fresnel) から求める
   vec3 halfway = normalize(uSunDir + view);
@@ -209,7 +214,7 @@ void main() {
   // 分布を掛ける前に抑え、光が平らに頭打ちにならないようにする
   glintPeak = ${GLINT_MAX.toFixed(1)} * (1.0 - exp(-glintPeak / ${GLINT_MAX.toFixed(1)}));
   float glint = uGlintStrength * glintPeak * exp(-tanSq / ${WAVE_SLOPE_VARIANCE.toFixed(3)});
-  color += vec3(1.0, 0.92, 0.8) * glint * ocean * (1.0 - shadow) * dayMask;
+  color += vec3(1.0, 0.92, 0.8) * sunColor * glint * ocean * (1.0 - shadow) * dayMask;
 
   // 街明かりは夜側だけ
   float lights = pow(smoothstep(0.1, 1.0, night), 1.4) * (1.0 - dayMask);
@@ -338,8 +343,13 @@ void main() {
   closest = 1.0 + (closest - 1.0) * uThinness;
   float exitAngle = sqrt(max(1.0 - pow(closest / length(vPos), 2.0), 0.0));
   float inner = smoothstep(0.0, 0.38, exitAngle);
-  float lit = smoothstep(-0.25, 0.55, dot(n, uSunDir));
-  float a = pow(inner, 2.6) * lit * 0.9;
+  // 明るさは視線が最も低く通る点での太陽の高さで決める。殻を抜ける点の法線で決めると、縁をかすめる視線では
+  // 抜ける点が地球の向こう側になり、昼の面を正面に見たときに縁が暗く、夜の面を見たときに一周青く光った。
+  // 高さに対して指数で減らす。実際の大気 (高さ 8km ごとに半分以下) より厚いが、殻の半径 (約 450km) まで
+  // なだらかに残す形だと、地球の周りに大きな光の輪が出る
+  float lit = smoothstep(-0.25, 0.55, sunHeight);
+  float falloff = exp(-max(closest - 1.0, 0.0) / ${ATMOSPHERE_SCALE_HEIGHT.toFixed(3)});
+  float a = inner * falloff * lit * 0.9;
   // 太陽の向きへの強い散乱 (前方散乱)。日の出や日の入りのように、縁の向こうに太陽があると縁が細く明るく光る。
   // 昼と夜の境目では、光が大気を長く通るので低い層は黄色から橙になり、その上に青い層が残る
   float toward = max(dot(ray, uSunDir), 0.0);

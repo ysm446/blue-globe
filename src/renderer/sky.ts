@@ -1,4 +1,4 @@
-// 実際の星、惑星、太陽、月。方向は本物で、太陽と月の大きさは見やすさのために誇張している
+// 実際の星、惑星、太陽、月。方向は本物で、月の大きさは見やすさのために少し誇張している
 import * as THREE from 'three';
 import { VALUE_NOISE_GLSL } from './glsl';
 import { lonLatToVector3 } from './globe';
@@ -11,7 +11,7 @@ const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const SUN_DISTANCE = 85;
 const SUN_HALF_SIZE = 22;
 const MOON_DISTANCE = 60;
-const MOON_RADIUS = 0.8; // 実際の約 3 倍
+const MOON_RADIUS = 0.4; // 実際の約 1.5 倍。太陽の芯はほぼ実際の大きさなので、並んだときに差が目立たない程度にする
 
 // [赤経, 赤緯, 等級, B-V 色指数] の配列 (Hipparcos 由来、6 等星まで)
 const STARS = starCatalog as unknown as Array<[number, number, number, number]>;
@@ -65,7 +65,9 @@ void main() {
 }
 `;
 
-// 月の模様は実データではなく、ノイズで作った見た目だけのもの
+// 月の模様は実データではなく、ノイズで作った見た目だけのもの。
+// 明るさは地球の雲 (約 0.86) より十分暗くする。実際の月の反射率は約 0.12 で、地球と並ぶと灰色に見える。
+// 満月は縁まで平坦に明るい (強い逆散乱) ので、縁の暗さは弱い曲線にする
 const MOON_VS = /* glsl */ `
 varying vec3 vNormalDir;
 void main() {
@@ -82,9 +84,9 @@ ${VALUE_NOISE_GLSL}
 void main() {
   vec3 n = normalize(vNormalDir);
   float maria = smoothstep(0.42, 0.62, fbm(n * 3.2 + 4.0));
-  float albedo = mix(0.82, 0.42, maria) * (0.88 + 0.24 * fbm(n * 22.0));
-  float shade = pow(max(dot(n, uSunDir), 0.0), 0.7);
-  gl_FragColor = vec4(vec3(albedo) * shade * 1.3 + vec3(0.006, 0.007, 0.011), 1.0);
+  float albedo = mix(0.36, 0.18, maria) * (0.88 + 0.24 * fbm(n * 22.0));
+  float shade = pow(max(dot(n, uSunDir), 0.0), 0.35);
+  gl_FragColor = vec4(vec3(albedo) * shade + vec3(0.006, 0.007, 0.011), 1.0);
   #include <colorspace_fragment>
 }
 `;
