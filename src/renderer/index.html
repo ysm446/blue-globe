@@ -260,6 +260,15 @@
       </section>
       <section id="panel-graphics" role="tabpanel" aria-labelledby="tab-graphics" hidden>
         <div class="field-grid">
+          <label for="ui-font">日本語フォント</label>
+          <select id="ui-font">
+            <option value="noto-sans-jp">Noto Sans JP</option>
+            <option value="yu-gothic-ui">游ゴシック UI</option>
+            <option value="meiryo-ui">メイリオ UI</option>
+            <option value="biz-udp-gothic">BIZ UDPゴシック</option>
+            <option value="yu-mincho">游明朝</option>
+          </select>
+          <button class="reset-button" data-reset="ui_font" type="button" aria-label="日本語フォントを既定に戻す" title="既定に戻す"></button>
           <label for="star-brightness">星の明るさ</label>
           <div class="range-row">
             <input id="star-brightness" type="range" min="-3" max="3" step="0.25" />

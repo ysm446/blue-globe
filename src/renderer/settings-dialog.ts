@@ -2,6 +2,7 @@
 import { focalLengthForFov, verticalFov } from './camera-lens';
 import { el, errorMessage, setStatus } from './dom';
 import { audioFileName } from './music-player';
+import { isFontInstalled, UI_FONTS } from './ui-font';
 
 const RESET_ICON =
   '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></svg>';
@@ -158,6 +159,11 @@ export function initSettingsDialog(
     render_scale: el<HTMLSelectElement>('render-scale'),
     cloud_resolution: el<HTMLSelectElement>('cloud-resolution'),
   };
+  // 入っていないフォントは候補から外す。外したものが保存されていても、文字は游ゴシック UI で出る
+  const fontSelect = el<HTMLSelectElement>('ui-font');
+  for (const option of Array.from(fontSelect.options)) {
+    option.hidden = !isFontInstalled(UI_FONTS[option.value as UiFont]);
+  }
   const toggles = {
     bloom: el<HTMLInputElement>('bloom-toggle'),
     auto_exposure: el<HTMLInputElement>('exposure-toggle'),
@@ -216,6 +222,7 @@ export function initSettingsDialog(
     for (const key of keysOf(selects)) graphics[key] = Number(selects[key].value);
     for (const key of keysOf(toggles)) graphics[key] = toggles[key].checked;
     for (const key of keysOf(sliders)) graphics[key] = sliders[key].read();
+    graphics.ui_font = fontSelect.value as UiFont;
     return graphics;
   }
 
@@ -223,6 +230,7 @@ export function initSettingsDialog(
     for (const key of keysOf(selects)) selects[key].value = String(graphics[key]);
     for (const key of keysOf(toggles)) toggles[key].checked = graphics[key];
     for (const key of keysOf(sliders)) sliders[key].write(graphics[key]);
+    fontSelect.value = graphics.ui_font;
     showFov();
   }
 
@@ -251,6 +259,7 @@ export function initSettingsDialog(
   }
   for (const control of [
     ...Object.values(selects),
+    fontSelect,
     ...Object.values(toggles),
     ...Object.values(sliders).map((slider) => slider.input),
   ]) {
@@ -272,7 +281,10 @@ export function initSettingsDialog(
     for (const button of resetButtons) {
       const key = resetKey(button);
       // スライダーは目盛りに丸められるので、わずかな差は同じ値として扱う
-      button.disabled = !graphicsDefaults || Math.abs(Number(current[key]) - Number(graphicsDefaults[key])) < 1e-6;
+      button.disabled =
+        !graphicsDefaults ||
+        current[key] === graphicsDefaults[key] ||
+        Math.abs(Number(current[key]) - Number(graphicsDefaults[key])) < 1e-6;
     }
     for (const button of sectionResetButtons) {
       button.disabled = rowsOfSection(button).every((row) => row.disabled);

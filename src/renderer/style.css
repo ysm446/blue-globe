@@ -22,7 +22,9 @@
   --icon-snow: #e8f2ff;
   --icon-bolt: #ffd84d;
   --icon-fog: #8795a9;
-  font-family: system-ui, -apple-system, 'Segoe UI', 'Yu Gothic UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  /* 設定で選んだフォント (ui-font.ts)。入っていなければ游ゴシック UI になる */
+  --ui-font: 'Noto Sans JP';
+  font-family: var(--ui-font), 'Yu Gothic UI', system-ui, -apple-system, 'Hiragino Sans', sans-serif;
   font-size: 14px;
 }
 

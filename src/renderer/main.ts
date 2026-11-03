@@ -7,6 +7,7 @@ import { initMusicPlayer } from './music-player';
 import { hideNews, initNewsView, renderHourly, renderNews, setClockOffset, setClockTime, showClockPlace } from './news-view';
 import { initSettingsDialog } from './settings-dialog';
 import { initTimeControl } from './time-control';
+import { applyUiFont } from './ui-font';
 
 const NEWS_REFRESH_MS = 15 * 60_000; // Open-Meteo の現在値は 15 分刻み
 
@@ -255,7 +256,10 @@ async function init(): Promise<void> {
       }
       void refreshNews();
     },
-    (graphics) => globe.applyGraphics(graphics),
+    (graphics) => {
+      globe.applyGraphics(graphics);
+      applyUiFont(graphics.ui_font);
+    },
     (settings) => music.apply(settings),
   );
   const music = initMusicPlayer(() => void settingsDialog.open('tab-music'));
@@ -283,7 +287,10 @@ async function init(): Promise<void> {
     const settings = await window.weatherApi.getSettings();
     hasLocation = settings.location !== null;
     showClockPlace(settings.location);
-    if (settings.graphics) globe.applyGraphics(settings.graphics);
+    if (settings.graphics) {
+      globe.applyGraphics(settings.graphics);
+      applyUiFont(settings.graphics.ui_font);
+    }
     if (settings.panels) applyPanels(settings.panels);
     music.apply(settings);
     applyMode(settings.mode ?? 'normal');

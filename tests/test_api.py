@@ -90,6 +90,7 @@ class SettingsApiTest(unittest.TestCase):
         "cloud_edge_sharpness": 0.9,
         "cloud_puffiness": 1.5,
         "cloud_height": 0.75,
+        "ui_font": "meiryo-ui",
     }
 
     def test_graphics_defaults(self):
@@ -117,6 +118,7 @@ class SettingsApiTest(unittest.TestCase):
     def test_invalid_graphics_are_rejected(self):
         for change in (
             {"fps_limit": 45},
+            {"ui_font": "comic-sans"},
             {"render_scale": 10},
             {"star_brightness": 100},
             {"star_brightness": 0},

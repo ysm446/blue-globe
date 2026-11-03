@@ -37,6 +37,7 @@ DEFAULT_SETTINGS = {
         "cloud_edge_sharpness": 0.3,
         "cloud_puffiness": 1.0,
         "cloud_height": 1.0,  # 1 で上端が約 16km (実際の雲の上限に近い)
+        "ui_font": "noto-sans-jp",  # 画面の文字のフォント。ui-font.ts の UI_FONTS を参照
     },
     # True で開いている。カメラのパネルは計器のようなものなので、既定では閉じておく
     "panels": {"news": True, "hourly": True, "weekly": True, "details": True, "camera": False},
