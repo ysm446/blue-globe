@@ -26,6 +26,7 @@ DEFAULT_SETTINGS = {
         "star_brightness": 1.0,
         "cloud_shadow": 0.55,
         "region_bloom": 0.5,
+        "city_glow": 1.0,  # 街明かりのまわりの淡い光。1 が既定の強さ
         "glint_strength": 1.3,  # 1 が地球の写真に合わせた強さ
         "region_detail": True,
         "volume_clouds": True,

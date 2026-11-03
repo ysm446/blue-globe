@@ -281,7 +281,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     loadEarthTexture('earth-water', renderer),
   ])
     .then(([day, night, water]) => {
-      earth.setTextures(day, night, water);
+      earth.setTextures(day, night, water, renderer);
       baseTextures = { day, night, water };
       regionDetail?.setBase(baseTextures);
       earthReady = true;
@@ -851,6 +851,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     sky.setStarBrightness(graphics.star_brightness);
     earth.setCloudShadow(graphics.cloud_shadow);
     earth.setGlintStrength(graphics.glint_strength);
+    earth.setCityGlow(graphics.city_glow);
     earth.setVolumeCloudsEnabled(graphics.volume_clouds);
     earth.setVolumeCloudStyle({
       resolution: graphics.cloud_resolution / 100,

@@ -176,6 +176,7 @@ export function initSettingsDialog(
     cloud_edge_sharpness: percentSlider('cloud-edge-sharpness'),
     cloud_puffiness: percentSlider('cloud-puffiness'),
     region_bloom: percentSlider('region-bloom'),
+    city_glow: percentSlider('city-glow'),
     glint_strength: percentSlider('glint-strength'),
     focal_length: graphicsSlider('focal-length', (position) => position, (value) => value, (value) => `${Number.isInteger(value) ? value : value.toFixed(1)}mm`),
     exposure_compensation: graphicsSlider('exposure-compensation', (position) => position, (value) => value, (value) => `${value > 0 ? '+' : ''}${value} EV`),

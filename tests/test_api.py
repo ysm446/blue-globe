@@ -80,6 +80,7 @@ class SettingsApiTest(unittest.TestCase):
         "star_brightness": 2.0,
         "cloud_shadow": 0.8,
         "region_bloom": 0.3,
+        "city_glow": 1.5,
         "glint_strength": 2.0,
         "region_detail": False,
         "volume_clouds": False,
@@ -121,6 +122,8 @@ class SettingsApiTest(unittest.TestCase):
             {"cloud_shadow": -0.1},
             {"region_bloom": 1.5},
             {"region_bloom": -0.1},
+            {"city_glow": 2.1},
+            {"city_glow": -0.1},
             {"glint_strength": 3.5},
             {"glint_strength": -0.1},
             {"focal_length": 13.9},
@@ -149,6 +152,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertTrue(graphics["region_detail"])
         self.assertTrue(graphics["volume_clouds"])
         self.assertEqual(graphics["region_bloom"], 0.5)
+        self.assertEqual(graphics["city_glow"], 1.0)
         self.assertEqual(graphics["glint_strength"], 1.3)
         self.assertEqual(graphics["focal_length"], 24)
         self.assertEqual(graphics["exposure_compensation"], 0)

@@ -4,7 +4,7 @@
 // 地球ビューでも地域ビューでも、近づくと立体の雲 (volume-clouds.ts) に入れ替える
 import * as THREE from 'three';
 import { stepFade } from './fade';
-import { CLOUD_SUN_COLOR_GLSL, VALUE_NOISE_GLSL } from './glsl';
+import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, VALUE_NOISE_GLSL } from './glsl';
 import { easeInOut } from './math';
 import type { RegionDetail } from './region-detail';
 import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
@@ -30,6 +30,31 @@ const SHADOW_ON_HAZE = 0.8; // 立体の雲の影が大気の青を暗くする�
 const SHADOW_LIFT = 0.006; // 立体の雲の影をずらすために足す高さ (約 38km)
 const SHADOW_MIN_SLOPE = 0.5; // 太陽が真上に近くても、この傾きの分は影をずらす
 const CITY_LIGHT_EXTINCTION = 3; // 雲が街明かりを遮る強さ。厚い雲 (濃さ 1) で約 5% まで弱まる
+// 街明かりの暈。低い大気で散った光が、街のまわりをふんわり明るくする。
+// 街明かりの画像には氷や雪の淡い明るさも写っているので、街明かりだけを取り出した縮小画像を先に作り、その縮小段階を引いてぼかす
+const GLOW_MAP_SIZE = [1024, 512]; // 1 画素が約 40km
+const GLOW_MAP_TAPS = 8; // 縮小画像の 1 画素に、元の画像の 8×8 画素を集める
+const GLOW_FAR_LOD = 2; // 1 画素が約 160km
+const GLOW_BRIGHTNESS = 0.6; // 設定が 100% のときの明るさ。にじみのしきい値 (2.6) より十分低くし、白く飛ばさない
+const GLOW_MAX_PATH = 2; // 斜めに見るほど大気を長く通って強くにじむ。真上から見たときに対する上限
+
+// 街明かりの描画と同じ式で、街明かりの画像から光だけを取り出して縮小する
+const GLOW_MAP_FS = /* glsl */ `
+precision highp float;
+uniform sampler2D uNight;
+uniform vec2 uSourceTexel;
+varying vec2 vUv;
+void main() {
+  float sum = 0.0;
+  for (int y = 0; y < ${GLOW_MAP_TAPS}; y++) {
+    for (int x = 0; x < ${GLOW_MAP_TAPS}; x++) {
+      vec2 offset = (vec2(float(x), float(y)) - ${((GLOW_MAP_TAPS - 1) / 2).toFixed(1)}) * uSourceTexel;
+      sum += pow(smoothstep(0.1, 1.0, textureLod(uNight, vUv + offset, 0.0).r), 1.4);
+    }
+  }
+  gl_FragColor = vec4(sum / ${(GLOW_MAP_TAPS * GLOW_MAP_TAPS).toFixed(1)}, 0.0, 0.0, 1.0);
+}
+`;
 // 夜側の補助光で明るい地表を抑える。この明るさ (線形) までの陸と海は変えない
 const NIGHT_FILL_KNEE = 0.1;
 const NIGHT_FILL_FALLOFF = 0.7; // 氷床 (約 0.97) で約 5 分の 1 になる。強くすると濃淡が消えて、わずかな色味の差が目立つ
@@ -73,10 +98,22 @@ uniform sampler2D uDetailWater;
 uniform sampler2D uDetailMask;
 uniform vec2 uDetailCenter;
 uniform float uBakedShadowMix;
+uniform float uCityGlow;
+uniform sampler2D uGlowMap;
 varying vec3 vPos;
 varying vec2 vUv;
 ${CLOUD_SAMPLING_GLSL}
 ${BAKED_SHADOW_GLSL}
+// 縮小段階をそのまま引くと、粗い段の画素の四角が見える。半画素ずらした 4 点をならして角を丸める
+float glowAt(vec2 uv, float lod) {
+  vec2 half_ = 0.5 * exp2(lod) / vec2(${GLOW_MAP_SIZE[0].toFixed(1)}, ${GLOW_MAP_SIZE[1].toFixed(1)});
+  return 0.25 * (
+    textureLod(uGlowMap, uv + vec2(half_.x, half_.y), lod).r +
+    textureLod(uGlowMap, uv + vec2(-half_.x, half_.y), lod).r +
+    textureLod(uGlowMap, uv + vec2(half_.x, -half_.y), lod).r +
+    textureLod(uGlowMap, uv + vec2(-half_.x, -half_.y), lod).r
+  );
+}
 // 海岸の近くを判定するための、水域のマスクの縮小段階
 float coastWater(vec2 uv) {
   return textureLod(uWater, uv, ${COAST_MIP_LEVEL.toFixed(1)}).r;
@@ -177,6 +214,20 @@ void main() {
     lights *= exp(-cloudAt(throughCloud, dFdx(vUv), dFdy(vUv)) * ${CITY_LIGHT_EXTINCTION.toFixed(1)} * uShadowAmount);
   }
   color +=vec3(1.0, 0.6, 0.26) * lights * 4.5; // 画面の白より明るくして、にじませる
+
+  // 街明かりの暈。遠くから見て 1 画素が縮小段階より広いときは、その画素の広さに合わせて粗い段を引く
+  if (uCityGlow > 0.0 && dayMask < 1.0) {
+    vec2 texels = vUv * vec2(${GLOW_MAP_SIZE[0].toFixed(1)}, ${GLOW_MAP_SIZE[1].toFixed(1)});
+    float pixelLod = log2(max(max(length(dFdx(texels)), length(dFdy(texels))), 1.0));
+    float glow = glowAt(vUv, max(0.0, pixelLod + 1.0)) * 0.7 + glowAt(vUv, max(${GLOW_FAR_LOD.toFixed(1)}, pixelLod + 1.0)) * 0.3;
+    float path = min(1.0 / max(dot(n, view), 0.01), ${GLOW_MAX_PATH.toFixed(1)});
+    float glowLight = glow * path * uCityGlow * ${GLOW_BRIGHTNESS.toFixed(2)} * (1.0 - dayMask);
+    if (uShadowAmount > 0.0) {
+      vec3 throughCloud = normalize(n + view * uCloudAltitude / max(dot(n, view), 0.25));
+      glowLight *= exp(-cloudAt(throughCloud, dFdx(vUv), dFdy(vUv)) * ${CITY_LIGHT_EXTINCTION.toFixed(1)} * uShadowAmount);
+    }
+    color += vec3(1.0, 0.55, 0.22) * glowLight;
+  }
 
   // 回して触ったときに場所が分かるよう、夜側でも陸と海がうっすら見える光を残す。
   // 地域ビューの陸の画像は明るいので、陸だけ暗くする
@@ -315,6 +366,8 @@ export class RealisticEarth {
         uDetailMask: { value: null },
         uDetailCenter: { value: new THREE.Vector2() },
         uBakedShadowMix: { value: 0 },
+        uCityGlow: { value: 1 },
+        uGlowMap: { value: null },
         uSunDir: { value: this.sunDir },
       },
       vertexShader: VS,
@@ -362,10 +415,47 @@ export class RealisticEarth {
     );
   }
 
-  setTextures(day: THREE.Texture, night: THREE.Texture, water: THREE.Texture): void {
+  setTextures(day: THREE.Texture, night: THREE.Texture, water: THREE.Texture, renderer: THREE.WebGLRenderer): void {
     this.material.uniforms.uDay.value = day;
     this.material.uniforms.uNight.value = night;
     this.material.uniforms.uWater.value = water;
+    this.material.uniforms.uGlowMap.value = this.buildGlowMap(renderer, night);
+  }
+
+  // 街明かりの暈に使う、街明かりだけの縮小画像。画像を読み込んだときに 1 回だけ作る
+  private buildGlowMap(renderer: THREE.WebGLRenderer, night: THREE.Texture): THREE.Texture {
+    const floatable =
+      renderer.extensions.has('EXT_color_buffer_float') ||
+      renderer.extensions.has('EXT_color_buffer_half_float');
+    const [width, height] = GLOW_MAP_SIZE;
+    // 暗いところのわずかな光を足すので、8 ビットでは段が見える
+    const target = new THREE.WebGLRenderTarget(width, height, {
+      type: floatable ? THREE.HalfFloatType : THREE.UnsignedByteType,
+      depthBuffer: false,
+      generateMipmaps: true,
+      minFilter: THREE.LinearMipmapLinearFilter,
+    });
+    target.texture.wrapS = THREE.RepeatWrapping;
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uNight: { value: night },
+        uSourceTexel: { value: new THREE.Vector2(1 / (width * GLOW_MAP_TAPS), 1 / (height * GLOW_MAP_TAPS)) },
+      },
+      vertexShader: FULLSCREEN_VS,
+      fragmentShader: GLOW_MAP_FS,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), material);
+    quad.frustumCulled = false;
+    const scene = new THREE.Scene().add(quad);
+    const previousTarget = renderer.getRenderTarget();
+    renderer.setRenderTarget(target);
+    renderer.render(scene, new THREE.Camera());
+    renderer.setRenderTarget(previousTarget);
+    material.dispose();
+    quad.geometry.dispose();
+    return target.texture;
   }
 
   setSunDirection(direction: THREE.Vector3): void {
@@ -408,6 +498,11 @@ export class RealisticEarth {
   // 1 は NASA EPIC の地球の写真に合わせた強さ
   setGlintStrength(strength: number): void {
     this.material.uniforms.uGlintStrength.value = strength;
+  }
+
+  // 街明かりの暈の強さ。1 が既定の強さ
+  setCityGlow(strength: number): void {
+    this.material.uniforms.uCityGlow.value = strength;
   }
 
   setCloudShadow(strength: number): void {

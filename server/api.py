@@ -92,6 +92,7 @@ class GraphicsUpdate(BaseModel):
     star_brightness: float = Field(ge=0.125, le=8)
     cloud_shadow: float = Field(ge=0, le=1)
     region_bloom: float = Field(ge=0, le=1)
+    city_glow: float = Field(ge=0, le=2)
     glint_strength: float = Field(ge=0, le=3)
     region_detail: bool
     volume_clouds: bool
