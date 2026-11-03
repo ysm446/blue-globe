@@ -487,9 +487,18 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     return !target?.closest('input, select, textarea, [contenteditable="true"]');
   }
 
+  // クリックしたボタンにフォーカスが残っていると、キーを押したときにフォーカスの枠が出る。
+  // 巡航のキーはボタンには働かないので、フォーカスを外す (設定画面の中は除く)
+  function releaseButtonFocus(event: KeyboardEvent): void {
+    const target = event.target instanceof HTMLElement ? event.target : null;
+    if (target?.closest('button, summary') && !target.closest('dialog')) target.blur();
+  }
+
   window.addEventListener('keydown', (event) => {
     const action = CRUISE_KEYS[event.code];
-    if (!action || !acceptsCruiseKey(event)) return;
+    if (!action) return;
+    releaseButtonFocus(event);
+    if (!acceptsCruiseKey(event)) return;
     event.preventDefault();
     if (action === 'left' || action === 'right') {
       turnKeys.add(action);
