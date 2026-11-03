@@ -58,6 +58,7 @@ interface GraphicsSettings {
   cloud_height: number; // 立体の雲の層の厚さの倍率。1 で上端が約 16km (0.5〜3)
   ui_font: UiFont; // 画面の文字のフォント
   cruise_mode: CruiseMode; // 地域ビューの巡航の操作
+  cruise_bank: boolean; // 巡航で A/D で曲がるときに、曲がる向きへ画面を傾ける
 }
 
 interface PanelSettings {

@@ -484,6 +484,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   // cruiseLevel は段階式で選んでいる段。アナログ式から切り替えた直後は、その速さを保つため小数のこともある。
   // cruiseBraking は、中心のまわりの旋回を始めたときに巡航をなめらかに止める間 true
   let cruiseMode: CruiseMode = 'analog';
+  let cruiseBank = true; // 旋回中に画面を傾ける
   let cruiseLevel = 0;
   let cruiseThrottle = 0;
   let cruiseBraking = false;
@@ -695,7 +696,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     }
     applyRegionPose(regionView);
     // 旋回する向きへ傾ける (右へ曲がるときは右の翼を下げる)
-    if (turnRate !== 0) camera.rotateZ((-turnRate / TURN_DEGREES_PER_SECOND) * BANK_DEGREES * THREE.MathUtils.DEG2RAD);
+    if (cruiseBank && turnRate !== 0) camera.rotateZ((-turnRate / TURN_DEGREES_PER_SECOND) * BANK_DEGREES * THREE.MathUtils.DEG2RAD);
   }
 
   renderer.domElement.addEventListener('pointerdown', (event) => {
@@ -982,6 +983,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const fpsCounter = el('fps-counter');
   function applyGraphics(graphics: GraphicsSettings): void {
     fpsLimit = graphics.fps_limit;
+    cruiseBank = graphics.cruise_bank;
     if (graphics.cruise_mode !== cruiseMode) {
       // 巡航中に切り替えても、今の速さのまま続ける。段階式では、次に W/S を押したときに整数の段へ移る
       cruiseMode = graphics.cruise_mode;

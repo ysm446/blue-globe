@@ -92,6 +92,7 @@ class SettingsApiTest(unittest.TestCase):
         "cloud_height": 0.75,
         "ui_font": "meiryo-ui",
         "cruise_mode": "stepped",
+        "cruise_bank": False,
     }
 
     def test_graphics_defaults(self):
