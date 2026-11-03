@@ -102,10 +102,13 @@ void main() {
     );
     vec2 fromCenter = abs(tile - uDetailCenter);
     float half_ = ${(WINDOW_TILES / 2).toFixed(1)};
-    float inside = smoothstep(half_, half_ - 0.5, max(fromCenter.x, fromCenter.y));
     vec2 detailUv = tile / ${WINDOW_TILES.toFixed(1)};
     vec2 dx = dFdx(detailUv);
     vec2 dy = dFdy(detailUv);
+    // 範囲の外側は反対側の端のタイルの置き場所につながっている。遠くで粗い縮小画像を使うほど広く混ざるので、
+    // 1 画素の広さ (タイル数) に合わせて手前から薄くする
+    float blur = max(length(dx), length(dy)) * ${WINDOW_TILES.toFixed(1)};
+    float inside = smoothstep(half_, half_ - 0.5 - 2.0 * blur, max(fromCenter.x, fromCenter.y));
     vec3 mask = texture2D(uDetailMask, detailUv).rgb * inside * uRegion;
     day = mix(day, textureGrad(uDetailDay, detailUv, dx, dy).rgb, mask.r);
     night = mix(night, textureGrad(uDetailNight, detailUv, dx, dy).r, mask.g);

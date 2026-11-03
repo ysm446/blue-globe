@@ -34,7 +34,7 @@ import {
   type RegionVelocity,
   type RegionView,
 } from './region-camera';
-import { RegionDetail } from './region-detail';
+import { RegionDetail, type BaseTextures } from './region-detail';
 import { Sky } from './sky';
 import type { WindField } from './wind';
 import { createWindUniforms, updateWindUniforms } from './wind-texture';
@@ -172,6 +172,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   earth.group.visible = false;
   scene.add(earth.group);
   let earthReady = false;
+  let baseTextures: BaseTextures | null = null; // 地域ビューの高解像度の画像が届くまで代わりに写す
 
   const hdr = new HdrPipeline(renderer, scene, camera);
   const flatBackground = new THREE.Color(COLORS.background);
@@ -281,6 +282,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   ])
     .then(([day, night, water]) => {
       earth.setTextures(day, night, water);
+      baseTextures = { day, night, water };
+      regionDetail?.setBase(baseTextures);
       earthReady = true;
       setMode(mode);
     })
@@ -398,6 +401,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (!regionDetailEnabled) return;
     if (!regionDetail && RegionDetail.isSupported(renderer)) {
       regionDetail = new RegionDetail(renderer, (layer, col, row) => window.weatherApi.getEarthTile(layer, col, row));
+      if (baseTextures) regionDetail.setBase(baseTextures);
       earth.setRegionDetail(regionDetail);
     }
   }
@@ -972,6 +976,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       regionDistanceGoal = regionView.distance;
     },
     regionDetailProgress: () => regionDetail?.progress ?? null,
+    regionDetail: () => regionDetail,
+    renderer,
     demoTimeScale: 1,
     mapLinesVisible: () => [coastlines.group.visible, borders.group.visible],
     stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),

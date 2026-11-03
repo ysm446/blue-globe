@@ -1,8 +1,12 @@
 // 地域ビューの高解像度の地表、街明かり、水域。視点のまわりのタイルを 1 枚の大きな画像に並べ、順に読み込む。
-// 置き場所は列と行の余りで決まるので (tile-window.ts)、範囲が動いても残るタイルは読み直さない
+// 置き場所は列と行の余りで決まるので (tile-window.ts)、範囲が動いても残るタイルは読み直さない。
+// 置き場所を別のタイルに使い回すときは、届くまでの間、その場所の元の (低解像度の) 画像を写しておく。
+// 前のタイルが残っていると、縮小画像 (ミップマップ) で隣のタイルの縁に別の場所の色が混ざって見えるため
 import * as THREE from 'three';
 import {
   nextTileWindow,
+  TILE_COLS,
+  TILE_DEGREES,
   TILE_PIXELS,
   tilesInWindow,
   WINDOW_TILES,
@@ -38,6 +42,9 @@ export interface RegionDetailProgress {
 
 export type TileLoader = (layer: EarthTileLayer, col: number, row: number) => Promise<Uint8Array | null>;
 
+// 元の画像 (正距円筒図法。下の行が南極になるよう上下を入れ替えて送ってある)
+export type BaseTextures = Record<EarthTileLayer, THREE.Texture>;
+
 export class RegionDetail {
   readonly atlases: Record<EarthTileLayer, THREE.DataTexture>;
   readonly mask: THREE.DataTexture; // タイルごとの見え具合。R が昼、G が夜、B が水域
@@ -46,6 +53,10 @@ export class RegionDetail {
   private readonly gl: WebGL2RenderingContext;
   private readonly entries = new Map<string, TileEntry>();
   private uploads: TileEntry[] = [];
+  private fills: TileEntry[] = []; // 元の画像を写す置き場所
+  private base: BaseTextures | null = null;
+  private readonly readFramebuffer: WebGLFramebuffer;
+  private readonly drawFramebuffer: WebGLFramebuffer;
   private order: TileEntry[] = [];
   private window: TileWindow | null = null;
   private loading = 0;
@@ -63,6 +74,8 @@ export class RegionDetail {
     private readonly loadTile: TileLoader,
   ) {
     this.gl = renderer.getContext() as WebGL2RenderingContext;
+    this.readFramebuffer = this.gl.createFramebuffer() as WebGLFramebuffer;
+    this.drawFramebuffer = this.gl.createFramebuffer() as WebGLFramebuffer;
     this.atlases = {
       day: this.createAtlas(THREE.RGBAFormat),
       night: this.createAtlas(THREE.RedFormat), // 描画に使うのは 1 色だけなので、メモリを 4 分の 1 にする
@@ -93,6 +106,14 @@ export class RegionDetail {
     return texture;
   }
 
+  // 元の画像が読み込まれていないうちに作ったときは、読み込まれてから渡す
+  setBase(base: BaseTextures): void {
+    this.base = base;
+    for (const layer of LAYERS) this.renderer.initTexture(base[layer]);
+    // 読み込まれる前に置き場所を決めたタイルの分も写す
+    for (const entry of this.order) if (entry.state !== 'shown' && !this.fills.includes(entry)) this.fills.push(entry);
+  }
+
   setView(lat: number, lon: number): void {
     const next = nextTileWindow(this.window, lat, lon);
     if (next === this.window) return;
@@ -107,10 +128,9 @@ export class RegionDetail {
       for (const layer of LAYERS) {
         const key = `${layer}:${tile.slotX}:${tile.slotY}`;
         const old = previous.get(key);
-        const entry: TileEntry =
-          old && old.col === tile.col && old.row === tile.row
-            ? old
-            : { ...tile, layer, state: 'queued', bitmap: null, opacity: 0, retryAt: 0 };
+        const kept = old && old.col === tile.col && old.row === tile.row;
+        const entry: TileEntry = kept ? old : { ...tile, layer, state: 'queued', bitmap: null, opacity: 0, retryAt: 0 };
+        if (!kept) this.fills.push(entry);
         entry.distance = tile.distance;
         previous.delete(key);
         this.entries.set(key, entry);
@@ -123,6 +143,8 @@ export class RegionDetail {
       old.bitmap = null;
     }
     this.uploads = this.uploads.filter((entry) => entry.bitmap !== null);
+    const current = new Set(this.order);
+    this.fills = this.fills.filter((entry) => current.has(entry));
     this.maskData.fill(0);
     for (const entry of this.order) {
       if (entry.state === 'shown') this.writeMask(entry);
@@ -202,6 +224,43 @@ export class RegionDetail {
     this.mipmapsStale[entry.layer] = true;
   }
 
+  // 置き場所へ、そのタイルの範囲の元の画像を拡大して写す。GPU の中での複写なので軽い
+  private fillFromBase(): void {
+    if (!this.base || this.fills.length === 0) return;
+    const { gl, renderer } = this;
+    const scissor = renderer.getScissorTest();
+    renderer.setScissorTest(false); // 複写は切り抜きの影響を受ける
+    renderer.state.bindFramebuffer(gl.READ_FRAMEBUFFER, this.readFramebuffer);
+    renderer.state.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.drawFramebuffer);
+    for (const layer of LAYERS) {
+      const entries = this.fills.filter((entry) => entry.layer === layer);
+      if (entries.length === 0) continue;
+      const source = this.base[layer];
+      const handle = (texture: THREE.Texture): WebGLTexture =>
+        (renderer.properties.get(texture) as { __webglTexture: WebGLTexture }).__webglTexture;
+      gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, handle(source), 0);
+      gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, handle(this.atlases[layer]), 0);
+      const { width, height } = source.image as { width: number; height: number };
+      for (const entry of entries) {
+        // 元の画像は下が南。置き場所は上 (小さい y) が北なので、上下を入れ替えて写す
+        const x0 = Math.round((entry.col / TILE_COLS) * width);
+        const x1 = Math.round(((entry.col + 1) / TILE_COLS) * width);
+        const north = Math.round(((180 - entry.row * TILE_DEGREES) / 180) * height);
+        const south = Math.round(((180 - (entry.row + 1) * TILE_DEGREES) / 180) * height);
+        const left = entry.slotX * TILE_PIXELS;
+        const top = entry.slotY * TILE_PIXELS;
+        gl.blitFramebuffer(x0, south, x1, north, left, top + TILE_PIXELS, left + TILE_PIXELS, top, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+      }
+      this.mipmapsStale[layer] = true;
+    }
+    gl.framebufferTexture2D(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
+    gl.framebufferTexture2D(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, null, 0);
+    renderer.state.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    renderer.state.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    renderer.setScissorTest(scissor);
+    this.fills = [];
+  }
+
   private rebuildMipmaps(): void {
     const { gl } = this;
     for (const layer of LAYERS) {
@@ -221,6 +280,8 @@ export class RegionDetail {
   update(dt: number): void {
     this.clock += dt;
     this.startLoading();
+    // 同じフレームに届いたタイルより先に写す (届いたタイルを元の画像で上書きしない)
+    this.fillFromBase();
 
     for (let i = 0; i < UPLOADS_PER_FRAME; i++) {
       const entry = this.uploads.shift();
@@ -257,5 +318,7 @@ export class RegionDetail {
     for (const entry of this.order) entry.bitmap?.close();
     for (const layer of LAYERS) this.atlases[layer].dispose();
     this.mask.dispose();
+    this.gl.deleteFramebuffer(this.readFramebuffer);
+    this.gl.deleteFramebuffer(this.drawFramebuffer);
   }
 }
