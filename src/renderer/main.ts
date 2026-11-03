@@ -119,7 +119,7 @@ async function init(): Promise<void> {
     for (const button of viewButtons) {
       button.setAttribute('aria-pressed', String(button.dataset.view === next));
     }
-    el('view-hint').hidden = next !== 'region';
+    el('view-hint').hidden = next === 'solar'; // 文は globe-view.ts が視点に合わせて書き換える
     // 太陽系では、地表の表示モードと時刻のスライダー、カメラのパネルは意味がないので止める
     document.body.classList.toggle('solar', next === 'solar');
     for (const button of modeButtons) button.disabled = next === 'solar';

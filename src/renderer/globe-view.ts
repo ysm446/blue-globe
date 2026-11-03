@@ -105,6 +105,13 @@ const CRUISE_ACCELERATION = 1;
 const CRUISE_DECELERATION = 2;
 const CRUISE_SECONDS = 0.8; // 段階式で、選んだ段の速さへ近づくときの時定数
 const TURN_DEGREES_PER_SECOND = 20;
+// 地球ビューの回転と移動。A/D は 1 回押すごとに 1 段 (地域ビューの Q/E と同じ段と速さ)、手を離しても回り続ける。
+// W/S は押している間だけ南北へ動く。速さはどちらも、寄るほど地表が速く流れるので、ドラッグと同じくカメラの高さに比例させる
+const GLOBE_SPIN_REFERENCE_ALTITUDE = 2.3; // 既定の地球ビューの高さ。この高さで段どおりの速さ
+const GLOBE_SPIN_MIN_SCALE = 0.1;
+const GLOBE_SLIDE_DEGREES_PER_SECOND = 6; // W/S の速さ (既定の高さ)
+const GLOBE_MAX_LATITUDE = 85; // W/S で極に近づきすぎると、北が上の画面が不安定になる
+const GLOBE_HINT = '左ドラッグで回転、ホイールで拡大縮小、A/D で回転、W/S で南北、矢印キーで次の都市へ';
 const TURN_SECONDS = 0.35; // 旋回を始めるときと止めるときの時定数
 const BANK_DEGREES = 6; // 旋回中に画面を傾ける角度
 // 中心の地点のまわりを回る旋回。Q と E で速さの段を変え、手を離しても回り続ける。巡航とは同時にしない
@@ -345,6 +352,10 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   function flyTo(to: THREE.Vector3): void {
     flight = { from: camera.position.clone(), to, elapsed: 0 };
+    // 回り続けていると、着いた場所からすぐ離れてしまう。着いてから減速が始まると少しずれるので、すぐ止める
+    globeSpinLevel = 0;
+    globeSpinThrottle = 0;
+    controls.autoRotate = false;
   }
 
   const marker = el('marker');
@@ -497,11 +508,18 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let orbitThrottle = 0;
   const viewHint = el('view-hint');
   const viewHintText = viewHint.textContent ?? '';
+  // 地球ビューの回転の段 (-ORBIT_LEVELS〜ORBIT_LEVELS。正が東向き) と、なめらかにしたあとの値
+  let globeSpinLevel = 0;
+  let globeSpinThrottle = 0;
+  let globeSlide = 0; // W/S の南北の動き。-1〜1 で、押している間に向きの値へなめらかに近づける
+  const slideKeys = new Set<'faster' | 'slower'>(); // W が faster (北へ)、S が slower (南へ)
 
-  // 巡航と、中心のまわりの旋回をどちらも止める
+  // 巡航と、中心のまわりの旋回、地球ビューの回転をすべて止める
   function stopCruise(): void {
     orbitLevel = 0;
     orbitThrottle = 0;
+    globeSpinLevel = 0;
+    slideKeys.clear();
     stopForwardCruise();
   }
 
@@ -518,7 +536,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   // 巡航の速さは押している間に変わり続けるので、毎フレーム呼ぶ。文が変わったときだけ書き換える
   function showCruise(): void {
-    let text = viewHintText;
+    let text = regionView ? viewHintText : GLOBE_HINT;
     const cruising = cruiseMode === 'stepped' ? cruiseLevel > 0 : cruiseThrottle > 0;
     if (cruising && orbitLevel === 0 && regionView) {
       const speed = cruiseRate(cruiseThrottle) * regionView.distance * EARTH_RADIUS_KM;
@@ -532,16 +550,29 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     } else if (orbitLevel !== 0) {
       const direction = orbitLevel > 0 ? '右回り' : '左回り';
       text = `旋回中 ${direction} 速さ ${Math.abs(orbitLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、W で巡航)`;
+    } else if (!regionView && globeSpinLevel !== 0) {
+      const direction = globeSpinLevel > 0 ? '東へ' : '西へ';
+      text = `回転中 ${direction} 速さ ${Math.abs(globeSpinLevel)} / ${ORBIT_LEVELS}(A/D で速さと向き、W/S で南北)`;
     }
     if (viewHint.textContent !== text) viewHint.textContent = text;
   }
 
-  // 地域ビューで、入力欄や設定画面を操作していないときだけ受け付ける
-  function acceptsCruiseKey(event: KeyboardEvent): boolean {
-    if (!regionView || regionFlight || demoMotion || event.ctrlKey || event.altKey || event.metaKey) return false;
+  // 入力欄や設定画面を操作していないときだけ受け付ける
+  function acceptsKey(event: KeyboardEvent): boolean {
+    if (demoMotion || event.ctrlKey || event.altKey || event.metaKey) return false;
     if (document.querySelector('dialog[open]')) return false;
     const target = event.target instanceof Element ? event.target : null;
     return !target?.closest('input, select, textarea, [contenteditable="true"]');
+  }
+
+  // 地域ビューにいて、飛んでいる途中でないときだけ受け付ける
+  function acceptsCruiseKey(event: KeyboardEvent): boolean {
+    return !!regionView && !regionFlight && acceptsKey(event);
+  }
+
+  // 地球ビュー (太陽系の場面でなく、地点へ飛んでいる途中でもない) で受け付ける
+  function acceptsGlobeKey(event: KeyboardEvent): boolean {
+    return !regionView && !solar.active && !flight && acceptsKey(event);
   }
 
   // クリックしたボタンにフォーカスが残っていると、キーを押したときにフォーカスの枠が出る。
@@ -556,6 +587,18 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const orbitStep = ORBIT_KEYS[event.code];
     if (!action && !orbitStep) return;
     releaseButtonFocus(event);
+    // 地球ビューでは A/D で地球を回し (D で東、地表は左へ流れる。1 回押すごとに 1 段)、W/S で押している間だけ南北へ動く
+    if (action && acceptsGlobeKey(event)) {
+      event.preventDefault();
+      if (action === 'faster' || action === 'slower') {
+        slideKeys.add(action);
+        return;
+      }
+      if (event.repeat) return; // 押し続けても 1 段ずつ変える
+      globeSpinLevel = THREE.MathUtils.clamp(globeSpinLevel + (action === 'right' ? 1 : -1), -ORBIT_LEVELS, ORBIT_LEVELS);
+      showCruise();
+      return;
+    }
     if (!acceptsCruiseKey(event)) return;
     event.preventDefault();
     if (action === 'left' || action === 'right') {
@@ -594,13 +637,13 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const direction = CITY_HOP_KEYS[event.code];
     if (!direction) return;
     releaseButtonFocus(event);
-    if (!regionView || regionFlight?.leaving || demoMotion || event.ctrlKey || event.altKey || event.metaKey) return;
-    if (document.querySelector('dialog[open]')) return;
-    const target = event.target instanceof Element ? event.target : null;
-    if (target?.closest('input, select, textarea, [contenteditable="true"]')) return;
+    if (regionFlight?.leaving || solar.active || !acceptsKey(event)) return;
     event.preventDefault();
     if (event.repeat) return; // 押し続けても 1 都市ずつ移る
-    const from = regionFlight?.to ?? regionView;
+    // 地球ビューでは、カメラの真下 (飛んでいる途中なら行き先) を出発点にし、北が上なので方角は 0
+    const from: LonLat & { heading: number; distance: number } = regionView
+      ? (regionFlight?.to ?? regionView)
+      : { ...lonLatOf((flight?.to ?? camera.position).toArray()), heading: 0, distance: cameraAltitude() };
     const tier = tierAtAltitude(apparentAltitude());
     const reach = from.distance * CITY_HOP_REACH * THREE.MathUtils.RAD2DEG;
     const groups: Array<[MapCity[], number]> = [
@@ -620,12 +663,16 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   window.addEventListener('keyup', (event) => {
     const action = CRUISE_KEYS[event.code];
     if (action === 'left' || action === 'right') turnKeys.delete(action);
-    else if (action) throttleKeys.delete(action);
+    else if (action) {
+      throttleKeys.delete(action);
+      slideKeys.delete(action);
+    }
   });
-  // 窓を離れたら、押していたキーは離したことにする。巡航はその速さで続ける
+  // 窓を離れたら、押していたキーは離したことにする。巡航と地球の回転はその速さで続ける
   window.addEventListener('blur', () => {
     turnKeys.clear();
     throttleKeys.clear();
+    slideKeys.clear();
   });
 
   // 巡航で進め、旋回の分だけ画面を傾ける。ドラッグしている間は進めない
@@ -905,8 +952,36 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     flyTo(camera.position.clone().setLength(viewDistance(next)));
   }
 
+  // A/D の段に合わせて地球を回し、W/S を押している間は南北へ動かす。デモの自動回転とは同時にしない。
+  // 回転は OrbitControls の自動回転を借りる (ドラッグしている間は回らない)。
+  // 東向きは地表が左へ流れる向きで、自動回転の正の向き (地表が東へ動く) とは逆
+  function updateGlobeMotion(dt: number): void {
+    globeSpinThrottle += (globeSpinLevel - globeSpinThrottle) * (1 - Math.exp(-dt / ORBIT_SECONDS));
+    if (Math.abs(globeSpinThrottle) < 1e-3) globeSpinThrottle = 0;
+    const slideGoal = (slideKeys.has('faster') ? 1 : 0) - (slideKeys.has('slower') ? 1 : 0);
+    globeSlide += (slideGoal - globeSlide) * (1 - Math.exp(-dt / TURN_SECONDS));
+    if (Math.abs(globeSlide) < 1e-3) globeSlide = 0;
+    if (demoMotion) return;
+    const scale = Math.max(GLOBE_SPIN_MIN_SCALE, apparentAltitude() / GLOBE_SPIN_REFERENCE_ALTITUDE);
+    // 度/秒を OrbitControls の単位 (2 で 30 秒に 1 周) にする
+    const degreesPerSecond = -orbitDegreesPerSecond(globeSpinThrottle) * scale;
+    controls.autoRotate = globeSpinThrottle !== 0;
+    controls.autoRotateSpeed = -degreesPerSecond / 6;
+    if (globeSlide !== 0) {
+      const { lat, lon } = lonLatOf(camera.position.toArray());
+      const next = THREE.MathUtils.clamp(
+        lat + globeSlide * GLOBE_SLIDE_DEGREES_PER_SECOND * scale * dt,
+        -GLOBE_MAX_LATITUDE,
+        GLOBE_MAX_LATITUDE,
+      );
+      lonLatToVector3(lon, next, camera.position.length(), camera.position);
+    }
+  }
+
   function updateFlight(dt: number): void {
+    showCruise();
     if (!flight) {
+      updateGlobeMotion(dt);
       // 寄るほどゆっくり回し、触ったときに地表が指に付いてくる感覚に近づける
       controls.rotateSpeed = THREE.MathUtils.clamp(apparentAltitude() * 0.32, 0.05, 0.6);
       // 慣性はフレームごとに減衰するので、FPS によらず同じ時間で止まるように換算する
