@@ -24,6 +24,10 @@ const GLINT_MAX = 0.4;
 const REGION_CLOUD_ALTITUDE = 0.002; // 斜めに見ると誇張した分だけ雲が地面からずれるので、地域ビューでは実際に近づける
 const REGION_HAZE = 0.3; // 縁の青は地球全体を見るためのもので、斜めの視点では画面の大半に乗ってしまう
 const REGION_ATMOSPHERE_THINNESS = 3; // 大気の層も地球全体を見るために厚い。そのままだと空全体が青くなる
+// 縁の青と大気の層は、視点 (地球・地域) ではなくカメラの高さで変える。視点の切り替えに合わせると、
+// 寄り始めた直後のまだ高い位置で急に変わって見える。この高さより下で地域ビューの見た目、上で地球ビューの見た目
+const REGION_ATMOSPHERE_FULL_ALTITUDE = 0.25; // 既定の地域ビューは約 0.17
+const REGION_ATMOSPHERE_START_ALTITUDE = 1.4; // 既定の地球ビューは 2.3
 // 立体の雲は遠くから見ても差が出ないので、この高さより上では平らな雲に戻す
 const VOLUME_FULL_ALTITUDE = 0.6;
 const VOLUME_START_ALTITUDE = 0.85;
@@ -509,8 +513,10 @@ export class RealisticEarth {
     const altitude = THREE.MathUtils.lerp(CLOUD_ALTITUDE, lowered, Math.max(blend, this.volumeMix));
     this.material.uniforms.uCloudAltitude.value = altitude;
     this.cloudMesh.scale.setScalar((this.radius + altitude) / (this.radius + CLOUD_ALTITUDE));
-    this.haze.value = THREE.MathUtils.lerp(1, REGION_HAZE, blend);
-    this.atmosphereThinness.value = THREE.MathUtils.lerp(1, REGION_ATMOSPHERE_THINNESS, blend);
+    const low =
+      1 - THREE.MathUtils.smoothstep(cameraAltitude, REGION_ATMOSPHERE_FULL_ALTITUDE, REGION_ATMOSPHERE_START_ALTITUDE);
+    this.haze.value = THREE.MathUtils.lerp(1, REGION_HAZE, low);
+    this.atmosphereThinness.value = THREE.MathUtils.lerp(1, REGION_ATMOSPHERE_THINNESS, low);
     this.material.uniforms.uRegion.value = blend;
   }
 
