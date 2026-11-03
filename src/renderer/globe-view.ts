@@ -92,7 +92,8 @@ const MARKER_BOX_HEIGHT = 24;
 const MARKER_LABEL_OFFSET = 13;
 const DEMO_ROTATE_SPEED = 0.42; // OrbitControls の単位。毎秒約 2.5 度で、地表は実際の自転と同じ東向きに動く
 const DEMO_TURN_DEGREES_PER_SECOND = 1.2; // 地域ビューで中心のまわりを回る速さ
-// 地域ビューの巡航。上下のキーで速さの段を変え、手を離してもその速さで飛び続ける。左右のキーを押している間は旋回する
+// 地域ビューの巡航。上下のキーで速さの段を変え、手を離してもその速さで飛び続ける。左右のキーを押している間は旋回する。
+// S で 0 を越えると後ろへ進む (-CRUISE_LEVELS〜CRUISE_LEVELS)
 const CRUISE_LEVELS = 5;
 // 1 段目の速さ。高さ (距離) 1 あたり、1 秒に進む角度 (地球の中心から見た弧度)。
 // 1 段ごとに 2 倍にし、遅い段で景色を眺められ、速い段で遠くへ移れるようにする
@@ -475,7 +476,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     flyRegion({ ...regionView, heading: 0, tilt: 0, distance: distance - GLOBE_RADIUS }, true, seconds);
   }
 
-  // 巡航の速さの段 (0〜CRUISE_LEVELS) と、なめらかにしたあとの値。旋回は度/秒
+  // 巡航の速さの段 (-CRUISE_LEVELS〜CRUISE_LEVELS。負が後退) と、なめらかにしたあとの値。旋回は度/秒
   let cruiseLevel = 0;
   let cruiseThrottle = 0;
   let turnRate = 0;
@@ -503,11 +504,12 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   }
 
   function showCruise(): void {
-    if (cruiseLevel > 0) {
-      viewHint.textContent = `巡航中 速さ ${cruiseLevel} / ${CRUISE_LEVELS}(W/S で速さ、A/D で向き、Q/E で旋回)`;
+    if (cruiseLevel !== 0) {
+      const direction = cruiseLevel > 0 ? '' : '後退 ';
+      viewHint.textContent = `巡航中 ${direction}速さ ${Math.abs(cruiseLevel)} / ${CRUISE_LEVELS}(W/S で速さ、A/D で向き、Q/E で旋回)`;
     } else if (orbitLevel !== 0) {
       const direction = orbitLevel > 0 ? '右回り' : '左回り';
-      viewHint.textContent = `旋回中 ${direction} 速さ ${Math.abs(orbitLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、W で巡航)`;
+      viewHint.textContent = `旋回中 ${direction} 速さ ${Math.abs(orbitLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、W/S で巡航)`;
     } else {
       viewHint.textContent = viewHintText;
     }
@@ -545,8 +547,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       orbitLevel = THREE.MathUtils.clamp(orbitLevel + orbitStep, -ORBIT_LEVELS, ORBIT_LEVELS);
       cruiseLevel = 0;
     } else {
-      cruiseLevel = THREE.MathUtils.clamp(cruiseLevel + (action === 'faster' ? 1 : -1), 0, CRUISE_LEVELS);
-      if (action === 'faster') orbitLevel = 0;
+      cruiseLevel = THREE.MathUtils.clamp(cruiseLevel + (action === 'faster' ? 1 : -1), -CRUISE_LEVELS, CRUISE_LEVELS);
+      if (cruiseLevel !== 0) orbitLevel = 0;
     }
     showCruise();
   });
@@ -587,10 +589,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   window.addEventListener('blur', () => turnKeys.clear());
 
   // 巡航で進め、旋回の分だけ画面を傾ける。ドラッグしている間は進めない
-  // なめらかにした段の値から速さを求める。0〜1 段の間は 1 段目の速さへ比例させ、止まるところでも途切れないようにする
+  // なめらかにした段の値 (符号つき) から速さを求める。0〜1 段の間は 1 段目の速さへ比例させ、止まるところでも途切れないようにする
   function cruiseRate(throttle: number): number {
-    if (throttle < 1) return CRUISE_RATE * throttle;
-    return CRUISE_RATE * CRUISE_STEP_RATIO ** (throttle - 1);
+    const size = Math.abs(throttle);
+    const rate = size < 1 ? CRUISE_RATE * size : CRUISE_RATE * CRUISE_STEP_RATIO ** (size - 1);
+    return Math.sign(throttle) * rate;
   }
 
   // 旋回の段の値 (符号つき) から、方角の変わる速さ (度/秒) を求める。巡航と同じく 0〜1 段の間は比例させる。
@@ -610,7 +613,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     cruiseThrottle += (cruiseLevel - cruiseThrottle) * (1 - Math.exp(-dt / CRUISE_SECONDS));
     const turnGoal = ((turnKeys.has('right') ? 1 : 0) - (turnKeys.has('left') ? 1 : 0)) * TURN_DEGREES_PER_SECOND;
     turnRate += (turnGoal - turnRate) * (1 - Math.exp(-dt / TURN_SECONDS));
-    if (regionDrag || (cruiseThrottle < 1e-4 && Math.abs(turnRate) < 1e-3)) return;
+    if (regionDrag || (Math.abs(cruiseThrottle) < 1e-4 && Math.abs(turnRate) < 1e-3)) return;
     regionView = cruiseRegionView(regionView, cruiseRate(cruiseThrottle) * regionView.distance * dt, turnRate * dt);
   }
 

@@ -117,18 +117,19 @@ export function approachDistance(distance: number, goal: number, dt: number): nu
   return distance * Math.pow(goal / distance, 1 - Math.exp(-dt / ZOOM_SECONDS));
 }
 
-// 大円に沿って angle (弧度) 進んだ地点と、そこでの進む向き (度)。まっすぐ進むと、方角は少しずつ変わる
+// 大円に沿って angle (弧度) 進んだ地点と、そこでの進む向き (度)。まっすぐ進むと、方角は少しずつ変わる。
+// angle が負なら後ろへ下がり、向きは前を向いたまま
 function travel(lat: number, lon: number, bearing: number, angle: number): { lat: number; lon: number; bearing: number } {
   if (angle === 0) return { lat, lon, bearing };
   const [p1, l1, b] = [lat * DEG, lon * DEG, bearing * DEG];
   const p2 = Math.asin(clamp(Math.sin(p1) * Math.cos(angle) + Math.cos(p1) * Math.sin(angle) * Math.cos(b), -1, 1));
   const l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(angle) * Math.cos(p1), Math.cos(angle) - Math.sin(p1) * Math.sin(p2));
-  // 着いた地点から元の地点への向きの反対
+  // 着いた地点から元の地点への向き。前へ進んだときは、その反対が進む向き
   const back = Math.atan2(
     Math.sin(l1 - l2) * Math.cos(p1),
     Math.cos(p2) * Math.sin(p1) - Math.sin(p2) * Math.cos(p1) * Math.cos(l1 - l2),
   );
-  return { lat: p2 / DEG, lon: wrapDegrees(l2 / DEG), bearing: wrapDegrees(back / DEG + 180) };
+  return { lat: p2 / DEG, lon: wrapDegrees(l2 / DEG), bearing: wrapDegrees(back / DEG + (angle > 0 ? 180 : 0)) };
 }
 
 // 巡航。turn 度だけカメラの真下の地点を軸に向きを変え、forward (弧度) だけ今の向きへまっすぐ進む。

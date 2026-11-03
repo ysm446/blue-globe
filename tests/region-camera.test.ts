@@ -141,6 +141,17 @@ test('巡航は今の向きへ大円に沿って進む', () => {
   assert.ok(curve.heading > 100, `${curve.heading}`);
 });
 
+test('巡航で後退すると、向きを保ったまま後ろへ進み、前進と同じ道を戻る', () => {
+  const west = cruiseRegionView({ lat: 0, lon: 10, heading: 90, tilt: 50, distance: 0.24 }, -0.1, 0);
+  assert.ok(Math.abs(west.lat) < 1e-9);
+  assert.ok(Math.abs(west.lon - (10 - 0.1 / DEG)) < 1e-9);
+  assert.ok(Math.abs(west.heading - 90) < 1e-9);
+  const start = { lat: 40, lon: 0, heading: 90, tilt: 50, distance: 0.24 };
+  const back = cruiseRegionView(cruiseRegionView(start, 30 * DEG, 0), -30 * DEG, 0);
+  assert.ok(Math.abs(back.lat - start.lat) < 1e-9 && Math.abs(back.lon - start.lon) < 1e-9);
+  assert.ok(Math.abs(back.heading - start.heading) < 1e-9, `${back.heading}`);
+});
+
 test('巡航で進むと、カメラも同じ角度だけ進み、高さと傾きは変わらない', () => {
   const view = { lat: 35, lon: 139, heading: 30, tilt: 50, distance: 0.24 };
   const next = cruiseRegionView(view, 0.05, 0);
