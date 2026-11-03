@@ -26,7 +26,7 @@ DEFAULT_SETTINGS = {
         "show_map_lines": True,
         "show_city_labels": True,
         "show_planet_labels": True,
-        "show_constellations": True,  # 星座の線
+        "show_constellations": False,  # 星座の線
         "star_brightness": 1.0,
         "space_tint": 1.0,  # 背景の宇宙の青み。0 で写真どおりの真っ黒、1 が従来の濃さ
         "cloud_shadow": 0.55,

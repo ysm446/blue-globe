@@ -1087,7 +1087,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     depthOfField = graphics.depth_of_field ? { fNumber: graphics.f_number, globeSize: graphics.globe_size } : null;
     hdr.setBloomEnabled(graphics.bloom);
     sky.setStarBrightness(graphics.star_brightness);
-    sky.setConstellationsVisible(graphics.show_constellations);
+    sky.setConstellationsVisible(graphics.show_constellations, camera);
     paintSpaceBackground(spaceCanvas, graphics.space_tint);
     spaceBackground.needsUpdate = true;
     earth.setCloudShadow(graphics.cloud_shadow);
@@ -1168,6 +1168,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     else updateFlight(dt);
     updateNearPlane();
     sky.follow(camera.position);
+    sky.advance(dt);
     // 太陽系へ引いて地球が小さく写るようになったら、雲は描かない
     earth.setCloudsEnabled(mode === 'weather' && (!solar.active || solar.earthPixels() >= CLOUD_LOD_PIXELS));
     updateRegionBlend(dt);

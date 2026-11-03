@@ -3,6 +3,8 @@ import * as THREE from 'three';
 import { VALUE_NOISE_GLSL } from './glsl';
 import { lonLatToVector3 } from './globe';
 import { siderealDegrees, starIntensity, sublunarPoint, subsolarPoint } from './astro';
+import { revealSchedule } from './constellation-reveal';
+import type { Vec3 } from './math';
 import { PLANETS, planetSky } from './planets';
 import starCatalog from './data/stars.json';
 import constellationLines from './data/constellation-lines.json';
@@ -17,10 +19,10 @@ const MOON_RADIUS = 0.4; // 実際の約 1.5 倍。太陽の芯はほぼ実際�
 // [赤経, 赤緯, 等級, B-V 色指数] の配列 (Hipparcos 由来、6 等星まで)
 const STARS = starCatalog as unknown as Array<[number, number, number, number]>;
 
-// 星座の線。1 本ごとに [赤経, 赤緯, 赤経, 赤緯, ...] と星を順につなぐ (d3-celestial 由来)
-const CONSTELLATION_LINES = constellationLines as unknown as number[][];
+// 星座の線。星座ごとに線の配列を持ち、線は 1 本ごとに [赤経, 赤緯, 赤経, 赤緯, ...] と星を順につなぐ (d3-celestial 由来)
+const CONSTELLATION_LINES = constellationLines as unknown as number[][][];
 // 線の明るさ (線形)。星より十分暗く、夜空に薄く見える程度にする
-const CONSTELLATION_COLOR = new THREE.Color(0.025, 0.04, 0.07);
+const CONSTELLATION_COLOR = new THREE.Vector3(0.025, 0.04, 0.07);
 
 // 明るさは等級どおりの比で計算する。明るい星は中心が白く飽和し、飽和した範囲の大きさと周りの光で差が出る。
 // 値をブルームのしきい値より低く抑える。ブルームに通すと明るい点が四角くにじむので、周りの光はここで丸く描く
@@ -172,30 +174,74 @@ function createStars(uniforms: StarUniforms): THREE.Points {
   return points;
 }
 
+// 線分は、伸び始める時刻から伸びきる時刻まで、始まりの星から終わりの星へ伸ばす
+const CONSTELLATION_VS = /* glsl */ `
+attribute float along; // 線分の始まりの点で 0、終わりの点で 1
+attribute vec2 reveal; // 伸び始める時刻と、伸びきるまでの時間 (秒)
+varying float vAlong;
+varying vec2 vReveal;
+void main() {
+  vAlong = along;
+  vReveal = reveal;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const CONSTELLATION_FS = /* glsl */ `
+uniform vec3 uColor;
+uniform float uTime;
+varying float vAlong;
+varying vec2 vReveal;
+void main() {
+  float reached = clamp((uTime - vReveal.x) / max(vReveal.y, 1e-3), 0.0, 1.0);
+  if (vAlong > reached) discard;
+  gl_FragColor = vec4(uColor, 1.0);
+}
+`;
+
 // 星座の線。星と同じ距離に置き、星と一緒に回す。線は星の位置どうしをつなぐ。
 // 星と同じく場面の中に描くので、地球に隠れ、被写界深度でもぼける
-function createConstellationLines(): THREE.LineSegments {
+function createConstellationLines(): { lines: THREE.LineSegments; stars: Vec3[][][] } {
   const positions: number[] = [];
+  const along: number[] = [];
   const point = new THREE.Vector3();
-  for (const line of CONSTELLATION_LINES) {
-    for (let i = 0; i + 3 < line.length; i += 2) {
-      lonLatToVector3(line[i], line[i + 1], STAR_DISTANCE, point).toArray(positions, positions.length);
-      lonLatToVector3(line[i + 2], line[i + 3], STAR_DISTANCE, point).toArray(positions, positions.length);
+  // 伸ばす順を決めるための、星座ごとの線ごとの星の向き (星の座標の単位ベクトル)
+  const stars = CONSTELLATION_LINES.map((constellation) =>
+    constellation.map((line) => {
+      const points: Vec3[] = [];
+      for (let i = 0; i + 1 < line.length; i += 2) {
+        points.push(lonLatToVector3(line[i], line[i + 1], 1, point).toArray());
+      }
+      return points;
+    }),
+  );
+  for (const constellation of stars) {
+    for (const line of constellation) {
+      for (let i = 0; i + 1 < line.length; i++) {
+        point.fromArray(line[i]).multiplyScalar(STAR_DISTANCE).toArray(positions, positions.length);
+        point.fromArray(line[i + 1]).multiplyScalar(STAR_DISTANCE).toArray(positions, positions.length);
+        along.push(0, 1);
+      }
     }
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('along', new THREE.Float32BufferAttribute(along, 1));
+  geometry.setAttribute('reveal', new THREE.Float32BufferAttribute(new Float32Array(along.length * 2), 2));
   const lines = new THREE.LineSegments(
     geometry,
-    new THREE.LineBasicMaterial({
-      color: CONSTELLATION_COLOR,
+    new THREE.ShaderMaterial({
+      uniforms: { uColor: { value: CONSTELLATION_COLOR }, uTime: { value: 0 } },
+      vertexShader: CONSTELLATION_VS,
+      fragmentShader: CONSTELLATION_FS,
       transparent: true,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
     }),
   );
   lines.frustumCulled = false;
-  return lines;
+  lines.visible = false;
+  return { lines, stars };
 }
 
 // halfSize は板の半分の大きさ。描く距離に対する比で、見かけの大きさが決まる
@@ -229,7 +275,8 @@ export class Sky {
   // 太陽系の場面でも同じ星を描くので、形と見た目は共有する
   readonly stars: THREE.Points;
   private readonly planetPoints: THREE.Points;
-  private readonly constellations = createConstellationLines();
+  private readonly constellations: THREE.LineSegments;
+  private readonly constellationStars: Vec3[][][];
   private readonly planetOffsets = PLANETS.map(() => new THREE.Vector3()); // カメラから見た位置
   private readonly sun = createSun(SUN_HALF_SIZE);
   private readonly moon: THREE.Mesh;
@@ -237,6 +284,7 @@ export class Sky {
   constructor(pixelRatio: number) {
     this.starUniforms = { uPixelRatio: { value: pixelRatio }, uBrightness: { value: 1 } };
     this.stars = createStars(this.starUniforms);
+    ({ lines: this.constellations, stars: this.constellationStars } = createConstellationLines());
     // 惑星は星と同じ座標で置き、星と一緒に回す
     this.planetPoints = createPoints(PLANETS.length, this.starUniforms);
     this.stars.add(this.planetPoints, this.constellations);
@@ -285,8 +333,30 @@ export class Sky {
     this.starUniforms.uBrightness.value = brightness;
   }
 
-  setConstellationsVisible(visible: boolean): void {
+  // 表示し始めるときは、カメラの見ている方向に近い星座から順に線を伸ばす。消すときはすぐに消す
+  setConstellationsVisible(visible: boolean, camera: THREE.Camera): void {
+    if (visible && !this.constellations.visible) {
+      // 見ている方向を、星の回転を戻した星の座標にする
+      const view = camera.getWorldDirection(new THREE.Vector3()).applyAxisAngle(Y_AXIS, -this.stars.rotation.y);
+      const schedule = revealSchedule(this.constellationStars, view.toArray());
+      const reveal = this.constellations.geometry.attributes.reveal;
+      schedule.forEach(({ start, duration }, i) => {
+        reveal.setXY(i * 2, start, duration);
+        reveal.setXY(i * 2 + 1, start, duration);
+      });
+      reveal.needsUpdate = true;
+      this.constellationUniforms.uTime.value = 0;
+    }
     this.constellations.visible = visible;
+  }
+
+  // 毎フレーム呼ぶ。線を伸ばす時計を進める
+  advance(dt: number): void {
+    if (this.constellations.visible) this.constellationUniforms.uTime.value += dt;
+  }
+
+  private get constellationUniforms(): { uTime: { value: number } } {
+    return (this.constellations.material as THREE.ShaderMaterial).uniforms as { uTime: { value: number } };
   }
 
   setTime(date: Date): void {
