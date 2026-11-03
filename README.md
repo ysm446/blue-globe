@@ -4,7 +4,7 @@
 
 ## 起動
 
-`start.bat` を実行します。初回は `.venv` と `node_modules` の作成、ビルドも行います。
+`start.bat` を実行します。初回は `.venv` と `node_modules` の作成、ビルドも行います。ソースがビルドの出力より新しいとき(`git pull` の後など)も、起動の前にビルドし直します(判定は `scripts/needs-build.mjs`)。
 
 必要なもの:
 

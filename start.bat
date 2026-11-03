@@ -24,8 +24,10 @@ if not exist node_modules (
     if errorlevel 1 goto :error
 )
 
-if not exist dist\main.js (
-    echo [start] Build output not found. Running npm run build...
+rem Rebuild when the build output is missing or older than the source (e.g. after git pull)
+node scripts\needs-build.mjs
+if errorlevel 1 (
+    echo [start] Running npm run build...
     call npm run build
     if errorlevel 1 goto :error
 )
