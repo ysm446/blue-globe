@@ -92,6 +92,7 @@ class GraphicsUpdate(BaseModel):
     show_map_lines: bool
     show_city_labels: bool
     show_planet_labels: bool
+    show_constellations: bool
     star_brightness: float = Field(ge=0.125, le=8)
     space_tint: float = Field(ge=0, le=1)
     cloud_shadow: float = Field(ge=0, le=1)

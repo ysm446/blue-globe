@@ -48,4 +48,4 @@ npm test        # ニュース文の単体テスト
 - 雲: NOAA GMGSI(衛星の全球合成画像)と NOAA GFS をもとに加工したもの(元データそのものではありません)
 - 海岸線と国境線: Natural Earth
 - 地表と街明かりの画像: NASA Blue Marble / Black Marble。We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS), part of NASA's Earth Science Data and Information System (ESDIS).
-- 星: Hipparcos カタログ由来のデータを [d3-celestial](https://github.com/ofrohn/d3-celestial) から変換(ライセンスは [assets/licenses/d3-celestial-LICENSE.txt](assets/licenses/d3-celestial-LICENSE.txt))
+- 星と星座の線: Hipparcos カタログ由来の星と、星座の線のデータを [d3-celestial](https://github.com/ofrohn/d3-celestial) から変換(ライセンスは [assets/licenses/d3-celestial-LICENSE.txt](assets/licenses/d3-celestial-LICENSE.txt))

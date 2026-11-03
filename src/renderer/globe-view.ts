@@ -1087,6 +1087,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     depthOfField = graphics.depth_of_field ? { fNumber: graphics.f_number, globeSize: graphics.globe_size } : null;
     hdr.setBloomEnabled(graphics.bloom);
     sky.setStarBrightness(graphics.star_brightness);
+    sky.setConstellationsVisible(graphics.show_constellations);
     paintSpaceBackground(spaceCanvas, graphics.space_tint);
     spaceBackground.needsUpdate = true;
     earth.setCloudShadow(graphics.cloud_shadow);

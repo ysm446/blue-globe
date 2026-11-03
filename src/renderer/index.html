@@ -260,6 +260,10 @@
           <label class="check-row" data-help="星空の惑星の点に名前を添えます。既定: オン"><input id="planet-labels-toggle" type="checkbox" />惑星の名前を表示(通常・天気モード)</label>
           <button class="reset-button" data-reset="show_planet_labels" type="button" aria-label="惑星の名前の表示を既定に戻す" title="既定に戻す"></button>
         </div>
+        <div class="check-line">
+          <label class="check-row" data-help="星空に星座の線を引きます。星と同じく、被写界深度がオンのときは遠くほどぼけます。既定: オン"><input id="constellations-toggle" type="checkbox" />星座の線を表示(通常・天気モード)</label>
+          <button class="reset-button" data-reset="show_constellations" type="button" aria-label="星座の線の表示を既定に戻す" title="既定に戻す"></button>
+        </div>
         <h3 class="settings-subhead">画面</h3>
         <div class="field-grid">
           <label for="ui-font" data-help="画面の文字のフォント。PC に入っていないフォントは候補に出ません。既定: Noto Sans JP">日本語フォント</label>
@@ -461,7 +465,7 @@
         <p>
         地名検索: 国土地理院、Open-Meteo<br />
         雲: NOAA GMGSI(衛星の全球合成画像)と NOAA GFS をもとに加工したもので、元データそのものではありません。近づいたときの立体の雲は、高さと細かい形を見た目のために作っています<br />
-        星: Hipparcos カタログ(d3-celestial より)<br />
+        星と星座の線: Hipparcos カタログ、d3-celestial<br />
         地域ビューの地表と街明かり: NASA GIBS の固定の合成画像(街明かりは 2016 年)<br />
         We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS),
         part of NASA's Earth Science Data and Information System (ESDIS).

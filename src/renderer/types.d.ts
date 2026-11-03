@@ -46,6 +46,7 @@ interface GraphicsSettings {
   show_map_lines: boolean; // 海岸線と国境線 (通常・天気モード。風速モードでは常に描く)
   show_city_labels: boolean; // 地球儀の上の都市のラベル
   show_planet_labels: boolean; // 惑星の点の横の名前
+  show_constellations: boolean; // 星座の線
   star_brightness: number; // 星全体の明るさの倍率
   space_tint: number; // 背景の宇宙の青み。0 で真っ黒、1 が従来の濃さ (0〜1)
   cloud_shadow: number; // 雲の影の濃さ (0〜1)

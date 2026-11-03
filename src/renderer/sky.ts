@@ -5,6 +5,7 @@ import { lonLatToVector3 } from './globe';
 import { siderealDegrees, starIntensity, sublunarPoint, subsolarPoint } from './astro';
 import { PLANETS, planetSky } from './planets';
 import starCatalog from './data/stars.json';
+import constellationLines from './data/constellation-lines.json';
 
 const STAR_DISTANCE = 90;
 const Y_AXIS = new THREE.Vector3(0, 1, 0);
@@ -15,6 +16,11 @@ const MOON_RADIUS = 0.4; // 実際の約 1.5 倍。太陽の芯はほぼ実際�
 
 // [赤経, 赤緯, 等級, B-V 色指数] の配列 (Hipparcos 由来、6 等星まで)
 const STARS = starCatalog as unknown as Array<[number, number, number, number]>;
+
+// 星座の線。1 本ごとに [赤経, 赤緯, 赤経, 赤緯, ...] と星を順につなぐ (d3-celestial 由来)
+const CONSTELLATION_LINES = constellationLines as unknown as number[][];
+// 線の明るさ (線形)。星より十分暗く、夜空に薄く見える程度にする
+const CONSTELLATION_COLOR = new THREE.Color(0.025, 0.04, 0.07);
 
 // 明るさは等級どおりの比で計算する。明るい星は中心が白く飽和し、飽和した範囲の大きさと周りの光で差が出る。
 // 値をブルームのしきい値より低く抑える。ブルームに通すと明るい点が四角くにじむので、周りの光はここで丸く描く
@@ -166,6 +172,32 @@ function createStars(uniforms: StarUniforms): THREE.Points {
   return points;
 }
 
+// 星座の線。星と同じ距離に置き、星と一緒に回す。線は星の位置どうしをつなぐ。
+// 星と同じく場面の中に描くので、地球に隠れ、被写界深度でもぼける
+function createConstellationLines(): THREE.LineSegments {
+  const positions: number[] = [];
+  const point = new THREE.Vector3();
+  for (const line of CONSTELLATION_LINES) {
+    for (let i = 0; i + 3 < line.length; i += 2) {
+      lonLatToVector3(line[i], line[i + 1], STAR_DISTANCE, point).toArray(positions, positions.length);
+      lonLatToVector3(line[i + 2], line[i + 3], STAR_DISTANCE, point).toArray(positions, positions.length);
+    }
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  const lines = new THREE.LineSegments(
+    geometry,
+    new THREE.LineBasicMaterial({
+      color: CONSTELLATION_COLOR,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    }),
+  );
+  lines.frustumCulled = false;
+  return lines;
+}
+
 // halfSize は板の半分の大きさ。描く距離に対する比で、見かけの大きさが決まる
 export function createSun(halfSize: number): THREE.Mesh {
   const mesh = new THREE.Mesh(
@@ -197,6 +229,7 @@ export class Sky {
   // 太陽系の場面でも同じ星を描くので、形と見た目は共有する
   readonly stars: THREE.Points;
   private readonly planetPoints: THREE.Points;
+  private readonly constellations = createConstellationLines();
   private readonly planetOffsets = PLANETS.map(() => new THREE.Vector3()); // カメラから見た位置
   private readonly sun = createSun(SUN_HALF_SIZE);
   private readonly moon: THREE.Mesh;
@@ -206,7 +239,7 @@ export class Sky {
     this.stars = createStars(this.starUniforms);
     // 惑星は星と同じ座標で置き、星と一緒に回す
     this.planetPoints = createPoints(PLANETS.length, this.starUniforms);
-    this.stars.add(this.planetPoints);
+    this.stars.add(this.planetPoints, this.constellations);
     this.moon = new THREE.Mesh(
       new THREE.SphereGeometry(MOON_RADIUS, 64, 48),
       new THREE.ShaderMaterial({
@@ -250,6 +283,10 @@ export class Sky {
   // 全ての星と惑星に同じ倍率を掛ける。互いの明るさの比は変わらない
   setStarBrightness(brightness: number): void {
     this.starUniforms.uBrightness.value = brightness;
+  }
+
+  setConstellationsVisible(visible: boolean): void {
+    this.constellations.visible = visible;
   }
 
   setTime(date: Date): void {
