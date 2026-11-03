@@ -91,6 +91,7 @@ class SettingsApiTest(unittest.TestCase):
         "cloud_puffiness": 1.5,
         "cloud_height": 0.75,
         "ui_font": "meiryo-ui",
+        "cruise_mode": "stepped",
     }
 
     def test_graphics_defaults(self):
@@ -119,6 +120,7 @@ class SettingsApiTest(unittest.TestCase):
         for change in (
             {"fps_limit": 45},
             {"ui_font": "comic-sans"},
+            {"cruise_mode": "reverse"},
             {"render_scale": 10},
             {"star_brightness": 100},
             {"star_brightness": 0},

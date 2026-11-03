@@ -159,9 +159,13 @@ export function initSettingsDialog(
     render_scale: el<HTMLSelectElement>('render-scale'),
     cloud_resolution: el<HTMLSelectElement>('cloud-resolution'),
   };
+  // 値が文字列の選択
+  const choices = {
+    ui_font: el<HTMLSelectElement>('ui-font'),
+    cruise_mode: el<HTMLSelectElement>('cruise-mode'),
+  };
   // 入っていないフォントは候補から外す。外したものが保存されていても、文字は游ゴシック UI で出る
-  const fontSelect = el<HTMLSelectElement>('ui-font');
-  for (const option of Array.from(fontSelect.options)) {
+  for (const option of Array.from(choices.ui_font.options)) {
     option.hidden = !isFontInstalled(UI_FONTS[option.value as UiFont]);
   }
   const toggles = {
@@ -222,7 +226,8 @@ export function initSettingsDialog(
     for (const key of keysOf(selects)) graphics[key] = Number(selects[key].value);
     for (const key of keysOf(toggles)) graphics[key] = toggles[key].checked;
     for (const key of keysOf(sliders)) graphics[key] = sliders[key].read();
-    graphics.ui_font = fontSelect.value as UiFont;
+    graphics.ui_font = choices.ui_font.value as UiFont;
+    graphics.cruise_mode = choices.cruise_mode.value as CruiseMode;
     return graphics;
   }
 
@@ -230,7 +235,7 @@ export function initSettingsDialog(
     for (const key of keysOf(selects)) selects[key].value = String(graphics[key]);
     for (const key of keysOf(toggles)) toggles[key].checked = graphics[key];
     for (const key of keysOf(sliders)) sliders[key].write(graphics[key]);
-    fontSelect.value = graphics.ui_font;
+    for (const key of keysOf(choices)) choices[key].value = graphics[key];
     showFov();
   }
 
@@ -259,7 +264,7 @@ export function initSettingsDialog(
   }
   for (const control of [
     ...Object.values(selects),
-    fontSelect,
+    ...Object.values(choices),
     ...Object.values(toggles),
     ...Object.values(sliders).map((slider) => slider.input),
   ]) {

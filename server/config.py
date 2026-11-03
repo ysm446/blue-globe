@@ -38,6 +38,7 @@ DEFAULT_SETTINGS = {
         "cloud_puffiness": 1.0,
         "cloud_height": 1.0,  # 1 で上端が約 16km (実際の雲の上限に近い)
         "ui_font": "noto-sans-jp",  # 画面の文字のフォント。ui-font.ts の UI_FONTS を参照
+        "cruise_mode": "analog",  # 巡航の操作。analog は押している間に速さが変わり、stepped は 1 回押すごとに 1 段
     },
     # True で開いている。カメラのパネルは計器のようなものなので、既定では閉じておく
     "panels": {"news": True, "hourly": True, "weekly": True, "details": True, "camera": False},

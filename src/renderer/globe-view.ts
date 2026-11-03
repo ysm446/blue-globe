@@ -93,16 +93,17 @@ const MARKER_BOX_HEIGHT = 24;
 const MARKER_LABEL_OFFSET = 13;
 const DEMO_ROTATE_SPEED = 0.42; // OrbitControls の単位。毎秒約 2.5 度で、地表は実際の自転と同じ東向きに動く
 const DEMO_TURN_DEGREES_PER_SECOND = 1.2; // 地域ビューで中心のまわりを回る速さ
-// 地域ビューの巡航。W を押している間は速くなり、S を押している間は遅くなって 0 で止まる。
-// 手を離すとその速さで飛び続ける。A/D を押している間は旋回する
+// 地域ビューの巡航。操作は設定で選ぶ。アナログ式は W を押している間は速くなり、S を押している間は遅くなって 0 で止まる。
+// 段階式は W/S を 1 回押すごとに 1 段変える。どちらも手を離すとその速さで飛び続ける。A/D を押している間は旋回する
 const CRUISE_LEVELS = 5; // 速さの上限 (段)
 // 1 段目の速さ。高さ (距離) 1 あたり、1 秒に進む角度 (地球の中心から見た弧度)。
 // 1 段ごとに 2 倍にし、遅い段で景色を眺められ、速い段で遠くへ移れるようにする
 const CRUISE_RATE = 0.02;
 const CRUISE_STEP_RATIO = 2;
-// 押している間に段の値が変わる速さ (段/秒)。止めたいときにすぐ止まれるよう、減速を速くする
+// アナログ式で、押している間に段の値が変わる速さ (段/秒)。止めたいときにすぐ止まれるよう、減速を速くする
 const CRUISE_ACCELERATION = 1;
 const CRUISE_DECELERATION = 2;
+const CRUISE_SECONDS = 0.8; // 段階式で、選んだ段の速さへ近づくときの時定数
 const TURN_DEGREES_PER_SECOND = 20;
 const TURN_SECONDS = 0.35; // 旋回を始めるときと止めるときの時定数
 const BANK_DEGREES = 6; // 旋回中に画面を傾ける角度
@@ -480,7 +481,10 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   }
 
   // 巡航の速さの段 (0〜CRUISE_LEVELS。小数になる)。旋回は度/秒。
+  // cruiseLevel は段階式で選んでいる段。アナログ式から切り替えた直後は、その速さを保つため小数のこともある。
   // cruiseBraking は、中心のまわりの旋回を始めたときに巡航をなめらかに止める間 true
+  let cruiseMode: CruiseMode = 'analog';
+  let cruiseLevel = 0;
   let cruiseThrottle = 0;
   let cruiseBraking = false;
   let turnRate = 0;
@@ -501,6 +505,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   // 巡航だけを止める
   function stopForwardCruise(): void {
+    cruiseLevel = 0;
     cruiseThrottle = 0;
     cruiseBraking = false;
     turnRate = 0;
@@ -512,9 +517,16 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   // 巡航の速さは押している間に変わり続けるので、毎フレーム呼ぶ。文が変わったときだけ書き換える
   function showCruise(): void {
     let text = viewHintText;
-    if (cruiseThrottle > 0 && orbitLevel === 0 && regionView) {
+    const cruising = cruiseMode === 'stepped' ? cruiseLevel > 0 : cruiseThrottle > 0;
+    if (cruising && orbitLevel === 0 && regionView) {
       const speed = cruiseRate(cruiseThrottle) * regionView.distance * EARTH_RADIUS_KM;
-      text = `巡航中 ${speed.toFixed(speed < 10 ? 1 : 0)} km/秒(W で加速、S で減速、A/D で向き、Q/E で旋回)`;
+      const shownSpeed = `${speed.toFixed(speed < 10 ? 1 : 0)} km/秒`;
+      if (cruiseMode === 'stepped') {
+        const level = Number.isInteger(cruiseLevel) ? String(cruiseLevel) : cruiseLevel.toFixed(1);
+        text = `巡航中 速さ ${level} / ${CRUISE_LEVELS}、${shownSpeed}(W/S で速さ、A/D で向き、Q/E で旋回)`;
+      } else {
+        text = `巡航中 ${shownSpeed}(W で加速、S で減速、A/D で向き、Q/E で旋回)`;
+      }
     } else if (orbitLevel !== 0) {
       const direction = orbitLevel > 0 ? '右回り' : '左回り';
       text = `旋回中 ${direction} 速さ ${Math.abs(orbitLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、W で巡航)`;
@@ -550,15 +562,25 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     }
     // 巡航は中心を動かし、旋回は中心を固定するので、片方を始めたらもう片方は止める (速さはなめらかに落ちる)
     if (action) {
-      throttleKeys.add(action);
       if (action === 'faster') {
         orbitLevel = 0;
         cruiseBraking = false;
       }
+      if (cruiseMode === 'analog') {
+        throttleKeys.add(action);
+        return;
+      }
+      if (event.repeat) return; // 段階式は押し続けても 1 段ずつ変える
+      // 小数の段からは、押した向きの次の整数の段へ移る
+      cruiseLevel =
+        action === 'faster'
+          ? Math.min(CRUISE_LEVELS, Math.floor(cruiseLevel) + 1)
+          : Math.max(0, Math.ceil(cruiseLevel) - 1);
       return;
     }
     if (event.repeat) return; // 旋回は押し続けても 1 段ずつ変える
     orbitLevel = THREE.MathUtils.clamp(orbitLevel + orbitStep, -ORBIT_LEVELS, ORBIT_LEVELS);
+    cruiseLevel = 0;
     if (cruiseThrottle > 0) cruiseBraking = true;
     throttleKeys.clear();
     showCruise();
@@ -629,6 +651,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (throttleKeys.has('slower') || cruiseBraking) {
       cruiseThrottle = Math.max(0, cruiseThrottle - CRUISE_DECELERATION * dt);
       if (cruiseThrottle === 0) cruiseBraking = false;
+    } else if (cruiseMode === 'stepped') {
+      cruiseThrottle += (cruiseLevel - cruiseThrottle) * (1 - Math.exp(-dt / CRUISE_SECONDS));
     } else if (throttleKeys.has('faster')) {
       cruiseThrottle = Math.min(CRUISE_LEVELS, cruiseThrottle + CRUISE_ACCELERATION * dt);
     }
@@ -958,6 +982,12 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const fpsCounter = el('fps-counter');
   function applyGraphics(graphics: GraphicsSettings): void {
     fpsLimit = graphics.fps_limit;
+    if (graphics.cruise_mode !== cruiseMode) {
+      // 巡航中に切り替えても、今の速さのまま続ける。段階式では、次に W/S を押したときに整数の段へ移る
+      cruiseMode = graphics.cruise_mode;
+      cruiseLevel = cruiseMode === 'stepped' && !cruiseBraking ? cruiseThrottle : 0;
+      throttleKeys.clear();
+    }
     autoExposure = graphics.auto_exposure;
     exposureCompensation = graphics.exposure_compensation;
     focalLength = graphics.focal_length;
@@ -1101,7 +1131,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     earth,
     regionView: () => regionView,
     solar,
-    cruise: () => ({ throttle: cruiseThrottle, braking: cruiseBraking, turnRate }),
+    cruise: () => ({ mode: cruiseMode, level: cruiseLevel, throttle: cruiseThrottle, braking: cruiseBraking, turnRate }),
     setRegionView(next: Partial<RegionView>): void {
       if (!regionView) return;
       regionFlight = null;

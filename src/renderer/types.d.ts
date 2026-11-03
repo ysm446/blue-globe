@@ -30,6 +30,7 @@ interface WeatherLocation {
 }
 
 type UiFont = 'noto-sans-jp' | 'yu-gothic-ui' | 'meiryo-ui' | 'biz-udp-gothic' | 'yu-mincho';
+type CruiseMode = 'analog' | 'stepped'; // analog は押している間に速さが変わり、stepped は 1 回押すごとに 1 段変わる
 
 interface GraphicsSettings {
   fps_limit: number; // 0 はモニターのリフレッシュレートに合わせる
@@ -56,6 +57,7 @@ interface GraphicsSettings {
   cloud_puffiness: number; // 立体の雲のかたまりの起伏。1 がもとの強さ (0〜2)
   cloud_height: number; // 立体の雲の層の厚さの倍率。1 で上端が約 16km (0.5〜3)
   ui_font: UiFont; // 画面の文字のフォント
+  cruise_mode: CruiseMode; // 地域ビューの巡航の操作
 }
 
 interface PanelSettings {

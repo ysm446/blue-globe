@@ -387,12 +387,18 @@
             <output id="exposure-compensation-value" for="exposure-compensation"></output>
           </div>
           <button class="reset-button" data-reset="exposure_compensation" type="button" aria-label="露出補正を既定に戻す" title="既定に戻す"></button>
+          <label for="cruise-mode">巡航の操作</label>
+          <select id="cruise-mode">
+            <option value="analog">アナログ式</option>
+            <option value="stepped">段階式</option>
+          </select>
+          <button class="reset-button" data-reset="cruise_mode" type="button" aria-label="巡航の操作を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
           <label class="check-row"><input id="exposure-toggle" type="checkbox" />自動露出(通常・天気モード)</label>
           <button class="reset-button" data-reset="auto_exposure" type="button" aria-label="自動露出を既定に戻す" title="既定に戻す"></button>
         </div>
-        <p class="settings-help">焦点距離はフルサイズ換算です。画角は今の窓での縦の角度で、焦点距離と連動します。露出補正は通常・天気モードで効きます。</p>
+        <p class="settings-help">焦点距離はフルサイズ換算です。画角は今の窓での縦の角度で、焦点距離と連動します。露出補正は通常・天気モードで効きます。巡航(地域ビューの W/S)は、アナログ式では押している間に速さが変わり、段階式では 1 回押すごとに 1 段変わります。</p>
         <button class="reset-all" data-reset-section type="button">すべて既定に戻す</button>
       </section>
 
