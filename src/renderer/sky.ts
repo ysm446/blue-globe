@@ -104,6 +104,7 @@ void main() {
 
 const SUN_FS = /* glsl */ `
 precision highp float;
+uniform vec3 uTint;
 varying vec2 vOffset;
 void main() {
   float d = length(vOffset);
@@ -111,7 +112,7 @@ void main() {
   // 周りの光はここで丸く描く
   float core = smoothstep(0.02, 0.012, d) * 4.0;
   float glow = (0.0009 / (d * d + 0.0009) * 1.5 + 0.012 / (d + 0.03) * 0.35) * smoothstep(1.0, 0.2, d);
-  gl_FragColor = vec4(vec3(1.0, 0.97, 0.9) * core + vec3(1.0, 0.84, 0.62) * glow, 1.0);
+  gl_FragColor = vec4((vec3(1.0, 0.97, 0.9) * core + vec3(1.0, 0.84, 0.62) * glow) * uTint, 1.0);
   #include <colorspace_fragment>
 }
 `;
@@ -168,7 +169,7 @@ export function createSun(halfSize: number): THREE.Mesh {
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(2, 2),
     new THREE.ShaderMaterial({
-      uniforms: { uHalfSize: { value: halfSize } },
+      uniforms: { uHalfSize: { value: halfSize }, uTint: { value: new THREE.Vector3(1, 1, 1) } },
       vertexShader: SUN_VS,
       fragmentShader: SUN_FS,
       transparent: true,
@@ -222,6 +223,11 @@ export class Sky {
     this.sunPosition.copy(this.sunDir).multiplyScalar(SUN_DISTANCE).add(camera);
     this.sun.position.copy(this.sunPosition);
     this.planetOffsets.forEach((offset, i) => this.planets[i].position.copy(offset).add(camera));
+  }
+
+  // 地平線の近くで大気を長く通った太陽の色。白は (1, 1, 1)
+  setSunTint(tint: THREE.Vector3): void {
+    (this.sun.material as THREE.ShaderMaterial).uniforms.uTint.value.copy(tint);
   }
 
   // 太陽系の場面が星と太陽を描く間は、こちらでは月だけを描く

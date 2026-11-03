@@ -332,12 +332,29 @@ void main() {
   // 視線が地球の中心に最も近づく高さで濃さを決める。大気の中から上を向く視線では、カメラの高さになる
   float along = dot(cameraPosition, ray);
   float closest = along < 0.0 ? sqrt(max(dot(cameraPosition, cameraPosition) - along * along, 0.0)) : length(cameraPosition);
+  // 視線が最も低く通る点での太陽の高さ。0 で昼と夜の境目
+  vec3 lowest = along < 0.0 ? cameraPosition - ray * along : cameraPosition;
+  float sunHeight = dot(normalize(lowest), uSunDir);
   closest = 1.0 + (closest - 1.0) * uThinness;
   float exitAngle = sqrt(max(1.0 - pow(closest / length(vPos), 2.0), 0.0));
   float inner = smoothstep(0.0, 0.38, exitAngle);
   float lit = smoothstep(-0.25, 0.55, dot(n, uSunDir));
   float a = pow(inner, 2.6) * lit * 0.9;
-  gl_FragColor = vec4(vec3(0.27, 0.55, 1.0) * a, a);
+  // 太陽の向きへの強い散乱 (前方散乱)。日の出や日の入りのように、縁の向こうに太陽があると縁が細く明るく光る。
+  // 昼と夜の境目では、光が大気を長く通るので低い層は黄色から橙に、その上の層は青紫になる
+  float toward = max(dot(ray, uSunDir), 0.0);
+  float dusk = 1.0 - smoothstep(-0.05, 0.3, sunHeight);
+  float reach = smoothstep(-0.18, 0.0, sunHeight); // 地球の影に深く入った層には光が届かない
+  float layer = clamp((closest - 1.0) / 0.07, 0.0, 1.0); // 0 が地表、1 が大気の上端
+  float facingSun = dusk * smoothstep(0.8, 0.97, toward); // 縁のほぼ真後ろに太陽があるとき
+  // 昼側の青い光は、境目で太陽の方を見るときは青紫にして弱める
+  vec3 color = mix(vec3(0.27, 0.55, 1.0), vec3(0.42, 0.3, 1.0), facingSun) * a * a * (1.0 - 0.45 * facingSun);
+  vec3 warm = mix(vec3(1.0, 0.82, 0.45), vec3(1.0, 0.32, 0.04), smoothstep(0.75, 0.2, toward)); // 太陽から離れるほど赤い
+  vec3 tint = mix(vec3(0.85, 0.92, 1.0), warm, dusk);
+  float forward = pow(toward, 4.0) * 0.8 + pow(toward, 60.0) * 1.4 + pow(toward, 3000.0) * 3.0;
+  float density = exp(-layer * 16.0) * inner * inner; // 低い層ほど濃く、縁を細く見せる
+  color += tint * forward * density * reach;
+  gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
 }
 `;

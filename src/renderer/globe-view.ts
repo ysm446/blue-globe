@@ -12,7 +12,7 @@ import { MAP_CITIES, tierAtAltitude, type MapCity } from './cities';
 import type { DemoPlace } from './demo';
 import { el } from './dom';
 import { CLOUD_ALTITUDE, RealisticEarth } from './earth';
-import { adaptExposure, earthClearance, screenPresence, targetExposure } from './exposure';
+import { adaptExposure, earthClearance, horizonReddening, screenPresence, targetExposure } from './exposure';
 import { formatFrameStats, GpuTimer } from './frame-timer';
 import { createBorders, createCoastlines, Globe, lonLatToVector3 } from './globe';
 import { GpuParticleSystem } from './gpu-particles';
@@ -961,6 +961,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const toSun = new THREE.Vector3();
   const sunNdc = new THREE.Vector3();
   const cameraForward = new THREE.Vector3();
+  let lensFlare = true;
+  const sunTint = new THREE.Vector3(1, 1, 1);
+  const glareTint = new THREE.Vector3();
   function updateExposure(dt: number): void {
     toSun.copy(sky.sunPosition).sub(camera.position).normalize();
     let inFront: boolean;
@@ -977,12 +980,22 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const facing = camera.position.dot(sky.sunDir) / camera.position.length();
     exposure = adaptExposure(exposure, autoExposure ? targetExposure(facing, visibility) : 1, dt);
     hdr.setExposure(exposure * 2 ** exposureCompensation, autoExposure ? visibility : 0, THREE.MathUtils.lerp(1, regionBloom, regionBlend));
+    // 地平線の近くの太陽は赤く、レンズの光の筋とかぶりもその色にする。
+    // 縁から少しだけ顔を出した太陽でも十分にまぶしいので、見えている割合の平方根で強さを決める。
+    // 画面全体のかぶりは日の出や日の入りの間だけ強くし、普段の太陽では弱くする
+    const redden = horizonReddening(camera.position.toArray(), toSun.toArray(), GLOBE_RADIUS);
+    sunTint.set(1, 1 - 0.4 * redden, 1 - 0.7 * redden);
+    sky.setSunTint(sunTint);
+    glareTint.set(1, 0.75, 0.5).multiply(sunTint);
+    const glare = lensFlare && !solar.active ? Math.sqrt(visibility) : 0;
+    hdr.setSunGlare((sunNdc.x + 1) / 2, (sunNdc.y + 1) / 2, glare, glareTint, 0.15 + 0.85 * redden);
   }
 
   let fpsLimit = 0;
   const fpsCounter = el('fps-counter');
   function applyGraphics(graphics: GraphicsSettings): void {
     fpsLimit = graphics.fps_limit;
+    lensFlare = graphics.lens_flare;
     cruiseBank = graphics.cruise_bank;
     if (graphics.cruise_mode !== cruiseMode) {
       // 巡航中に切り替えても、今の速さのまま続ける。段階式では、次に W/S を押したときに整数の段へ移る

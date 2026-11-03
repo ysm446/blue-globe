@@ -179,6 +179,7 @@ export function initSettingsDialog(
     volume_clouds: el<HTMLInputElement>('volume-clouds-toggle'),
     moonlight: el<HTMLInputElement>('moonlight-toggle'),
     cruise_bank: el<HTMLInputElement>('cruise-bank-toggle'),
+    lens_flare: el<HTMLInputElement>('lens-flare-toggle'),
   };
   const sliders = {
     // 対数にして、1 目盛りごとに同じ比率で変わるようにする

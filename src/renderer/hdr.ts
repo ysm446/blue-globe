@@ -17,12 +17,22 @@ const FINAL_SHADER = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
     uExposure: { value: 1 },
+    uSunUv: { value: new THREE.Vector2(0.5, 0.5) },
+    uGlare: { value: 0 },
+    uGlareTint: { value: new THREE.Vector3(1, 1, 1) },
+    uVeil: { value: 0 },
+    uAspect: { value: 1 },
   },
   vertexShader: FULLSCREEN_VS,
   fragmentShader: /* glsl */ `
     precision highp float;
     uniform sampler2D tDiffuse;
     uniform float uExposure;
+    uniform vec2 uSunUv;
+    uniform float uGlare;
+    uniform vec3 uGlareTint;
+    uniform float uVeil;
+    uniform float uAspect;
     varying vec2 vUv;
     ${PIXEL_JITTER_GLSL}
     vec3 aces(vec3 x) {
@@ -31,8 +41,23 @@ const FINAL_SHADER = {
     vec3 toSrgb(vec3 c) {
       return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
     }
+    // レンズの中で太陽の光が散って見えるもの。太陽の前に地球があっても、その上に重なる。
+    // 光の輪、放射状の光の筋、画面全体のかぶりを足す。距離は画面の高さを 1 とする
+    vec3 sunGlare() {
+      vec2 d = (vUv - uSunUv) * vec2(uAspect, 1.0);
+      float r = length(d);
+      float angle = atan(d.y, d.x);
+      float halo = 0.0004 / (r * r + 0.0004) * 1.5 + 0.02 / (r * r + 0.02) * 0.25 * uVeil;
+      // 筋の太さと長さを揃えないよう、別の周期で強さを変える
+      float rays = pow(abs(cos(angle * 3.0 + 0.4)), 300.0) * (0.7 + 0.3 * sin(angle * 5.0))
+        + pow(abs(cos(angle * 5.0 + 1.3)), 500.0) * 0.5 * (0.6 + 0.4 * cos(angle * 3.0 + 2.0));
+      rays *= 0.008 / (r + 0.01) * smoothstep(0.3, 0.0, r);
+      float veil = 0.025 * uVeil;
+      return uGlareTint * (halo + rays + veil) * uGlare;
+    }
     void main() {
-      vec3 color = toSrgb(aces(max(texture2D(tDiffuse, vUv).rgb, vec3(0.0)) * uExposure));
+      vec3 scene = max(texture2D(tDiffuse, vUv).rgb, vec3(0.0)) + sunGlare();
+      vec3 color = toSrgb(aces(scene * uExposure));
       // 暗い背景の階調が帯状に見えないよう、8 ビットの 1 段分より小さいノイズを足す
       gl_FragColor = vec4(color + (pixelJitter() - 0.5) / 255.0, 1.0);
     }
@@ -65,7 +90,17 @@ export class HdrPipeline {
     this.bloom = new UnrealBloomPass(size, BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD);
     this.composer.addPass(this.bloom);
     this.finalPass = new ShaderPass(FINAL_SHADER);
+    this.finalPass.uniforms.uAspect.value = size.x / size.y;
     this.composer.addPass(this.finalPass);
+  }
+
+  // x, y は太陽の画面上の位置 (0〜1。左下が 0)。strength が 0 のときは描かない。
+  // veil は大きな光の輪と画面全体のかぶりの強さ (0〜1)
+  setSunGlare(x: number, y: number, strength: number, tint: THREE.Vector3, veil: number): void {
+    this.finalPass.uniforms.uSunUv.value.set(x, y);
+    this.finalPass.uniforms.uGlare.value = strength;
+    this.finalPass.uniforms.uGlareTint.value.copy(tint);
+    this.finalPass.uniforms.uVeil.value = veil;
   }
 
   // exposure は画面全体の明るさの倍率、sunVisibility は太陽の見えている割合 (0〜1)
@@ -107,5 +142,6 @@ export class HdrPipeline {
 
   setSize(width: number, height: number): void {
     this.composer.setSize(width, height);
+    this.finalPass.uniforms.uAspect.value = width / height;
   }
 }

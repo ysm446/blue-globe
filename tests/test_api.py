@@ -93,6 +93,7 @@ class SettingsApiTest(unittest.TestCase):
         "ui_font": "meiryo-ui",
         "cruise_mode": "stepped",
         "cruise_bank": False,
+        "lens_flare": False,
     }
 
     def test_graphics_defaults(self):

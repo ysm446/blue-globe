@@ -105,6 +105,7 @@ class GraphicsUpdate(BaseModel):
     ui_font: Literal["noto-sans-jp", "yu-gothic-ui", "meiryo-ui", "biz-udp-gothic", "yu-mincho"]
     cruise_mode: Literal["analog", "stepped"]
     cruise_bank: bool
+    lens_flare: bool
 
 
 @app.get("/health")

@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   adaptExposure,
   earthClearance,
+  horizonReddening,
   screenPresence,
   targetExposure,
 } from '../src/renderer/exposure.ts';
@@ -55,4 +56,20 @@ test('十分時間がたつと目標に落ち着く', () => {
   let exposure = 0.3;
   for (let i = 0; i < 600; i++) exposure = adaptExposure(exposure, 1, 1 / 60);
   assert.ok(Math.abs(exposure - 1) < 0.01);
+});
+
+test('太陽への視線が地平線をかすめるほど赤くなる', () => {
+  // カメラは地球の中心から x 方向に 3 の位置。太陽は -x 方向 (地球の向こう) に少しずらして置く
+  const camera = [3, 0, 0] as const;
+  const toward = (offset: number): [number, number, number] => {
+    const x = -3, y = offset;
+    const n = Math.hypot(x, y);
+    return [x / n, y / n, 0];
+  };
+  // 視線が地球の中心から 1.0 の距離を通るとき (縁をかすめる) は最も赤い。offset は 3h / √(9 - h²)
+  assert.ok(horizonReddening(camera, toward(3 / Math.sqrt(8)), 1) > 0.99);
+  // 高さ 1.1 (大気より上) を通ると赤くならない
+  assert.equal(horizonReddening(camera, toward(3.3 / Math.sqrt(9 - 1.21)), 1), 0);
+  // 地球を背にして太陽を見ているときは赤くならない
+  assert.equal(horizonReddening(camera, [1, 0, 0], 1), 0);
 });

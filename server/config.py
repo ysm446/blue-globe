@@ -40,6 +40,7 @@ DEFAULT_SETTINGS = {
         "ui_font": "noto-sans-jp",  # 画面の文字のフォント。ui-font.ts の UI_FONTS を参照
         "cruise_mode": "analog",  # 巡航の操作。analog は押している間に速さが変わり、stepped は 1 回押すごとに 1 段
         "cruise_bank": True,  # 巡航で曲がるときに画面を傾ける
+        "lens_flare": True,  # 太陽が見えるときの、レンズの光の筋と画面のかぶり
     },
     # True で開いている。カメラのパネルは計器のようなものなので、既定では閉じておく
     "panels": {"news": True, "hourly": True, "weekly": True, "details": True, "camera": False},

@@ -17,6 +17,15 @@ export function earthClearance(camera: Vec3, direction: Vec3, radius: number): n
   return smoothstep(radius * 0.99, radius * 1.05, closest);
 }
 
+// 太陽への視線が大気を低く通るほど 1 (0〜1)。地平線の近くの太陽は、光が大気を長く通って赤くなる。
+// 視線が地球から離れていく向き (地球を背にしている) なら 0
+export function horizonReddening(camera: Vec3, direction: Vec3, radius: number): number {
+  const along = dot(camera, direction);
+  if (along >= 0) return 0;
+  const closest = Math.sqrt(Math.max(0, dot(camera, camera) - along * along));
+  return 1 - smoothstep(radius, radius * 1.04, closest);
+}
+
 // 画面に入っている割合 (0〜1)。少し外にあっても光は届くので、画面の外まで滑らかに減らす
 export function screenPresence(ndcX: number, ndcY: number, inFront: boolean): number {
   if (!inFront) return 0;
