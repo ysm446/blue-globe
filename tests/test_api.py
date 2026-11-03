@@ -83,6 +83,10 @@ class SettingsApiTest(unittest.TestCase):
         "glint_strength": 2.0,
         "region_detail": False,
         "volume_clouds": False,
+        "cloud_resolution": 100,
+        "cloud_edge_detail": 0.2,
+        "cloud_edge_sharpness": 0.9,
+        "cloud_puffiness": 1.5,
     }
 
     def test_graphics_defaults(self):
@@ -123,6 +127,10 @@ class SettingsApiTest(unittest.TestCase):
             {"focal_length": 70.1},
             {"exposure_compensation": 2.5},
             {"exposure_compensation": -2.5},
+            {"cloud_resolution": 60},
+            {"cloud_edge_detail": 1.1},
+            {"cloud_edge_sharpness": -0.1},
+            {"cloud_puffiness": 2.1},
         ):
             response = self.client.put("/settings/graphics", json={**self.GRAPHICS, **change})
             self.assertEqual(response.status_code, 422)
@@ -144,6 +152,10 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["glint_strength"], 1.3)
         self.assertEqual(graphics["focal_length"], 24)
         self.assertEqual(graphics["exposure_compensation"], 0)
+        self.assertEqual(graphics["cloud_resolution"], 50)
+        self.assertEqual(graphics["cloud_edge_detail"], 0.7)
+        self.assertEqual(graphics["cloud_edge_sharpness"], 0.3)
+        self.assertEqual(graphics["cloud_puffiness"], 1.0)
 
     def test_panels_default_to_open(self):
         # カメラのパネルだけは既定で閉じている

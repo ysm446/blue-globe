@@ -213,6 +213,7 @@
         <button id="tab-location" type="button" role="tab" aria-controls="panel-location">地点</button>
         <button id="tab-performance" type="button" role="tab" aria-controls="panel-performance">パフォーマンス</button>
         <button id="tab-graphics" type="button" role="tab" aria-controls="panel-graphics">グラフィックス</button>
+        <button id="tab-clouds" type="button" role="tab" aria-controls="panel-clouds">雲</button>
         <button id="tab-camera" type="button" role="tab" aria-controls="panel-camera">カメラ</button>
         <button id="tab-music" type="button" role="tab" aria-controls="panel-music">音楽</button>
         <button id="tab-credit" type="button" role="tab" aria-controls="panel-credit">出典</button>
@@ -265,12 +266,6 @@
             <output id="star-brightness-value" for="star-brightness"></output>
           </div>
           <button class="reset-button" data-reset="star_brightness" type="button" aria-label="星の明るさを既定に戻す" title="既定に戻す"></button>
-          <label for="cloud-shadow">雲の影の濃さ</label>
-          <div class="range-row">
-            <input id="cloud-shadow" type="range" min="0" max="100" step="5" />
-            <output id="cloud-shadow-value" for="cloud-shadow"></output>
-          </div>
-          <button class="reset-button" data-reset="cloud_shadow" type="button" aria-label="雲の影の濃さを既定に戻す" title="既定に戻す"></button>
           <label for="region-bloom">地域ビューのにじみ</label>
           <div class="range-row">
             <input id="region-bloom" type="range" min="0" max="100" step="5" />
@@ -283,10 +278,6 @@
             <output id="glint-strength-value" for="glint-strength"></output>
           </div>
           <button class="reset-button" data-reset="glint_strength" type="button" aria-label="海の反射の強さを既定に戻す" title="既定に戻す"></button>
-        </div>
-        <div class="check-line">
-          <label class="check-row"><input id="volume-clouds-toggle" type="checkbox" />近づいたときに雲を立体で描く(天気モード。重くなります)</label>
-          <button class="reset-button" data-reset="volume_clouds" type="button" aria-label="雲の立体表示を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
           <label class="check-row"><input id="bloom-toggle" type="checkbox" />光のにじみ(通常・天気モード)</label>
@@ -303,6 +294,50 @@
         <div class="check-line">
           <label class="check-row"><input id="planet-labels-toggle" type="checkbox" />惑星の名前を表示(通常・天気モード)</label>
           <button class="reset-button" data-reset="show_planet_labels" type="button" aria-label="惑星の名前の表示を既定に戻す" title="既定に戻す"></button>
+        </div>
+        <button class="reset-all" data-reset-section type="button">すべて既定に戻す</button>
+      </section>
+
+      <section id="panel-clouds" role="tabpanel" aria-labelledby="tab-clouds" hidden>
+        <div class="field-grid">
+          <label for="cloud-shadow">雲の影の濃さ</label>
+          <div class="range-row">
+            <input id="cloud-shadow" type="range" min="0" max="100" step="5" />
+            <output id="cloud-shadow-value" for="cloud-shadow"></output>
+          </div>
+          <button class="reset-button" data-reset="cloud_shadow" type="button" aria-label="雲の影の濃さを既定に戻す" title="既定に戻す"></button>
+        </div>
+        <div class="check-line">
+          <label class="check-row"><input id="volume-clouds-toggle" type="checkbox" />近づいたときに雲を立体で描く(天気モード。重くなります)</label>
+          <button class="reset-button" data-reset="volume_clouds" type="button" aria-label="雲の立体表示を既定に戻す" title="既定に戻す"></button>
+        </div>
+        <p class="settings-help">以下は立体の雲(地域ビューと、地球ビューで近づいたとき)の見た目です。</p>
+        <div class="field-grid">
+          <label for="cloud-resolution">雲の解像度</label>
+          <select id="cloud-resolution">
+            <option value="100">100%(鮮明・重い)</option>
+            <option value="75">75%</option>
+            <option value="50">50%(軽い)</option>
+          </select>
+          <button class="reset-button" data-reset="cloud_resolution" type="button" aria-label="雲の解像度を既定に戻す" title="既定に戻す"></button>
+          <label for="cloud-edge-detail">縁の細かさ</label>
+          <div class="range-row">
+            <input id="cloud-edge-detail" type="range" min="0" max="100" step="5" />
+            <output id="cloud-edge-detail-value" for="cloud-edge-detail"></output>
+          </div>
+          <button class="reset-button" data-reset="cloud_edge_detail" type="button" aria-label="縁の細かさを既定に戻す" title="既定に戻す"></button>
+          <label for="cloud-edge-sharpness">縁の鋭さ</label>
+          <div class="range-row">
+            <input id="cloud-edge-sharpness" type="range" min="0" max="100" step="5" />
+            <output id="cloud-edge-sharpness-value" for="cloud-edge-sharpness"></output>
+          </div>
+          <button class="reset-button" data-reset="cloud_edge_sharpness" type="button" aria-label="縁の鋭さを既定に戻す" title="既定に戻す"></button>
+          <label for="cloud-puffiness">もこもこ</label>
+          <div class="range-row">
+            <input id="cloud-puffiness" type="range" min="0" max="200" step="5" />
+            <output id="cloud-puffiness-value" for="cloud-puffiness"></output>
+          </div>
+          <button class="reset-button" data-reset="cloud_puffiness" type="button" aria-label="もこもこを既定に戻す" title="既定に戻す"></button>
         </div>
         <button class="reset-all" data-reset-section type="button">すべて既定に戻す</button>
       </section>

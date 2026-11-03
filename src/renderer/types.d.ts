@@ -46,6 +46,10 @@ interface GraphicsSettings {
   region_bloom: number; // 地域ビューの光のにじみの強さ。地球ビューを 1 とした倍率 (0〜1)
   region_detail: boolean; // 地域ビューで高解像度の画像を取得して使う
   volume_clouds: boolean; // 近づいたときに雲を立体で描く
+  cloud_resolution: number; // 立体の雲を描く解像度 (画面に対する %。50, 75, 100)
+  cloud_edge_detail: number; // 立体の雲の縁の細かさ (0〜1)
+  cloud_edge_sharpness: number; // 立体の雲の縁の鋭さ (0〜1)
+  cloud_puffiness: number; // 立体の雲のかたまりの起伏。1 がもとの強さ (0〜2)
 }
 
 interface PanelSettings {

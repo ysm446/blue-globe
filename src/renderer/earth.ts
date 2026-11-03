@@ -8,7 +8,7 @@ import { CLOUD_SUN_COLOR_GLSL, VALUE_NOISE_GLSL } from './glsl';
 import { easeInOut } from './math';
 import type { RegionDetail } from './region-detail';
 import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
-import { BAKED_SHADOW_GLSL, CLOUD_UV_GLSL, VolumeClouds } from './volume-clouds';
+import { BAKED_SHADOW_GLSL, CLOUD_UV_GLSL, VolumeClouds, type CloudStyle } from './volume-clouds';
 
 export const CLOUD_ALTITUDE = 0.008; // 実際より高い。視差が見える程度に誇張している
 const OPEN_SEA_COLOR = ['0.0006', '0.0015', '0.007']; // 地球ビューの地表の画像の沖の色 (線形)。世界中でほぼ同じ
@@ -388,6 +388,10 @@ export class RealisticEarth {
 
   setVolumeCloudsEnabled(enabled: boolean): void {
     this.volumeEnabled = enabled;
+  }
+
+  setVolumeCloudStyle(style: CloudStyle): void {
+    this.volume.setStyle(style);
   }
 
   // 立体の雲の影を焼く範囲の中心にする地表の点と、そこからカメラまでの距離

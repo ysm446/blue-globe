@@ -95,6 +95,10 @@ class GraphicsUpdate(BaseModel):
     glint_strength: float = Field(ge=0, le=3)
     region_detail: bool
     volume_clouds: bool
+    cloud_resolution: Literal[50, 75, 100]
+    cloud_edge_detail: float = Field(ge=0, le=1)
+    cloud_edge_sharpness: float = Field(ge=0, le=1)
+    cloud_puffiness: float = Field(ge=0, le=2)
 
 
 @app.get("/health")

@@ -156,6 +156,7 @@ export function initSettingsDialog(
   const selects = {
     fps_limit: el<HTMLSelectElement>('fps-limit'),
     render_scale: el<HTMLSelectElement>('render-scale'),
+    cloud_resolution: el<HTMLSelectElement>('cloud-resolution'),
   };
   const toggles = {
     bloom: el<HTMLInputElement>('bloom-toggle'),
@@ -171,6 +172,9 @@ export function initSettingsDialog(
     // 対数にして、1 目盛りごとに同じ比率で変わるようにする
     star_brightness: graphicsSlider('star-brightness', (position) => 2 ** position, Math.log2, (value) => `×${value.toFixed(2)}`),
     cloud_shadow: percentSlider('cloud-shadow'),
+    cloud_edge_detail: percentSlider('cloud-edge-detail'),
+    cloud_edge_sharpness: percentSlider('cloud-edge-sharpness'),
+    cloud_puffiness: percentSlider('cloud-puffiness'),
     region_bloom: percentSlider('region-bloom'),
     glint_strength: percentSlider('glint-strength'),
     focal_length: graphicsSlider('focal-length', (position) => position, (value) => value, (value) => `${Number.isInteger(value) ? value : value.toFixed(1)}mm`),

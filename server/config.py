@@ -29,6 +29,11 @@ DEFAULT_SETTINGS = {
         "glint_strength": 1.3,  # 1 が地球の写真に合わせた強さ
         "region_detail": True,
         "volume_clouds": True,
+        # 立体の雲の見た目。volume-clouds.ts の CloudStyle を参照
+        "cloud_resolution": 50,
+        "cloud_edge_detail": 0.7,
+        "cloud_edge_sharpness": 0.3,
+        "cloud_puffiness": 1.0,
     },
     # True で開いている。カメラのパネルは計器のようなものなので、既定では閉じておく
     "panels": {"news": True, "hourly": True, "weekly": True, "details": True, "camera": False},

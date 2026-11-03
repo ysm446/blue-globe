@@ -8,7 +8,6 @@ import { needsShadowBake, shadowBasis, shadowHalfSize, type ShadowBake } from '.
 import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, PIXEL_JITTER_GLSL } from './glsl';
 import type { Vec3 } from './math';
 
-const RESOLUTION_SCALE = 0.5;
 const CLOUD_BASE = 0.0005; // 約 3km
 const CLOUD_TOP = 0.0045; // 約 29km。実際の 2 倍ほどあり、遠くから見ても起伏が分かるように誇張している
 const SHAPE_PERIOD = 0.03; // 大きなかたまりのノイズが繰り返す長さ (約 190km)
@@ -16,6 +15,15 @@ const DETAIL_PERIOD = 0.007; // 細かいかたまりのノイズが繰り返す
 const SWELL_PERIOD = 0.083; // 雲頂の大きなうねりの周期 (約 530km)。他の周期の整数倍にしない
 const WARP_PERIOD = 0.02;
 const WARP_AMOUNT = 0.003; // 雲マップの画素の四角が見えないよう、引く位置を約 10km までずらす
+// 縁を細かくする。雲マップの 1 画素 (約 10km) より細かい形を足す。高さによらない位置で引くので、上から見た輪郭だけが変わる
+const EDGE_WARP_PERIOD = 0.004; // 約 25km
+const EDGE_WARP_AMOUNT = 0.0009; // 約 6km
+const EDGE_ERODE_PERIOD = 0.002; // 約 13km
+const EDGE_ERODE_AMOUNT = 0.8; // 縁で、雲の量を最大この割合だけ増減する
+// 近くに晴れ間がある点だけを縁とみなす。雲の量や傾きでは、全体が薄い雲や、衛星のざらつきで濃さが揺れる雲の内側と見分けられない
+const EDGE_REACH = 1.5; // 晴れ間を探す距離 (雲マップの画素。約 15km)
+const EDGE_CLEAR = 0.03; // 周りの最も少ない量がこれ以下なら縁
+const EDGE_INSIDE = 0.1; // これ以上なら内側
 const EXTINCTION = 900; // 地球の半径 1 あたりの光の通りにくさ
 const CLOUD_MAP_TEXEL = (2 * Math.PI) / 4096;
 const SHADOW_MAP_SIZE = 1024;
@@ -25,6 +33,17 @@ const SHADOW_MIN_STRIDE = 0.00015;
 const FAR_SHADOW_START = 0.003; // 太陽の方向へ歩いて確かめる距離 (約 0.0045) の手前から、焼き込んだ影に引き継ぐ
 const FAR_SHADOW_FULL = 0.0055;
 const NO_CLOUD_DEPTH = -2; // 雲がない画素の深さ。どの点よりも地球の側にして、影を落とさない
+const SHAPE_NOISE_MEAN = 0.478; // 大きなかたまりのノイズの平均。起伏の強さを変えても雲の量が変わらないよう、平均の周りで伸び縮みさせる
+const SHARPEST_SOFTNESS = 0.06;
+const SOFTEST_SOFTNESS = 0.3;
+
+// 設定画面で変えられる雲の形。解像度 0.5、縁の 2 つが 0、起伏が 1 で、設定を足す前の見た目になる
+export interface CloudStyle {
+  resolution: number; // 画面に対する、雲を描く解像度の割合 (0.5〜1)
+  edgeDetail: number; // 縁の細かさ (0〜1)
+  edgeSharpness: number; // 縁の鋭さ (0〜1)
+  puffiness: number; // かたまりの起伏の強さ。1 がもとの強さ (0〜2)
+}
 
 // 雲マップは左端が経度 -180 度、1 行目が北端
 export const CLOUD_UV_GLSL = /* glsl */ `
@@ -59,6 +78,9 @@ uniform sampler2D uCloud;
 uniform sampler3D uNoise;
 uniform vec3 uSunDir;
 uniform float uRadius;
+uniform float uEdgeDetail; // 縁の細かさ (0〜1)
+uniform float uSoftness; // 縁のぼけ幅。小さいほど縁が締まる
+uniform float uPuffiness; // かたまりの起伏の強さ。1 がもとの強さ
 ${CLOUD_UV_GLSL}
 ${PIXEL_JITTER_GLSL}
 
@@ -69,6 +91,8 @@ const float SIGMA = ${EXTINCTION.toFixed(1)};
 float cloudLod;
 float shapeLod;
 float detailLod;
+float edgeWarpLod;
+float edgeErodeLod;
 float columnTop; // 最後に調べた点の雲頂の高さ (0〜1)
 
 // 遠いほど 1 画素が広いので、粗いノイズで足りる
@@ -76,6 +100,8 @@ void setFootprint(float footprint) {
   cloudLod = max(log2(footprint / ${CLOUD_MAP_TEXEL.toFixed(6)}), 0.0);
   shapeLod = max(log2(footprint * ${(CLOUD_NOISE_SIZE / SHAPE_PERIOD).toFixed(1)}), 0.0);
   detailLod = max(log2(footprint * ${(CLOUD_NOISE_SIZE / DETAIL_PERIOD).toFixed(1)}), 0.0);
+  edgeWarpLod = max(log2(footprint * ${(CLOUD_NOISE_SIZE / EDGE_WARP_PERIOD).toFixed(1)}), 0.0);
+  edgeErodeLod = max(log2(footprint * ${(CLOUD_NOISE_SIZE / EDGE_ERODE_PERIOD).toFixed(1)}), 0.0);
 }
 
 // 球との交点。当たらなければ x が y より大きい
@@ -95,6 +121,29 @@ float densityAt(vec3 p, bool withDetail) {
   vec2 warp = textureLod(uNoise, p / ${WARP_PERIOD.toFixed(3)}, shapeLod + 1.0).rg - 0.5;
   vec3 warped = normalize(up + vec3(warp.x, warp.y, warp.x - warp.y) * ${WARP_AMOUNT.toFixed(4)});
   float cover = textureLod(uCloud, cloudUvOf(warped), cloudLod).r;
+  if (cover <= 0.0) return 0.0;
+  // 縁だけを細かくする。雲の内側を揺らすと、薄い雲や濃さがゆるやかに変わる雲の全体に斑点が出る
+  // 画素より細かいノイズは形として見えず、ちらつくだけなので、遠くから見るときは効かせない
+  float edgeFade = uEdgeDetail * (1.0 - smoothstep(3.0, 4.5, edgeWarpLod));
+  float erodeFade = uEdgeDetail * (1.0 - smoothstep(3.0, 4.5, edgeErodeLod));
+  if (max(edgeFade, erodeFade) > 0.0) {
+    vec2 uv = cloudUvOf(warped);
+    vec2 reach = vec2(${(EDGE_REACH / 4096).toFixed(8)}, ${(EDGE_REACH / 2048).toFixed(8)}) * exp2(cloudLod);
+    float nearest = min(
+      min(textureLod(uCloud, uv + vec2(reach.x, 0.0), cloudLod).r, textureLod(uCloud, uv - vec2(reach.x, 0.0), cloudLod).r),
+      min(textureLod(uCloud, uv + vec2(0.0, reach.y), cloudLod).r, textureLod(uCloud, uv - vec2(0.0, reach.y), cloudLod).r));
+    float edge = 1.0 - smoothstep(${EDGE_CLEAR.toFixed(2)}, ${EDGE_INSIDE.toFixed(2)}, nearest);
+    vec3 ground = up * uRadius;
+    if (edge * edgeFade > 0.0) {
+      vec2 fine = textureLod(uNoise, ground / ${EDGE_WARP_PERIOD.toFixed(4)}, edgeWarpLod).rg - 0.5;
+      warped = normalize(warped + vec3(fine.y, fine.x - fine.y, fine.x) * ${EDGE_WARP_AMOUNT.toFixed(4)} * edge * edgeFade);
+      cover = textureLod(uCloud, cloudUvOf(warped), cloudLod).r;
+    }
+    if (edge * erodeFade > 0.0) {
+      float grain = textureLod(uNoise, ground / ${EDGE_ERODE_PERIOD.toFixed(4)}, edgeErodeLod).r;
+      cover *= 1.0 + (grain - 0.5) * 2.0 * ${EDGE_ERODE_AMOUNT.toFixed(2)} * edge * erodeFade;
+    }
+  }
   if (cover < 0.015) return 0.0;
   float shape = textureLod(uNoise, p / ${SHAPE_PERIOD.toFixed(3)}, shapeLod).r;
   // 雲頂の高さをノイズで変え、厚い雲の上面にも起伏を作る。粒が規則的に並ばないよう、長い周期のノイズも混ぜる
@@ -102,8 +151,9 @@ float densityAt(vec3 p, bool withDetail) {
   columnTop = mix(0.3, 1.0, smoothstep(0.2, 0.9, cover)) * mix(0.5, 1.0, smoothstep(0.2, 0.85, shape * 0.5 + swell * 0.5));
   float profile = smoothstep(0.0, 0.1, h) * (1.0 - smoothstep(columnTop * 0.6, columnTop, h));
   if (profile <= 0.0) return 0.0;
-  float erosion = (1.0 - shape) * mix(0.5, 0.25, cover);
-  float body = clamp((sqrt(cover) * profile * 1.6 - erosion) / 0.3, 0.0, 1.0);
+  float bumps = 1.0 - ${SHAPE_NOISE_MEAN.toFixed(3)} + (${SHAPE_NOISE_MEAN.toFixed(3)} - shape) * uPuffiness;
+  float erosion = bumps * mix(0.5, 0.25, cover);
+  float body = clamp((sqrt(cover) * profile * 1.6 - erosion) / uSoftness, 0.0, 1.0);
   if (withDetail && body > 0.0) {
     float detail = textureLod(uNoise, p / ${DETAIL_PERIOD.toFixed(3)}, detailLod).g;
     body = max(body - (1.0 - detail) * 0.35 * (1.0 - body), 0.0);
@@ -244,10 +294,11 @@ const COMPOSITE_FS = /* glsl */ `
 precision highp float;
 uniform sampler2D uVolume;
 uniform vec2 uSize;
+uniform float uSpread; // 雲を描いた画像の 0.75 画素を、画面の画素で表した長さ
 void main() {
   // 始点をずらした粒が見えないよう、周囲の 4 点をならす
   vec2 uv = gl_FragCoord.xy / uSize;
-  vec2 texel = ${(0.75 / RESOLUTION_SCALE).toFixed(2)} / uSize;
+  vec2 texel = uSpread / uSize;
   gl_FragColor = 0.25 * (
     texture2D(uVolume, uv + vec2(texel.x, texel.y)) +
     texture2D(uVolume, uv + vec2(-texel.x, texel.y)) +
@@ -284,6 +335,13 @@ export class VolumeClouds {
   private cloudVersion = 0;
   private focus: Vec3 = [0, 0, 1];
   private focusDistance = 1;
+  private resolutionScale = 0.5;
+  // 雲を描く処理と影を焼く処理で共有する
+  private readonly styleUniforms = {
+    uEdgeDetail: { value: 0 },
+    uSoftness: { value: SOFTEST_SOFTNESS },
+    uPuffiness: { value: 1 },
+  };
 
   constructor(radius: number, sunDir: THREE.Vector3, haze: { value: number }) {
     this.sunDir = sunDir;
@@ -308,6 +366,7 @@ export class VolumeClouds {
         uPixelAngle: { value: 0 },
         uAmount: { value: 0 },
         uHaze: haze,
+        ...this.styleUniforms,
         ...this.bakeUniforms,
       },
       vertexShader: FULLSCREEN_VS,
@@ -330,6 +389,7 @@ export class VolumeClouds {
         uBakeAxisU: { value: new THREE.Vector3() },
         uBakeAxisV: { value: new THREE.Vector3() },
         uBakeFootprint: { value: 0 },
+        ...this.styleUniforms,
       },
       vertexShader: FULLSCREEN_VS,
       fragmentShader: BAKE_FS,
@@ -345,6 +405,7 @@ export class VolumeClouds {
       uniforms: {
         uVolume: { value: this.target.texture },
         uSize: { value: new THREE.Vector2(1, 1) },
+        uSpread: { value: 1.5 },
       },
       vertexShader: FULLSCREEN_VS,
       fragmentShader: COMPOSITE_FS,
@@ -362,6 +423,20 @@ export class VolumeClouds {
   setCloudTexture(texture: THREE.Texture): void {
     this.marchMaterial.uniforms.uCloud.value = texture;
     this.cloudVersion++;
+  }
+
+  setStyle(style: CloudStyle): void {
+    const uniforms = this.styleUniforms;
+    const softness = THREE.MathUtils.lerp(SOFTEST_SOFTNESS, SHARPEST_SOFTNESS, style.edgeSharpness);
+    const changed =
+      uniforms.uEdgeDetail.value !== style.edgeDetail ||
+      uniforms.uSoftness.value !== softness ||
+      uniforms.uPuffiness.value !== style.puffiness;
+    uniforms.uEdgeDetail.value = style.edgeDetail;
+    uniforms.uSoftness.value = softness;
+    uniforms.uPuffiness.value = style.puffiness;
+    if (changed) this.cloudVersion++; // 形が変わると影も変わるので焼き直す
+    this.resolutionScale = style.resolution;
   }
 
   // amount は 0 で見えず、1 で本来の濃さ。厚みに掛けるので、厚い雲から先に見え始める
@@ -444,10 +519,11 @@ export class VolumeClouds {
     if (!this.mesh.visible) return;
     this.buildNoise();
     renderer.getDrawingBufferSize(this.bufferSize);
-    const width = Math.max(1, Math.ceil(this.bufferSize.x * RESOLUTION_SCALE));
-    const height = Math.max(1, Math.ceil(this.bufferSize.y * RESOLUTION_SCALE));
+    const width = Math.max(1, Math.ceil(this.bufferSize.x * this.resolutionScale));
+    const height = Math.max(1, Math.ceil(this.bufferSize.y * this.resolutionScale));
     if (this.target.width !== width || this.target.height !== height) this.target.setSize(width, height);
     this.compositeMaterial.uniforms.uSize.value.copy(this.bufferSize);
+    this.compositeMaterial.uniforms.uSpread.value = 0.75 / this.resolutionScale;
 
     camera.updateMatrixWorld();
     const { uniforms } = this.marchMaterial;

@@ -852,6 +852,12 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     earth.setCloudShadow(graphics.cloud_shadow);
     earth.setGlintStrength(graphics.glint_strength);
     earth.setVolumeCloudsEnabled(graphics.volume_clouds);
+    earth.setVolumeCloudStyle({
+      resolution: graphics.cloud_resolution / 100,
+      edgeDetail: graphics.cloud_edge_detail,
+      edgeSharpness: graphics.cloud_edge_sharpness,
+      puffiness: graphics.cloud_puffiness,
+    });
     regionBloom = graphics.region_bloom;
     regionDetailEnabled = graphics.region_detail;
     if (!regionDetailEnabled) stopRegionDetail();
