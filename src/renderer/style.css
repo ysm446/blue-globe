@@ -247,6 +247,13 @@ button.city-label:active {
   transition: opacity 150ms, visibility 150ms;
 }
 
+/* 地球の上の文字は、ドラッグで地球を回したときに文字の選択の色が付かないよう、選べないようにする */
+.city-label,
+.planet-label,
+#marker {
+  user-select: none;
+}
+
 .planet-label.off,
 .city-label.off {
   visibility: hidden;
