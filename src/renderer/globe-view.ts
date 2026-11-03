@@ -2,6 +2,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { apparentScale, BASE_FOCAL_LENGTH, verticalFov } from './camera-lens';
+import { CameraPanel } from './camera-panel';
 import { CityLabels } from './city-labels';
 import { MAP_CITIES } from './cities';
 import type { DemoPlace } from './demo';
@@ -304,6 +305,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let selectedCity: DemoPlace | null = null; // ラベルで選んだ都市。地域ビューの行き先になる
   const cityLabels = new CityLabels(el('city-labels'), MAP_CITIES, EARTH_SURFACE_RADIUS, onSelectCity);
   let cityLabelsEnabled = false;
+  const cameraPanel = new CameraPanel(camera, GLOBE_RADIUS);
 
   // 地域ビュー。null の間は地球ビューで、OrbitControls がカメラを動かす
   let regionView: RegionView | null = null;
@@ -777,6 +779,10 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     }
     if (mode === 'wind') gpuParticles?.composite();
     updateMarker();
+    cameraPanel.update(dt, {
+      focalLength,
+      exposure: mode !== 'wind' && earthReady ? exposure * 2 ** exposureCompensation : null,
+    });
     if (measureGpu) {
       gpuTimer.end();
       for (const ms of gpuTimer.collect()) {

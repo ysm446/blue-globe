@@ -67,6 +67,7 @@ class PanelsUpdate(BaseModel):
     hourly: bool
     weekly: bool
     details: bool
+    camera: bool
 
 
 class AudioFileUpdate(BaseModel):

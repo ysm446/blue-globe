@@ -57,12 +57,14 @@ function initPanelFolds(): (panels: PanelSettings) => void {
     hourly: el<HTMLDetailsElement>('fold-hourly'),
     weekly: el<HTMLDetailsElement>('fold-weekly'),
     details: el<HTMLDetailsElement>('fold-details'),
+    camera: el<HTMLDetailsElement>('fold-camera'),
   };
   const read = (): PanelSettings => ({
     news: folds.news.open,
     hourly: folds.hourly.open,
     weekly: folds.weekly.open,
     details: folds.details.open,
+    camera: folds.camera.open,
   });
   function syncPanelColumn(): void {
     const limit = folds.details.open ? PANELS_RIGHT_HEIGHT : PANELS_RIGHT_HEIGHT_DETAILS_CLOSED;
@@ -90,6 +92,7 @@ function initPanelFolds(): (panels: PanelSettings) => void {
     folds.hourly.open = panels.hourly;
     folds.weekly.open = panels.weekly;
     folds.details.open = panels.details;
+    folds.camera.open = panels.camera;
   };
 }
 

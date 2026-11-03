@@ -144,10 +144,14 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["exposure_compensation"], 0)
 
     def test_panels_default_to_open(self):
-        self.assertEqual(self.client.get("/settings").json()["panels"], {"news": True, "hourly": True, "weekly": True, "details": True})
+        # カメラのパネルだけは既定で閉じている
+        self.assertEqual(
+            self.client.get("/settings").json()["panels"],
+            {"news": True, "hourly": True, "weekly": True, "details": True, "camera": False},
+        )
 
     def test_panels_are_saved(self):
-        panels = {"news": True, "hourly": False, "weekly": False, "details": False}
+        panels = {"news": True, "hourly": False, "weekly": False, "details": False, "camera": True}
         self.assertEqual(self.client.put("/settings/panels", json=panels).status_code, 200)
         self.assertEqual(self.client.get("/settings").json()["panels"], panels)
 
@@ -156,7 +160,10 @@ class SettingsApiTest(unittest.TestCase):
 
     def test_old_settings_file_gets_new_panels_defaults(self):
         config.save_settings({"location": None, "panels": {"weekly": False}})
-        self.assertEqual(self.client.get("/settings").json()["panels"], {"news": True, "hourly": True, "weekly": False, "details": True})
+        self.assertEqual(
+            self.client.get("/settings").json()["panels"],
+            {"news": True, "hourly": True, "weekly": False, "details": True, "camera": False},
+        )
 
     def test_other_settings_keep_graphics(self):
         self.client.put("/settings/graphics", json=self.GRAPHICS)

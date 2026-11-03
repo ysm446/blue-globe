@@ -110,6 +110,7 @@ a:hover {
 #fps-counter,
 #top-right button,
 #news,
+#camera-panel,
 .forecast-panel,
 #layer-info,
 #screenshot-toast,
@@ -127,6 +128,7 @@ a:hover {
 #top-right button,
 #demo-hint,
 #news,
+#camera-panel,
 .forecast-panel,
 #layer-info,
 #music-popup,
@@ -651,12 +653,26 @@ body.demo-idle * {
   display: contents;
 }
 
-#news {
+/* 右上の列。天気ニュースの高さは中身で変わるので、カメラのパネルと一緒に積む */
+#right-stack {
   position: fixed;
   top: 60px;
   right: 16px;
   width: 360px;
   max-height: calc(100vh - 76px - var(--controls-space));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none; /* パネルのない隙間は、後ろの地球と都市のラベルへ通す */
+}
+
+#right-stack > * {
+  pointer-events: auto;
+}
+
+#news {
+  flex: 0 1 auto;
+  min-height: 0; /* 列に収まらないときは、天気ニュースの中をスクロールする */
   display: flex;
   flex-direction: column;
   padding: 14px 20px;
@@ -732,8 +748,53 @@ body.demo-idle * {
 
 /* 閉じたパネルは見出しの幅まで縮める。天気ニュースは右端、予報は左端に寄せたまま */
 #news:has(> #fold-news:not([open])) {
+  align-self: flex-end;
   width: max-content;
   max-width: 360px;
+}
+
+/* 数字の桁で幅が揺れないよう、開いているときは幅を決めておく */
+#camera-panel {
+  flex: none;
+  order: 1; /* 右の列や下にまとめるときも、予報より後ろに置く */
+  align-self: flex-end;
+  width: 250px;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+#camera-panel:has(> .panel-fold:not([open])) {
+  width: max-content;
+  padding-block: 6px;
+}
+
+#camera-readout {
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  font-size: 13px;
+}
+
+#camera-readout > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+#camera-readout dt {
+  color: var(--text-2);
+}
+
+#camera-readout dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* デモの間は、他の案内と同じく出さない */
+body.demo #camera-panel {
+  display: none;
 }
 
 .forecast-panel:has(> .panel-fold:not([open])) {
@@ -1365,6 +1426,11 @@ body.panels-right .forecast-panel:has(> .panel-fold:not([open])) {
   align-self: flex-end;
 }
 
+/* 天気ニュースとカメラのパネルも、予報と同じ列に並べる */
+body.panels-right #right-stack {
+  display: contents;
+}
+
 body.panels-right #panels {
   position: fixed;
   top: 60px;
@@ -1400,7 +1466,12 @@ body.panels-right #forecasts {
     bottom: auto;
   }
 
-  #news:has(> #fold-news:not([open])) {
+  #right-stack {
+    display: contents;
+  }
+
+  #news:has(> #fold-news:not([open])),
+  #camera-panel {
     align-self: flex-start;
   }
 

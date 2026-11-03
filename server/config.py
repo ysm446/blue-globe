@@ -29,7 +29,8 @@ DEFAULT_SETTINGS = {
         "region_detail": True,
         "volume_clouds": True,
     },
-    "panels": {"news": True, "hourly": True, "weekly": True, "details": True},  # True で開いている
+    # True で開いている。カメラのパネルは計器のようなものなので、既定では閉じておく
+    "panels": {"news": True, "hourly": True, "weekly": True, "details": True, "camera": False},
     "audio_file": None,  # 設定画面で選んだ音源のパス
     "audio_volume": 0.5,  # スライダーの位置 (0〜1)
 }

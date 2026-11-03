@@ -52,6 +52,7 @@ interface PanelSettings {
   hourly: boolean;
   weekly: boolean;
   details: boolean;
+  camera: boolean; // 右上のカメラのパネル。開いている間だけ計算する
 }
 
 interface AppSettings {

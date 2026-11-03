@@ -88,6 +88,7 @@
     </div>
 
     <div id="panels">
+    <div id="right-stack">
     <aside id="news">
       <div id="news-status" class="news-status" role="status"></div>
 
@@ -118,6 +119,23 @@
       </footer>
       </details>
     </aside>
+
+    <section id="camera-panel">
+      <details id="fold-camera" class="panel-fold">
+        <summary>カメラ</summary>
+        <dl id="camera-readout">
+          <div><dt>高度</dt><dd id="camera-altitude"></dd></div>
+          <div><dt>対地速度</dt><dd id="camera-speed"></dd></div>
+          <div><dt>中心の緯度</dt><dd id="camera-latitude"></dd></div>
+          <div><dt>中心の経度</dt><dd id="camera-longitude"></dd></div>
+          <div><dt>方位</dt><dd id="camera-heading"></dd></div>
+          <div><dt>傾き</dt><dd id="camera-tilt"></dd></div>
+          <div><dt>レンズ</dt><dd id="camera-lens"></dd></div>
+          <div><dt>露出</dt><dd id="camera-exposure"></dd></div>
+        </dl>
+      </details>
+    </section>
+    </div>
 
     <div id="forecasts" hidden>
       <section class="forecast-panel">
