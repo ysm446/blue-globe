@@ -195,7 +195,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   const hdr = new HdrPipeline(renderer, scene, camera);
   const flatBackground = new THREE.Color(COLORS.background);
-  const spaceBackground = createSpaceBackground();
+  const spaceCanvas = document.createElement('canvas');
+  const spaceBackground = createSpaceBackground(spaceCanvas);
 
   // ベクター海岸線・国境線 (LOD 付き)。地表より少し浮かせて Z ファイティングを避ける
   const coastlines = createCoastlines(COASTLINE_RADIUS);
@@ -1009,6 +1010,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     applyLens();
     hdr.setBloomEnabled(graphics.bloom);
     sky.setStarBrightness(graphics.star_brightness);
+    paintSpaceBackground(spaceCanvas, graphics.space_tint);
+    spaceBackground.needsUpdate = true;
     earth.setCloudShadow(graphics.cloud_shadow);
     earth.setGlintStrength(graphics.glint_strength);
     earth.setCityGlow(graphics.city_glow);
@@ -1240,17 +1243,28 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   };
 }
 
-function createSpaceBackground(): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1024;
-  canvas.height = 1024;
+// 背景の宇宙。実際の宇宙は空気がなく光を散らさないので、地球に合わせた露出では真っ黒に写る。
+// 青みは見た目のためのもので、設定の「宇宙の青み」で濃さを変える (0 で真っ黒)
+const SPACE_GRADIENT: ReadonlyArray<readonly [number, readonly [number, number, number]]> = [
+  [0, [0x0f, 0x24, 0x48]],
+  [0.45, [0x07, 0x12, 0x2b]],
+  [1, [0x02, 0x04, 0x0b]],
+];
+
+function paintSpaceBackground(canvas: HTMLCanvasElement, tint: number): void {
   const ctx = canvas.getContext('2d')!;
   const gradient = ctx.createRadialGradient(440, 512, 60, 440, 512, 800);
-  gradient.addColorStop(0, '#0f2448');
-  gradient.addColorStop(0.45, '#07122b');
-  gradient.addColorStop(1, '#02040b');
+  for (const [stop, [r, g, b]] of SPACE_GRADIENT) {
+    gradient.addColorStop(stop, `rgb(${Math.round(r * tint)}, ${Math.round(g * tint)}, ${Math.round(b * tint)})`);
+  }
   ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, 1024, 1024);
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+}
+
+function createSpaceBackground(canvas: HTMLCanvasElement): THREE.CanvasTexture {
+  canvas.width = 1024;
+  canvas.height = 1024;
+  paintSpaceBackground(canvas, 1);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   return texture;

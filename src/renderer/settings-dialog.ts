@@ -184,6 +184,7 @@ export function initSettingsDialog(
   const sliders = {
     // 対数にして、1 目盛りごとに同じ比率で変わるようにする
     star_brightness: graphicsSlider('star-brightness', (position) => 2 ** position, Math.log2, (value) => `×${value.toFixed(2)}`),
+    space_tint: percentSlider('space-tint'),
     cloud_shadow: percentSlider('cloud-shadow'),
     cloud_edge_detail: percentSlider('cloud-edge-detail'),
     cloud_edge_sharpness: percentSlider('cloud-edge-sharpness'),

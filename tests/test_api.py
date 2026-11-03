@@ -78,6 +78,7 @@ class SettingsApiTest(unittest.TestCase):
         "show_city_labels": False,
         "show_planet_labels": False,
         "star_brightness": 2.0,
+        "space_tint": 0.0,
         "cloud_shadow": 0.8,
         "region_bloom": 0.3,
         "city_glow": 1.5,
@@ -126,6 +127,8 @@ class SettingsApiTest(unittest.TestCase):
             {"render_scale": 10},
             {"star_brightness": 100},
             {"star_brightness": 0},
+            {"space_tint": 1.1},
+            {"space_tint": -0.1},
             {"cloud_shadow": 1.5},
             {"cloud_shadow": -0.1},
             {"region_bloom": 1.5},
@@ -155,6 +158,7 @@ class SettingsApiTest(unittest.TestCase):
         graphics = self.client.get("/settings").json()["graphics"]
         self.assertEqual(graphics["fps_limit"], 60)
         self.assertEqual(graphics["star_brightness"], 1.0)
+        self.assertEqual(graphics["space_tint"], 1.0)
         self.assertTrue(graphics["show_map_lines"])
         self.assertTrue(graphics["show_city_labels"])
         self.assertTrue(graphics["show_planet_labels"])
