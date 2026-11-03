@@ -2,8 +2,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { siderealDegrees, starIntensity, sublunarPoint, subsolarPoint } from '../src/renderer/astro.ts';
-import { separationDegrees } from '../src/renderer/math.ts';
+import { moonlightStrength, siderealDegrees, starIntensity, sublunarPoint, subsolarPoint } from '../src/renderer/astro.ts';
+import { DEG, separationDegrees, type LonLat, type Vec3 } from '../src/renderer/math.ts';
 
 // 地点から見た太陽の高度 (度)。大気差は含まない
 function sunElevation(date: Date, lon: number, lat: number): number {
@@ -90,4 +90,25 @@ test('星の座標変換は太陽と同じ座標系になる', () => {
   const date = new Date('2026-03-20T14:46Z');
   const lon = ((((0 - siderealDegrees(date) + 180) % 360) + 360) % 360) - 180;
   assert.ok(separationDegrees({ lon, lat: 0 }, subsolarPoint(date)) < 0.02);
+});
+
+const directionOf = ({ lon, lat }: LonLat): Vec3 => [
+  Math.cos(lat * DEG) * Math.cos(lon * DEG),
+  Math.sin(lat * DEG),
+  Math.cos(lat * DEG) * Math.sin(lon * DEG),
+];
+
+test('月明かりは満月で 1、新月で 0、半月で満月の 1/8', () => {
+  assert.equal(moonlightStrength([1, 0, 0], [-1, 0, 0]), 1);
+  assert.equal(moonlightStrength([1, 0, 0], [1, 0, 0]), 0);
+  assert.ok(Math.abs(moonlightStrength([1, 0, 0], [0, 1, 0]) - 0.125) < 1e-9);
+});
+
+test('実際の満月と新月の日時で月明かりが合う', () => {
+  const at = (iso: string): number => {
+    const date = new Date(iso);
+    return moonlightStrength(directionOf(subsolarPoint(date)), directionOf(sublunarPoint(date)));
+  };
+  assert.ok(at('2026-01-03T10:03Z') > 0.97); // 満月
+  assert.ok(at('2026-01-18T19:52Z') < 0.001); // 新月
 });

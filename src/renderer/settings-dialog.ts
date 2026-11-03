@@ -167,6 +167,7 @@ export function initSettingsDialog(
     show_planet_labels: el<HTMLInputElement>('planet-labels-toggle'),
     region_detail: el<HTMLInputElement>('region-detail-toggle'),
     volume_clouds: el<HTMLInputElement>('volume-clouds-toggle'),
+    moonlight: el<HTMLInputElement>('moonlight-toggle'),
   };
   const sliders = {
     // 対数にして、1 目盛りごとに同じ比率で変わるようにする

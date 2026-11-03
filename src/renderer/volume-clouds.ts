@@ -5,7 +5,7 @@
 import * as THREE from 'three';
 import { CLOUD_NOISE_SIZE, generateCloudNoise } from './cloud-noise';
 import { needsShadowBake, shadowBasis, shadowHalfSize, type ShadowBake } from './cloud-shadow';
-import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, PIXEL_JITTER_GLSL } from './glsl';
+import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, MOONLIGHT_GLSL, PIXEL_JITTER_GLSL } from './glsl';
 import type { Vec3 } from './math';
 
 const CLOUD_BASE = 0.0005; // 約 3km
@@ -214,6 +214,7 @@ const MARCH_FS = /* glsl */ `
 ${CLOUD_SHAPE_GLSL}
 ${BAKED_SHADOW_GLSL}
 ${CLOUD_SUN_COLOR_GLSL}
+${MOONLIGHT_GLSL}
 uniform mat4 uViewToWorld;
 uniform float uPixelAngle;
 uniform float uAmount;
@@ -287,6 +288,8 @@ void main() {
       // 低いところほど周りの雲に光を遮られる。厚い雲の上面の起伏は、主にこの差で見える
       vec3 lit = mix(vec3(0.26, 0.31, 0.42), vec3(0.86), sunlight) * mix(0.48, 1.1, smoothstep(0.1, 0.85, h));
       vec3 sample_ = lit * cloudSunColor(ndl) * dayLight + vec3(0.016, 0.021, 0.036);
+      // 月明かりは近くの雲による陰をたどらず、高さだけで陰を付ける
+      sample_ += moonlightAt(up, ndl) * mix(0.5, 1.0, smoothstep(0.1, 0.85, h));
       color += transmit * opacity * sample_;
       transmit *= 1.0 - opacity;
     }
@@ -357,7 +360,13 @@ export class VolumeClouds {
     uCloudTop: { value: CLOUD_TOP },
   };
 
-  constructor(radius: number, sunDir: THREE.Vector3, haze: { value: number }) {
+  // moon は地球の描画と共有する月明かりの uniform
+  constructor(
+    radius: number,
+    sunDir: THREE.Vector3,
+    haze: { value: number },
+    moon: { uMoonDir: { value: THREE.Vector3 }; uMoonLight: { value: number } },
+  ) {
     this.sunDir = sunDir;
     this.target = new THREE.WebGLRenderTarget(1, 1, {
       type: THREE.HalfFloatType,
@@ -380,6 +389,7 @@ export class VolumeClouds {
         uPixelAngle: { value: 0 },
         uAmount: { value: 0 },
         uHaze: haze,
+        ...moon,
         ...this.styleUniforms,
         ...this.bakeUniforms,
       },

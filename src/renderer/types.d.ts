@@ -45,6 +45,7 @@ interface GraphicsSettings {
   glint_strength: number; // 海の太陽の反射の強さ。1 が地球の写真に合わせた強さ (0〜3)
   region_bloom: number; // 地域ビューの光のにじみの強さ。地球ビューを 1 とした倍率 (0〜1)
   city_glow: number; // 街明かりのまわりの淡い光 (暈) の強さ。1 が既定 (0〜2)
+  moonlight: boolean; // 夜側の雲と地表を、月の位置と満ち欠けに合わせて照らす
   region_detail: boolean; // 地域ビューで高解像度の画像を取得して使う
   volume_clouds: boolean; // 近づいたときに雲を立体で描く
   cloud_resolution: number; // 立体の雲を描く解像度 (画面に対する %。50, 75, 100)

@@ -81,6 +81,7 @@ class SettingsApiTest(unittest.TestCase):
         "cloud_shadow": 0.8,
         "region_bloom": 0.3,
         "city_glow": 1.5,
+        "moonlight": False,
         "glint_strength": 2.0,
         "region_detail": False,
         "volume_clouds": False,
@@ -156,6 +157,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertTrue(graphics["volume_clouds"])
         self.assertEqual(graphics["region_bloom"], 0.5)
         self.assertEqual(graphics["city_glow"], 1.0)
+        self.assertTrue(graphics["moonlight"])
         self.assertEqual(graphics["glint_strength"], 1.3)
         self.assertEqual(graphics["focal_length"], 24)
         self.assertEqual(graphics["exposure_compensation"], 0)

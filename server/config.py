@@ -27,6 +27,7 @@ DEFAULT_SETTINGS = {
         "cloud_shadow": 0.55,
         "region_bloom": 0.5,
         "city_glow": 1.0,  # 街明かりのまわりの淡い光。1 が既定の強さ
+        "moonlight": True,  # 夜側の雲と地表を、月の位置と満ち欠けに合わせて照らす
         "glint_strength": 1.3,  # 1 が地球の写真に合わせた強さ
         "region_detail": True,
         "volume_clouds": True,

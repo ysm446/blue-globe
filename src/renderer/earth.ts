@@ -4,7 +4,8 @@
 // 地球ビューでも地域ビューでも、近づくと立体の雲 (volume-clouds.ts) に入れ替える
 import * as THREE from 'three';
 import { stepFade } from './fade';
-import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, VALUE_NOISE_GLSL } from './glsl';
+import { moonlightStrength } from './astro';
+import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, MOONLIGHT_GLSL, VALUE_NOISE_GLSL } from './glsl';
 import { easeInOut } from './math';
 import type { RegionDetail } from './region-detail';
 import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
@@ -101,6 +102,7 @@ uniform float uBakedShadowMix;
 uniform float uCityGlow;
 uniform sampler2D uGlowMap;
 varying vec3 vPos;
+${MOONLIGHT_GLSL}
 varying vec2 vUv;
 ${CLOUD_SAMPLING_GLSL}
 ${BAKED_SHADOW_GLSL}
@@ -236,6 +238,8 @@ void main() {
   float dayPeak = max(max(day.r, max(day.g, day.b)), ${NIGHT_FILL_KNEE.toFixed(1)});
   vec3 nightDay = day * pow(dayPeak / ${NIGHT_FILL_KNEE.toFixed(1)}, -${NIGHT_FILL_FALLOFF.toFixed(1)});
   color += (nightDay * vec3(0.22, 0.27, 0.4) + vec3(0.003, 0.006, 0.014)) * (1.0 - dayMask) * nightFill;
+  // 地表は雲より暗いので、月明かりは地表の色の分だけ返す。明るい氷や雪は補助光と同じく抑える
+  color += nightDay * moonlightAt(n, ndl) * nightFill;
 
   // 地表から見える大気 (縁ほど青い)。昼側だけ
   float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.2);
@@ -259,6 +263,7 @@ varying vec2 vUv;
 ${CLOUD_SAMPLING_GLSL}
 ${VALUE_NOISE_GLSL}
 ${CLOUD_SUN_COLOR_GLSL}
+${MOONLIGHT_GLSL}
 void main() {
   vec3 n = normalize(vPos);
   vec3 view = normalize(cameraPosition - vPos);
@@ -299,6 +304,8 @@ void main() {
   // 影の部分は黒くせず、空の光を受けた青灰色にする
   vec3 lit = mix(vec3(0.3, 0.36, 0.48), vec3(0.88), transmit);
   vec3 color = lit * cloudSunColor(ndl) * light + vec3(0.016, 0.021, 0.036);
+  // 雲は海や陸よりずっと白いので、月夜にいちばん明るく見える。陰は太陽の光の陰を流用し、薄く付ける
+  color += moonlightAt(n, ndl) * mix(0.6, 1.0, transmit);
 
   // 縁の雲にも大気の青を重ねる
   float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.2);
@@ -346,6 +353,12 @@ export class RealisticEarth {
   private volumeEnabled = false;
   private volumeMix = 0; // 0 は平らな雲だけ、1 は立体の雲だけ
   private volumeHeight = 1; // 立体の雲の層の厚さの倍率
+  // 月明かり。地表、平らな雲、立体の雲で共有する
+  private readonly moon = {
+    uMoonDir: { value: new THREE.Vector3(0, 0, 1) },
+    uMoonLight: { value: 0 },
+  };
+  private moonlightEnabled = true;
 
   constructor(private readonly radius: number) {
     this.material = new THREE.ShaderMaterial({
@@ -369,6 +382,7 @@ export class RealisticEarth {
         uBakedShadowMix: { value: 0 },
         uCityGlow: { value: 1 },
         uGlowMap: { value: null },
+        ...this.moon,
         uSunDir: { value: this.sunDir },
       },
       vertexShader: VS,
@@ -382,6 +396,7 @@ export class RealisticEarth {
         uSunDir: { value: this.sunDir },
         uFade: { value: 0 },
         uHaze: this.haze,
+        ...this.moon,
       },
       vertexShader: VS,
       fragmentShader: CLOUD_FS,
@@ -396,7 +411,7 @@ export class RealisticEarth {
     this.cloudMesh.visible = false;
     this.group.add(this.cloudMesh);
 
-    this.volume = new VolumeClouds(radius, this.sunDir, this.haze);
+    this.volume = new VolumeClouds(radius, this.sunDir, this.haze, this.moon);
     this.group.add(this.volume.mesh);
     Object.assign(this.material.uniforms, this.volume.bakeUniforms);
 
@@ -461,6 +476,26 @@ export class RealisticEarth {
 
   setSunDirection(direction: THREE.Vector3): void {
     this.sunDir.copy(direction);
+    this.updateMoonlight();
+  }
+
+  // 地球の中心から見た月の方向
+  setMoonDirection(direction: THREE.Vector3): void {
+    this.moon.uMoonDir.value.copy(direction);
+    this.updateMoonlight();
+  }
+
+  setMoonlightEnabled(enabled: boolean): void {
+    this.moonlightEnabled = enabled;
+    this.updateMoonlight();
+  }
+
+  private updateMoonlight(): void {
+    const sun = this.sunDir;
+    const moon = this.moon.uMoonDir.value;
+    this.moon.uMoonLight.value = this.moonlightEnabled
+      ? moonlightStrength([sun.x, sun.y, sun.z], [moon.x, moon.y, moon.z])
+      : 0;
   }
 
   // blend は 0 が地球ビュー、1 が地域ビュー。cameraAltitude は地表からのカメラの高さ

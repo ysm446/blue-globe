@@ -1,6 +1,6 @@
 // 太陽・月・星の方向を日時から求める。結果は地球に固定した経度・緯度で表し、
 // その地点の真上に天体がある、という形で扱う。天文年鑑の低精度式で、表示には十分な精度。
-import { DEG, wrapDegrees, type LonLat } from './math.ts';
+import { clamp, DEG, dot, wrapDegrees, type LonLat, type Vec3 } from './math.ts';
 
 const J2000_MS = Date.UTC(2000, 0, 1, 12);
 const DAY_MS = 86_400_000;
@@ -28,6 +28,13 @@ export function subsolarPoint(date: Date): LonLat {
   const dec = Math.asin(Math.sin(obliquity) * Math.sin(eclipticLon)) / DEG;
   const ra = Math.atan2(Math.cos(obliquity) * Math.sin(eclipticLon), Math.cos(eclipticLon)) / DEG;
   return equatorialToLonLat(ra, dec, date);
+}
+
+// 地球を照らす月明かりの強さ。満月を 1 とする。sun と moon は地球から見た太陽と月の方向 (単位ベクトル)。
+// 月の明るさは照らされている割合に比例せず、半月で満月の約 1/10 しかない。割合の 3 乗 (半月で 1/8) で近づける
+export function moonlightStrength(sun: Vec3, moon: Vec3): number {
+  const lit = (1 - clamp(dot(sun, moon), -1, 1)) / 2;
+  return lit ** 3;
 }
 
 // 月直下点 (地球中心から見た方向)。誤差は黄経で約 0.3°

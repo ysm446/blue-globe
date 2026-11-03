@@ -93,6 +93,7 @@ class GraphicsUpdate(BaseModel):
     cloud_shadow: float = Field(ge=0, le=1)
     region_bloom: float = Field(ge=0, le=1)
     city_glow: float = Field(ge=0, le=2)
+    moonlight: bool
     glint_strength: float = Field(ge=0, le=3)
     region_detail: bool
     volume_clouds: bool

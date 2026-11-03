@@ -37,6 +37,20 @@ float pixelJitter() {
 }
 `;
 
+// 夜側に当たる月明かり。uMoonLight は満ち欠けと設定を掛けた強さ (満月で 1)。
+// 実際の明るさ (太陽の約 40 万分の 1) ではなく、街明かりとの釣り合いで決めている。
+// 夜景の写真のように、月夜の雲は街の中心より暗いが、はっきり見える程度にする。太陽が出ているところでは足さない
+export const MOONLIGHT_GLSL = /* glsl */ `
+uniform vec3 uMoonDir;
+uniform float uMoonLight;
+vec3 moonlightAt(vec3 n, float sunNdl) {
+  if (uMoonLight <= 0.0) return vec3(0.0);
+  float night = 1.0 - smoothstep(-0.12, 0.05, sunNdl);
+  float facing = smoothstep(-0.05, 0.45, dot(n, uMoonDir)); // 月が低いと大気を長く通って暗い
+  return vec3(0.82, 0.88, 1.0) * 0.14 * uMoonLight * facing * night;
+}
+`;
+
 // 雲に当たる太陽の色。ndl は法線と太陽の方向の内積で、太陽が低いと赤くなる
 export const CLOUD_SUN_COLOR_GLSL = /* glsl */ `
 vec3 cloudSunColor(float ndl) {
