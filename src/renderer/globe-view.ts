@@ -2,7 +2,8 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { CityLabels } from './city-labels';
-import { CITIES, type DemoPlace } from './demo';
+import { MAP_CITIES } from './cities';
+import type { DemoPlace } from './demo';
 import { el } from './dom';
 import { CLOUD_ALTITUDE, RealisticEarth } from './earth';
 import { adaptExposure, earthClearance, screenPresence, targetExposure } from './exposure';
@@ -286,7 +287,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let markerLabelWidth = 0;
   let focused: WeatherLocation | null = null;
   let selectedCity: DemoPlace | null = null; // ラベルで選んだ都市。地域ビューの行き先になる
-  const cityLabels = new CityLabels(el('city-labels'), CITIES, EARTH_SURFACE_RADIUS, onSelectCity);
+  const cityLabels = new CityLabels(el('city-labels'), MAP_CITIES, EARTH_SURFACE_RADIUS, onSelectCity);
   let cityLabelsEnabled = false;
 
   // 地域ビュー。null の間は地球ビューで、OrbitControls がカメラを動かす
@@ -627,7 +628,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const markerBox = point
       ? [{ x: point.x - MARKER_BOX_LEFT, y: point.y - MARKER_BOX_HEIGHT / 2, width: MARKER_BOX_LEFT + MARKER_LABEL_OFFSET + markerLabelWidth, height: MARKER_BOX_HEIGHT }]
       : [];
-    cityLabels.update(toScreen, markerBox);
+    cityLabels.update(toScreen, markerBox, cameraAltitude());
   }
 
   window.addEventListener('resize', () => {
@@ -835,7 +836,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
         if (!regionFlight?.leaving) flyRegion({ ...regionView, lat: place.lat, lon: place.lon }, false);
         return;
       }
-      flyTo(markerPos.clone().normalize().multiplyScalar(viewDistance(mode)));
+      flyTo(markerPos.clone().normalize().multiplyScalar(camera.position.length()));
     },
     // place を省くと設定地点へ向かう
     demoRegion(place?: LonLat): void {

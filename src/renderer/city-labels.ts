@@ -1,5 +1,6 @@
 // 地球儀の上に出す都市のラベル。クリックするとその都市の天気に切り替わる
 import * as THREE from 'three';
+import { tierAtAltitude, type MapCity } from './cities';
 import type { DemoPlace } from './demo';
 import { lonLatToVector3 } from './globe';
 import { placeLabels, type LabelBox } from './label-layout';
@@ -7,7 +8,7 @@ import { placeLabels, type LabelBox } from './label-layout';
 const DOT_OFFSET = 8; // ラベルの左端から点の中心まで (style.css の .city-label と合わせる)
 
 interface CityLabel {
-  place: DemoPlace;
+  place: MapCity;
   element: HTMLButtonElement;
   world: THREE.Vector3;
   width: number; // 文字の幅は変わらないので、最初に測って使い回す
@@ -24,7 +25,7 @@ export class CityLabels {
 
   constructor(
     private readonly container: HTMLElement,
-    places: DemoPlace[],
+    places: MapCity[],
     radius: number,
     onSelect: (place: DemoPlace) => void,
   ) {
@@ -57,11 +58,12 @@ export class CityLabels {
     this.excluded = name;
   }
 
-  // 毎フレーム呼ぶ。blocked はラベルを重ねない範囲
-  update(toScreen: WorldToScreen, blocked: LabelBox[]): void {
+  // 毎フレーム呼ぶ。blocked はラベルを重ねない範囲、altitude はカメラの高さ
+  update(toScreen: WorldToScreen, blocked: LabelBox[], altitude: number): void {
     if (this.container.hidden) return;
+    const tier = tierAtAltitude(altitude);
     const boxes = this.labels.map((label): LabelBox | null => {
-      if (label.place.name === this.excluded) return null;
+      if (label.place.tier > tier || label.place.name === this.excluded) return null;
       const point = toScreen(label.world);
       if (!point) return null;
       if (label.width === 0) {
