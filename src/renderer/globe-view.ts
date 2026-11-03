@@ -182,6 +182,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   controls.enableDamping = true;
   controls.dampingFactor = DAMPING_AT_REFERENCE;
   controls.enablePan = false;
+  controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE; // 右ドラッグも左と同じく地球を回す
   controls.minDistance = MIN_DIST;
   controls.maxDistance = MAX_DIST;
   renderer.domElement.classList.add('globe-canvas');
