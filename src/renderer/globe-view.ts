@@ -3,10 +3,11 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { apparentScale, BASE_FOCAL_LENGTH, verticalFov } from './camera-lens';
 import { CameraPanel } from './camera-panel';
+import { pickCityInDirection, type HopDirection } from './city-hop';
 import { CityLabels } from './city-labels';
 import { PlanetLabels } from './planet-labels';
 import { SolarSystem } from './solar-system';
-import { MAP_CITIES } from './cities';
+import { MAP_CITIES, tierAtAltitude, type MapCity } from './cities';
 import type { DemoPlace } from './demo';
 import { el } from './dom';
 import { CLOUD_ALTITUDE, RealisticEarth } from './earth';
@@ -108,14 +109,18 @@ const ORBIT_STEP_RATIO = 2;
 const ORBIT_SECONDS = 0.8; // 速さを変えるときの時定数
 const ORBIT_KEYS: Record<string, 1 | -1> = { KeyE: 1, KeyQ: -1 }; // 1 は右回り (カメラが右へ回り込む)
 const CRUISE_KEYS: Record<string, 'faster' | 'slower' | 'left' | 'right'> = {
-  ArrowUp: 'faster',
   KeyW: 'faster',
-  ArrowDown: 'slower',
   KeyS: 'slower',
-  ArrowLeft: 'left',
   KeyA: 'left',
-  ArrowRight: 'right',
   KeyD: 'right',
+};
+// 矢印キーは、その向きにある次の都市へ移る。ラベルの出ていない都市は、カメラの距離のこの倍 (弧度) まで
+const CITY_HOP_REACH = 2;
+const CITY_HOP_KEYS: Record<string, HopDirection> = {
+  ArrowUp: 'up',
+  ArrowDown: 'down',
+  ArrowLeft: 'left',
+  ArrowRight: 'right',
 };
 const DEMO_TILT = 62;
 const DEMO_DISTANCE = 0.22;
@@ -492,10 +497,10 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   function showCruise(): void {
     if (cruiseLevel > 0) {
-      viewHint.textContent = `巡航中 速さ ${cruiseLevel} / ${CRUISE_LEVELS}(↑↓ で速さ、←→ で向き、Q/E で旋回)`;
+      viewHint.textContent = `巡航中 速さ ${cruiseLevel} / ${CRUISE_LEVELS}(W/S で速さ、A/D で向き、Q/E で旋回)`;
     } else if (orbitLevel !== 0) {
       const direction = orbitLevel > 0 ? '右回り' : '左回り';
-      viewHint.textContent = `旋回中 ${direction} 速さ ${Math.abs(orbitLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、↑ で巡航)`;
+      viewHint.textContent = `旋回中 ${direction} 速さ ${Math.abs(orbitLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、W で巡航)`;
     } else {
       viewHint.textContent = viewHintText;
     }
@@ -538,6 +543,36 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     }
     showCruise();
   });
+  // 矢印キーで次の都市へ。都市へ向かっている途中なら、行き先から次を選ぶ。
+  // 画面に出ているラベルの都市から選び、その向きになければ今の段の都市、すべての都市の順に広げる。
+  // ラベルの出ていない都市は、海を越えて遠くへ飛ばないよう、画面に見える程度の範囲に限る
+  window.addEventListener('keydown', (event) => {
+    const direction = CITY_HOP_KEYS[event.code];
+    if (!direction) return;
+    releaseButtonFocus(event);
+    if (!regionView || regionFlight?.leaving || demoMotion || event.ctrlKey || event.altKey || event.metaKey) return;
+    if (document.querySelector('dialog[open]')) return;
+    const target = event.target instanceof Element ? event.target : null;
+    if (target?.closest('input, select, textarea, [contenteditable="true"]')) return;
+    event.preventDefault();
+    if (event.repeat) return; // 押し続けても 1 都市ずつ移る
+    const from = regionFlight?.to ?? regionView;
+    const tier = tierAtAltitude(apparentAltitude());
+    const reach = from.distance * CITY_HOP_REACH * THREE.MathUtils.RAD2DEG;
+    const groups: Array<[MapCity[], number]> = [
+      [cityLabels.shownPlaces(), 180],
+      [MAP_CITIES.filter((city) => city.tier <= tier), reach],
+      [MAP_CITIES, reach],
+    ];
+    for (const [group, maxDistance] of groups) {
+      const city = pickCityInDirection(from, from.heading, direction, group, maxDistance);
+      if (city) {
+        onSelectCity(city);
+        return;
+      }
+    }
+  });
+
   window.addEventListener('keyup', (event) => {
     const action = CRUISE_KEYS[event.code];
     if (action === 'left' || action === 'right') turnKeys.delete(action);

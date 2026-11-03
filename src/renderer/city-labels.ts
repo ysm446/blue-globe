@@ -58,6 +58,12 @@ export class CityLabels {
     this.excluded = name;
   }
 
+  // 今画面に出ている都市。ラベルを隠している間は空
+  shownPlaces(): MapCity[] {
+    if (this.container.hidden) return [];
+    return this.labels.filter((label) => label.shown).map((label) => label.place);
+  }
+
   // 毎フレーム呼ぶ。blocked はラベルを重ねない範囲、altitude はレンズの分を換算したカメラの高さ
   update(toScreen: WorldToScreen, blocked: LabelBox[], altitude: number): void {
     if (this.container.hidden) return;
