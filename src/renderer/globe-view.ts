@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { apparentScale, BASE_FOCAL_LENGTH, verticalFov } from './camera-lens';
 import { CameraPanel } from './camera-panel';
 import { CityLabels } from './city-labels';
+import { PlanetLabels } from './planet-labels';
 import { MAP_CITIES } from './cities';
 import type { DemoPlace } from './demo';
 import { el } from './dom';
@@ -306,6 +307,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const cityLabels = new CityLabels(el('city-labels'), MAP_CITIES, EARTH_SURFACE_RADIUS, onSelectCity);
   let cityLabelsEnabled = false;
   const cameraPanel = new CameraPanel(camera, GLOBE_RADIUS);
+  const planetLabels = new PlanetLabels(el('planet-labels'), sky.planets.map((planet) => planet.name), GLOBE_RADIUS);
+  let planetLabelsEnabled = false;
 
   // 地域ビュー。null の間は地球ビューで、OrbitControls がカメラを動かす
   let regionView: RegionView | null = null;
@@ -696,6 +699,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     showMapLines = graphics.show_map_lines;
     syncMapLines();
     cityLabelsEnabled = graphics.show_city_labels;
+    planetLabelsEnabled = graphics.show_planet_labels;
     syncCityLabels();
     fpsCounter.hidden = !graphics.show_fps;
     const ratio = (Math.min(window.devicePixelRatio, 2) * graphics.render_scale) / 100;
@@ -779,6 +783,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     }
     if (mode === 'wind') gpuParticles?.composite();
     updateMarker();
+    // 星を描かない風速モードとデモの間は出さない
+    planetLabels.update(sky.planets, camera, planetLabelsEnabled && sky.group.visible && !demoMotion);
     cameraPanel.update(dt, {
       focalLength,
       exposure: mode !== 'wind' && earthReady ? exposure * 2 ** exposureCompensation : null,

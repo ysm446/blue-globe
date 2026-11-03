@@ -88,6 +88,7 @@ class GraphicsUpdate(BaseModel):
     show_fps: bool
     show_map_lines: bool
     show_city_labels: bool
+    show_planet_labels: bool
     star_brightness: float = Field(ge=0.125, le=8)
     cloud_shadow: float = Field(ge=0, le=1)
     region_bloom: float = Field(ge=0, le=1)

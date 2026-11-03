@@ -163,6 +163,7 @@ export function initSettingsDialog(
     show_fps: el<HTMLInputElement>('fps-toggle'),
     show_map_lines: el<HTMLInputElement>('map-lines-toggle'),
     show_city_labels: el<HTMLInputElement>('city-labels-toggle'),
+    show_planet_labels: el<HTMLInputElement>('planet-labels-toggle'),
     region_detail: el<HTMLInputElement>('region-detail-toggle'),
     volume_clouds: el<HTMLInputElement>('volume-clouds-toggle'),
   };

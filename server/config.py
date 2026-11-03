@@ -22,6 +22,7 @@ DEFAULT_SETTINGS = {
         "show_fps": False,
         "show_map_lines": True,
         "show_city_labels": True,
+        "show_planet_labels": True,
         "star_brightness": 1.0,
         "cloud_shadow": 0.55,
         "region_bloom": 0.5,

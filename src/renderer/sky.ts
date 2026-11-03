@@ -1,8 +1,9 @@
-// 実際の星、太陽、月。方向は本物で、太陽と月の大きさは見やすさのために誇張している
+// 実際の星、惑星、太陽、月。方向は本物で、太陽と月の大きさは見やすさのために誇張している
 import * as THREE from 'three';
 import { VALUE_NOISE_GLSL } from './glsl';
 import { lonLatToVector3 } from './globe';
 import { siderealDegrees, starIntensity, sublunarPoint, subsolarPoint } from './astro';
+import { PLANETS, planetSky } from './planets';
 import starCatalog from './data/stars.json';
 
 const STAR_DISTANCE = 90;
@@ -113,32 +114,28 @@ void main() {
 }
 `;
 
-function createStars(pixelRatio: number): THREE.Points {
-  const positions = new Float32Array(STARS.length * 3);
-  const colors = new Float32Array(STARS.length * 3);
-  const intensities = new Float32Array(STARS.length);
-  const position = new THREE.Vector3();
-  const color = new THREE.Color();
-  STARS.forEach(([ra, dec, mag, bv], i) => {
-    // 恒星時 0 の配置で置き、時刻の分は回転で与える
-    lonLatToVector3(ra, dec, STAR_DISTANCE, position).toArray(positions, i * 3);
-    const warm = Math.min(1, Math.max(0, (bv + 0.3) / 1.8));
-    // 色で明るさが変わらないよう、輝度を 1 に揃える
-    const r = 0.72 + warm * 0.28;
-    const g = 0.82 + warm * 0.02;
-    const b = 1 - warm * 0.5;
-    const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    color.setRGB(r / luminance, g / luminance, b / luminance).toArray(colors, i * 3);
-    intensities[i] = starIntensity(mag);
-  });
+// 色指数から色へ。色で明るさが変わらないよう、輝度を 1 に揃える
+function setStarColor(bv: number, color: THREE.Color): THREE.Color {
+  const warm = Math.min(1, Math.max(0, (bv + 0.3) / 1.8));
+  const r = 0.72 + warm * 0.28;
+  const g = 0.82 + warm * 0.02;
+  const b = 1 - warm * 0.5;
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return color.setRGB(r / luminance, g / luminance, b / luminance);
+}
+
+type StarUniforms = { uPixelRatio: { value: number }; uBrightness: { value: number } };
+
+// 星と惑星で同じ描き方と明るさの倍率を使う
+function createPoints(count: number, uniforms: StarUniforms): THREE.Points {
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geometry.setAttribute('starColor', new THREE.BufferAttribute(colors, 3));
-  geometry.setAttribute('intensity', new THREE.BufferAttribute(intensities, 1));
+  geometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+  geometry.setAttribute('starColor', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+  geometry.setAttribute('intensity', new THREE.BufferAttribute(new Float32Array(count), 1));
   const points = new THREE.Points(
     geometry,
     new THREE.ShaderMaterial({
-      uniforms: { uPixelRatio: { value: pixelRatio }, uBrightness: { value: 1 } },
+      uniforms,
       vertexShader: STAR_VS,
       fragmentShader: STAR_FS,
       transparent: true,
@@ -147,6 +144,20 @@ function createStars(pixelRatio: number): THREE.Points {
     }),
   );
   points.frustumCulled = false;
+  return points;
+}
+
+function createStars(uniforms: StarUniforms): THREE.Points {
+  const points = createPoints(STARS.length, uniforms);
+  const { position, starColor, intensity } = points.geometry.attributes;
+  const vector = new THREE.Vector3();
+  const color = new THREE.Color();
+  STARS.forEach(([ra, dec, mag, bv], i) => {
+    // 恒星時 0 の配置で置き、時刻の分は回転で与える
+    lonLatToVector3(ra, dec, STAR_DISTANCE, vector).toArray(position.array, i * 3);
+    setStarColor(bv, color).toArray(starColor.array, i * 3);
+    intensity.array[i] = starIntensity(mag);
+  });
   return points;
 }
 
@@ -170,12 +181,20 @@ export class Sky {
   readonly sunDir = new THREE.Vector3(1, 0, 0);
   readonly moonDir = new THREE.Vector3(0, 0, 1);
   readonly sunPosition = new THREE.Vector3(1, 0, 0);
+  // 名前を添えるための、惑星の世界座標での位置
+  readonly planets = PLANETS.map((planet) => ({ name: planet.name, position: new THREE.Vector3() }));
+  private readonly starUniforms: StarUniforms;
   private readonly stars: THREE.Points;
+  private readonly planetPoints: THREE.Points;
   private readonly sun = createSun();
   private readonly moon: THREE.Mesh;
 
   constructor(pixelRatio: number) {
-    this.stars = createStars(pixelRatio);
+    this.starUniforms = { uPixelRatio: { value: pixelRatio }, uBrightness: { value: 1 } };
+    this.stars = createStars(this.starUniforms);
+    // 惑星は星と同じ座標で置き、星と一緒に回す
+    this.planetPoints = createPoints(PLANETS.length, this.starUniforms);
+    this.stars.add(this.planetPoints);
     this.moon = new THREE.Mesh(
       new THREE.SphereGeometry(MOON_RADIUS, 64, 48),
       new THREE.ShaderMaterial({
@@ -188,17 +207,19 @@ export class Sky {
   }
 
   setPixelRatio(pixelRatio: number): void {
-    (this.stars.material as THREE.ShaderMaterial).uniforms.uPixelRatio.value = pixelRatio;
+    this.starUniforms.uPixelRatio.value = pixelRatio;
   }
 
-  // 全ての星に同じ倍率を掛ける。星同士の明るさの比は変わらない
+  // 全ての星と惑星に同じ倍率を掛ける。互いの明るさの比は変わらない
   setStarBrightness(brightness: number): void {
-    (this.stars.material as THREE.ShaderMaterial).uniforms.uBrightness.value = brightness;
+    this.starUniforms.uBrightness.value = brightness;
   }
 
   setTime(date: Date): void {
     // 星は恒星時の分だけ西へ回る (three.js の Y 回転は経度を増やす向き)
     this.stars.rotation.y = THREE.MathUtils.degToRad(-siderealDegrees(date) % 360);
+    this.stars.updateMatrix();
+    this.updatePlanets(date);
     const sun = subsolarPoint(date);
     lonLatToVector3(sun.lon, sun.lat, 1, this.sunDir);
     this.sunPosition.copy(this.sunDir).multiplyScalar(SUN_DISTANCE);
@@ -206,5 +227,20 @@ export class Sky {
     const moon = sublunarPoint(date);
     lonLatToVector3(moon.lon, moon.lat, 1, this.moonDir);
     this.moon.position.copy(this.moonDir).multiplyScalar(MOON_DISTANCE);
+  }
+
+  private updatePlanets(date: Date): void {
+    const { position, starColor, intensity } = this.planetPoints.geometry.attributes;
+    const color = new THREE.Color();
+    planetSky(date).forEach((planet, i) => {
+      const local = lonLatToVector3(planet.ra, planet.dec, STAR_DISTANCE);
+      local.toArray(position.array, i * 3);
+      setStarColor(planet.bv, color).toArray(starColor.array, i * 3);
+      intensity.array[i] = starIntensity(planet.magnitude);
+      this.planets[i].position.copy(local).applyMatrix4(this.stars.matrix);
+    });
+    position.needsUpdate = true;
+    starColor.needsUpdate = true;
+    intensity.needsUpdate = true;
   }
 }

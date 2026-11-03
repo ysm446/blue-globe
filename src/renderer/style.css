@@ -231,6 +231,21 @@ button.city-label:active {
   transform: scale(1.6);
 }
 
+/* 惑星の名前。星の点を邪魔しないよう、小さく控えめにする */
+.planet-label {
+  position: fixed;
+  top: 0;
+  left: 0;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 14px;
+  white-space: nowrap;
+  text-shadow: 0 0 2px #000, 0 0 4px rgba(0, 0, 0, 0.9);
+  pointer-events: none;
+  transition: opacity 150ms, visibility 150ms;
+}
+
+.planet-label.off,
 .city-label.off {
   visibility: hidden;
   opacity: 0;
