@@ -81,6 +81,7 @@ class SettingsApiTest(unittest.TestCase):
         "show_city_labels": False,
         "show_planet_labels": False,
         "show_constellations": True,
+        "star_twinkle": False,
         "star_brightness": 2.0,
         "space_tint": 0.0,
         "cloud_shadow": 0.8,
@@ -171,6 +172,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertTrue(graphics["show_city_labels"])
         self.assertTrue(graphics["show_planet_labels"])
         self.assertFalse(graphics["show_constellations"])
+        self.assertTrue(graphics["star_twinkle"])
         self.assertEqual(graphics["cloud_shadow"], 0.55)
         self.assertTrue(graphics["region_detail"])
         self.assertTrue(graphics["volume_clouds"])

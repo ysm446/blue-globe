@@ -259,6 +259,7 @@ export function initSettingsDialog(
     show_city_labels: el<HTMLInputElement>('city-labels-toggle'),
     show_planet_labels: el<HTMLInputElement>('planet-labels-toggle'),
     show_constellations: el<HTMLInputElement>('constellations-toggle'),
+    star_twinkle: el<HTMLInputElement>('twinkle-toggle'),
     region_detail: el<HTMLInputElement>('region-detail-toggle'),
     volume_clouds: el<HTMLInputElement>('volume-clouds-toggle'),
     moonlight: el<HTMLInputElement>('moonlight-toggle'),

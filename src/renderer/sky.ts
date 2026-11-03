@@ -30,12 +30,17 @@ const STAR_SHARPNESS_RADIUS = 0.5; // 中心の広がり (CSS ピクセル)。�
 const STAR_FADE_LEVEL = 0.002; // ここまで暗くなる範囲を描く
 const STAR_PEAK = 1.9; // 中心の上限
 const STAR_MAX_HALO = 0.6; // 周りの光の上限。中心との合計がブルームのしきい値 (2.6) を超えない値にする
+// 星のきらめき。明滅ではなく、明るさをゆっくり揺らす (実際の宇宙では星は瞬かないので、見た目のためのもの)
+const TWINKLE_AMOUNT = 0.25; // 明るさの揺れ幅 (±の割合)
+const TWINKLE_CLOCK_WRAP = 10000; // 時計を戻す秒数。大きくなると sin の精度が落ちる
 
 const STAR_VS = /* glsl */ `
 attribute vec3 starColor;
 attribute float intensity;
 uniform float uPixelRatio;
 uniform float uBrightness;
+uniform float uTime;
+uniform float uTwinkle; // 明るさの揺れ幅。0 で揺らさない
 varying vec3 vColor;
 varying float vIntensity;
 varying float vSigma;
@@ -44,7 +49,12 @@ varying float vHalo;
 varying float vHaloRadius;
 void main() {
   vColor = starColor;
-  vIntensity = intensity * uBrightness;
+  // 星ごとに違う速さと位相で明るさを揺らす。周期の違う 2 つの波を重ね、規則的に見えないようにする
+  float seed = fract(sin(dot(position, vec3(12.9898, 78.233, 37.719))) * 43758.5453);
+  float seed2 = fract(seed * 7.13 + 0.37);
+  float sway = 0.6 * sin(uTime * (1.5 + 2.0 * seed) + seed * 6.2832)
+    + 0.4 * sin(uTime * (3.0 + 3.0 * seed2) + seed2 * 6.2832);
+  vIntensity = intensity * uBrightness * (1.0 + uTwinkle * sway);
   vSigma = ${STAR_SHARPNESS_RADIUS.toFixed(2)} * uPixelRatio;
   float coreRadius = vSigma * sqrt(2.0 * log(max(vIntensity / ${STAR_FADE_LEVEL.toFixed(3)}, 1.5)));
   vHalo = min(vIntensity * 0.05, ${STAR_MAX_HALO.toFixed(2)});
@@ -137,7 +147,12 @@ function setStarColor(bv: number, color: THREE.Color): THREE.Color {
   return color.setRGB(r / luminance, g / luminance, b / luminance);
 }
 
-type StarUniforms = { uPixelRatio: { value: number }; uBrightness: { value: number } };
+type StarUniforms = {
+  uPixelRatio: { value: number };
+  uBrightness: { value: number };
+  uTime: { value: number };
+  uTwinkle: { value: number };
+};
 
 // 星と惑星で同じ描き方と明るさの倍率を使う
 function createPoints(count: number, uniforms: StarUniforms): THREE.Points {
@@ -282,11 +297,16 @@ export class Sky {
   private readonly moon: THREE.Mesh;
 
   constructor(pixelRatio: number) {
-    this.starUniforms = { uPixelRatio: { value: pixelRatio }, uBrightness: { value: 1 } };
+    this.starUniforms = {
+      uPixelRatio: { value: pixelRatio },
+      uBrightness: { value: 1 },
+      uTime: { value: 0 },
+      uTwinkle: { value: 0 },
+    };
     this.stars = createStars(this.starUniforms);
     ({ lines: this.constellations, stars: this.constellationStars } = createConstellationLines());
-    // 惑星は星と同じ座標で置き、星と一緒に回す
-    this.planetPoints = createPoints(PLANETS.length, this.starUniforms);
+    // 惑星は星と同じ座標で置き、星と一緒に回す。惑星は瞬きにくいので揺らさない
+    this.planetPoints = createPoints(PLANETS.length, { ...this.starUniforms, uTwinkle: { value: 0 } });
     this.stars.add(this.planetPoints, this.constellations);
     this.moon = new THREE.Mesh(
       new THREE.SphereGeometry(MOON_RADIUS, 64, 48),
@@ -350,9 +370,16 @@ export class Sky {
     this.constellations.visible = visible;
   }
 
-  // 毎フレーム呼ぶ。線を伸ばす時計を進める
+  // 毎フレーム呼ぶ。線を伸ばす時計と、星のきらめきの時計を進める
   advance(dt: number): void {
     if (this.constellations.visible) this.constellationUniforms.uTime.value += dt;
+    if (this.starUniforms.uTwinkle.value > 0) {
+      this.starUniforms.uTime.value = (this.starUniforms.uTime.value + dt) % TWINKLE_CLOCK_WRAP;
+    }
+  }
+
+  setTwinkle(enabled: boolean): void {
+    this.starUniforms.uTwinkle.value = enabled ? TWINKLE_AMOUNT : 0;
   }
 
   private get constellationUniforms(): { uTime: { value: number } } {

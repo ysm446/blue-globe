@@ -1088,6 +1088,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     hdr.setBloomEnabled(graphics.bloom);
     sky.setStarBrightness(graphics.star_brightness);
     sky.setConstellationsVisible(graphics.show_constellations, camera);
+    sky.setTwinkle(graphics.star_twinkle);
     paintSpaceBackground(spaceCanvas, graphics.space_tint);
     spaceBackground.needsUpdate = true;
     earth.setCloudShadow(graphics.cloud_shadow);
