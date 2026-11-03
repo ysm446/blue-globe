@@ -1,4 +1,4 @@
-// 惑星の点の横に出す名前。点だけでは星と見分けられないため。クリックはできない
+// 惑星の点の横に出す名前。点だけでは星と見分けられないため。クリックはできない。太陽系の場面でも使う
 import * as THREE from 'three';
 import { earthClearance } from './exposure';
 
@@ -18,7 +18,7 @@ export class PlanetLabels {
   constructor(
     private readonly container: HTMLElement,
     names: string[],
-    private readonly globeRadius: number,
+    private readonly globeRadius: number | null, // 地球の後ろの名前を隠すときの地球の半径。null は隠さない
   ) {
     for (const name of names) {
       const element = document.createElement('span');
@@ -29,19 +29,23 @@ export class PlanetLabels {
     }
   }
 
-  // 毎フレーム呼ぶ。地球の後ろと画面の外の惑星は出さない
-  update(planets: ReadonlyArray<{ name: string; position: THREE.Vector3 }>, camera: THREE.Camera, visible: boolean): void {
+  // 毎フレーム呼ぶ。position が null のものと、地球の後ろと画面の外のものは出さない
+  update(planets: ReadonlyArray<{ name: string; position: THREE.Vector3 | null }>, camera: THREE.Camera, visible: boolean): void {
     this.container.hidden = !visible;
     if (!visible) return;
     const eye = camera.position.toArray();
     for (const planet of planets) {
       const label = this.labels.get(planet.name);
       if (!label) continue;
-      this.toPlanet.copy(planet.position).sub(camera.position).normalize();
-      this.projected.copy(planet.position).project(camera);
-      const onScreen =
-        this.projected.z < 1 && Math.abs(this.projected.x) <= 1 && Math.abs(this.projected.y) <= 1;
-      const shown = onScreen && earthClearance(eye, this.toPlanet.toArray(), this.globeRadius) > 0.5;
+      let shown = false;
+      if (planet.position) {
+        this.toPlanet.copy(planet.position).sub(camera.position).normalize();
+        this.projected.copy(planet.position).project(camera);
+        const onScreen =
+          this.projected.z < 1 && Math.abs(this.projected.x) <= 1 && Math.abs(this.projected.y) <= 1;
+        shown =
+          onScreen && (this.globeRadius === null || earthClearance(eye, this.toPlanet.toArray(), this.globeRadius) > 0.5);
+      }
       if (shown) {
         const x = ((this.projected.x + 1) / 2) * window.innerWidth + LABEL_OFFSET;
         const y = ((1 - this.projected.y) / 2) * window.innerHeight;

@@ -14,7 +14,7 @@ interface CloudResult {
 
 type MapMode = 'normal' | 'weather' | 'wind';
 
-type GlobeView = 'globe' | 'region';
+type GlobeView = 'solar' | 'globe' | 'region';
 
 type EarthTileLayer = 'day' | 'night' | 'water';
 

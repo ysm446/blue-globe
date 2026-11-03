@@ -119,6 +119,9 @@ async function init(): Promise<void> {
       button.setAttribute('aria-pressed', String(button.dataset.view === next));
     }
     el('view-hint').hidden = next !== 'region';
+    // 太陽系では、地表の表示モードと時刻のスライダー、カメラのパネルは意味がないので止める
+    document.body.classList.toggle('solar', next === 'solar');
+    for (const button of modeButtons) button.disabled = next === 'solar';
   }
 
   for (const button of viewButtons) {
@@ -137,7 +140,7 @@ async function init(): Promise<void> {
     // 風速モードは地球ビューだけ。カメラは changeMode が戻す
     if (next === 'wind') showView('globe');
     for (const button of viewButtons) {
-      if (button.dataset.view === 'region') button.disabled = next === 'wind';
+      if (button.dataset.view !== 'globe') button.disabled = next === 'wind';
     }
     globe.changeMode(next);
     mapLayers.show(next);
@@ -246,7 +249,10 @@ async function init(): Promise<void> {
       hasLocation = settings.location !== null;
       showClockPlace(settings.location);
       hideNews();
-      if (settings.location) globe.focusLocation(settings.location);
+      if (settings.location) {
+        if (view === 'solar') showView('globe'); // 新しい地点の上へ戻る
+        globe.focusLocation(settings.location);
+      }
       void refreshNews();
     },
     (graphics) => globe.applyGraphics(graphics),
@@ -261,6 +267,7 @@ async function init(): Promise<void> {
   });
   el('open-settings').addEventListener('click', () => void settingsDialog.open());
   el('return-home').addEventListener('click', () => {
+    if (view === 'solar') showView('globe');
     showHome();
     globe.setMarker();
     globe.returnToLocation();

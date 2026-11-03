@@ -41,6 +41,8 @@ const FINAL_SHADER = {
 
 export class HdrPipeline {
   private readonly composer: EffectComposer;
+  private readonly scenePass: RenderPass;
+  private backdropPass: RenderPass | null = null;
   private readonly bloom: UnrealBloomPass;
   private readonly finalPass: ShaderPass;
 
@@ -58,7 +60,8 @@ export class HdrPipeline {
     );
     this.composer.setPixelRatio(renderer.getPixelRatio());
     this.composer.setSize(size.x, size.y);
-    this.composer.addPass(new RenderPass(scene, camera));
+    this.scenePass = new RenderPass(scene, camera);
+    this.composer.addPass(this.scenePass);
     this.bloom = new UnrealBloomPass(size, BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD);
     this.composer.addPass(this.bloom);
     this.finalPass = new ShaderPass(FINAL_SHADER);
@@ -70,6 +73,24 @@ export class HdrPipeline {
   setExposure(exposure: number, sunVisibility: number, bloomScale = 1): void {
     this.finalPass.uniforms.uExposure.value = exposure;
     this.bloom.strength = BLOOM_STRENGTH * (1 + SUN_BLOOM_BOOST * sunVisibility) * bloomScale;
+  }
+
+  // 太陽系の場面を先に描き、その上にこの場面を重ねる。null で元に戻す。
+  // sceneVisible が false のときは、重ねる場面を描かない (地球が点になるほど遠いとき)
+  setBackdrop(scene: THREE.Scene | null, camera: THREE.Camera | null, sceneVisible = true): void {
+    if (scene && camera) {
+      if (!this.backdropPass) {
+        this.backdropPass = new RenderPass(scene, camera);
+        this.composer.insertPass(this.backdropPass, 0);
+      }
+      this.backdropPass.enabled = true;
+    } else if (this.backdropPass) {
+      this.backdropPass.enabled = false;
+    }
+    const layered = this.backdropPass?.enabled === true;
+    this.scenePass.clear = !layered;
+    this.scenePass.clearDepth = layered;
+    this.scenePass.enabled = !layered || sceneVisible;
   }
 
   setBloomEnabled(enabled: boolean): void {

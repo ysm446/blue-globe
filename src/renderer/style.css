@@ -363,7 +363,13 @@ button.city-label:active {
 }
 
 /* デモは今の様子を見せる */
-body.demo #time-control {
+body.demo #time-control,
+body.solar #time-control {
+  display: none;
+}
+
+/* 太陽系ではカメラの高さや向きは意味がないので、パネルごと隠す (隠れている間は計算しない) */
+body.solar #camera-panel {
   display: none;
 }
 

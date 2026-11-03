@@ -5,6 +5,7 @@ import { apparentScale, BASE_FOCAL_LENGTH, verticalFov } from './camera-lens';
 import { CameraPanel } from './camera-panel';
 import { CityLabels } from './city-labels';
 import { PlanetLabels } from './planet-labels';
+import { SolarSystem } from './solar-system';
 import { MAP_CITIES } from './cities';
 import type { DemoPlace } from './demo';
 import { el } from './dom';
@@ -71,6 +72,7 @@ const FOCUS_DIST = 2.15; // 風速モードで地点に寄ったときのカメ�
 const EARTH_VIEW_DIST = 3.3; // 通常・天気モードは地球全体が見える距離にする
 const OVERVIEW_DIST = 4.6;
 const FLY_SECONDS = 2.8;
+const CLOUD_LOD_PIXELS = 150; // 太陽系へ引いていくとき、地球がこれより小さく写ると雲を描かない
 const PANEL_OVERLAP_WIDTH = 900; // これより狭い画面ではパネルを下に置く (style.css と合わせる)
 
 const EARTH_SURFACE_RADIUS = GLOBE_RADIUS * 1.0005;
@@ -78,6 +80,7 @@ const COASTLINE_RADIUS = GLOBE_RADIUS * 1.0015;
 const BORDER_RADIUS = GLOBE_RADIUS * 1.0014;
 const REGION_LINE_RADIUS = GLOBE_RADIUS * 1.0007; // 斜めに見ると線が地表からずれるので、地域ビューでは地表へ寄せる
 const CAMERA_NEAR_MAX = 0.1;
+const CAMERA_FAR = 100;
 const CAMERA_NEAR_MIN = 0.005;
 const REGION_BLEND_SECONDS = 0.5;
 const DEMO_FLY_SECONDS = 6;
@@ -110,7 +113,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const scene = new THREE.Scene();
 
   const cameraAspect = window.innerWidth / window.innerHeight;
-  const camera = new THREE.PerspectiveCamera(verticalFov(BASE_FOCAL_LENGTH, cameraAspect), cameraAspect, 0.1, 100);
+  const camera = new THREE.PerspectiveCamera(verticalFov(BASE_FOCAL_LENGTH, cameraAspect), cameraAspect, 0.1, CAMERA_FAR);
   camera.position.set(0, 1, 3.6);
   let focalLength = BASE_FOCAL_LENGTH;
   let lensScale = apparentScale(camera.fov);
@@ -172,6 +175,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const sky = new Sky(renderer.getPixelRatio());
   scene.add(sky.group);
 
+  // 太陽系。地球の場面とは別に描き、引いている間と見ている間は地球の場面をその上に重ねる
+  const solar = new SolarSystem(sky, spaceBackground, renderer.domElement, el('solar-labels'), renderer.getPixelRatio());
+
   // 風速モードの薄い星空
   let windStars: THREE.Points;
   {
@@ -195,9 +201,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let mode: MapMode = 'normal';
   let showMapLines = true;
 
-  // 風速モードは線がないと風の場所が分からないので、設定にかかわらず描く
+  // 風速モードは線がないと風の場所が分からないので、設定にかかわらず描く。太陽系では描かない
   function syncMapLines(): void {
-    const visible = mode === 'wind' || showMapLines;
+    const visible = (mode === 'wind' || showMapLines) && !solar.active;
     coastlines.group.visible = visible;
     borders.group.visible = visible;
   }
@@ -205,7 +211,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let viewTime: Date | null = null; // 過去の時刻を見ている間は、その時刻の太陽と星にする
 
   function updateSky(): void {
-    sky.setTime(viewTime ?? new Date());
+    const date = viewTime ?? new Date();
+    sky.setTime(date);
+    solar.setTime(date);
     earth.setSunDirection(sky.sunDir);
   }
 
@@ -241,7 +249,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (wind) earth.hideCloudsNow();
     sky.group.visible = !wind;
     windStars.visible = wind;
-    scene.background = wind ? flatBackground : spaceBackground;
+    scene.background = solar.active ? null : wind ? flatBackground : spaceBackground;
     coastlines.setOpacity(wind ? COASTLINE_OPACITY : EARTH_COASTLINE_OPACITY);
     borders.setOpacity(wind ? BORDER_OPACITY : EARTH_BORDER_OPACITY);
     syncMapLines();
@@ -517,11 +525,18 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     regionDistanceGoal = clampRegionDistance(regionDistanceGoal * Math.exp(event.deltaY * WHEEL_ZOOM_RATE));
   });
 
-  // 地表へ近づいても欠けないよう、カメラの手前の描画範囲は高度に合わせる
+  // 地表へ近づいても欠けないよう、カメラの手前の描画範囲は高度に合わせる。
+  // 太陽系へ引いている間は、遠くの地球と月まで描けるよう奥の範囲も広げる
   function updateNearPlane(): void {
-    const near = THREE.MathUtils.clamp((cameraAltitude() - CLOUD_ALTITUDE) * 0.5, CAMERA_NEAR_MIN, CAMERA_NEAR_MAX);
-    if (near === camera.near) return;
+    let near = THREE.MathUtils.clamp((cameraAltitude() - CLOUD_ALTITUDE) * 0.5, CAMERA_NEAR_MIN, CAMERA_NEAR_MAX);
+    let far = CAMERA_FAR;
+    if (solar.active) {
+      near = Math.max(near, camera.position.length() * 0.02);
+      far = Math.max(CAMERA_FAR, camera.position.length() + CAMERA_FAR);
+    }
+    if (near === camera.near && far === camera.far) return;
     camera.near = near;
+    camera.far = far;
     camera.updateProjectionMatrix();
   }
 
@@ -572,13 +587,17 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   // デモの間は出さない。デモは行き先の都市だけをマーカーで見せる
   function syncCityLabels(): void {
-    cityLabels.setVisible(cityLabelsEnabled && !demoMotion);
+    cityLabels.setVisible(cityLabelsEnabled && !demoMotion && !solar.active);
   }
 
   function focusLocation(location: WeatherLocation): void {
     focused = location;
     selectedCity = null;
     placeMarker(location.name, location.latitude, location.longitude);
+    if (solar.active) {
+      exitSolar(); // 太陽系からは、新しい地点の上へ戻る
+      return;
+    }
     if (regionView) {
       if (!regionFlight?.leaving) flyRegion(regionHomeOf(regionView), false);
       return;
@@ -596,6 +615,48 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   function returnToLocation(): void {
     if (focused) focusLocation(focused);
+    else if (solar.active) exitSolar();
+  }
+
+  // 太陽系へ引く。地域ビューからも、その姿勢のまま引き始める
+  function enterSolar(): void {
+    if (mode === 'wind' || solar.entered) return;
+    flight = null;
+    regionView = null;
+    regionFlight = null;
+    regionDrag = null;
+    regionVelocity = REGION_STILL;
+    controls.enabled = false;
+    controls.autoRotate = false;
+    solar.enter(camera, sky.siderealRotation);
+    syncSolarScene();
+  }
+
+  // 地点の上 (地点がなければ今の向き) の地球ビューへ戻る。done は戻り終えたときに呼ぶ
+  function exitSolar(done?: () => void): void {
+    if (!solar.active) {
+      done?.();
+      return;
+    }
+    const home = markerShown ? markerPos.clone().normalize() : camera.position.clone().normalize();
+    solar.leave(home, viewDistance(mode), sky.siderealRotation, () => {
+      // 戻り終えた姿勢は地球の中心を向いているので、そのまま地球ビューの操作へ引き渡す
+      camera.up.set(0, 1, 0);
+      controls.target.set(0, 0, 0);
+      controls.enabled = true;
+      controls.autoRotate = demoMotion;
+      controls.update();
+      syncSolarScene();
+      done?.();
+    });
+  }
+
+  // 太陽系の場面を使う間は、星と太陽はそちらで描き、地球の場面は地球と月だけを重ねる
+  function syncSolarScene(): void {
+    sky.setBackdropVisible(!solar.active);
+    setMode(mode);
+    syncCityLabels();
+    hdr.setBackdrop(solar.active ? solar.scene : null, solar.active ? solar.camera : null);
   }
 
   // 風速モードと他のモードでは見やすい距離が違うので、向きは保ったまま距離だけ変える
@@ -639,7 +700,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   }
 
   function updateMarker(): void {
-    const point = markerShown ? toScreen(markerPos) : null;
+    const point = markerShown && !solar.active ? toScreen(markerPos) : null;
     if (markerShown) {
       marker.style.visibility = point ? 'visible' : 'hidden';
       if (point) marker.style.transform = `translate(${point.x}px, ${point.y}px)`;
@@ -669,8 +730,14 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const cameraForward = new THREE.Vector3();
   function updateExposure(dt: number): void {
     toSun.copy(sky.sunPosition).sub(camera.position).normalize();
-    const inFront = toSun.dot(camera.getWorldDirection(cameraForward)) > 0;
-    sunNdc.copy(sky.sunPosition).project(camera);
+    let inFront: boolean;
+    if (solar.active) {
+      // 地球から離れると、太陽の向きは地球から見た向きと違うので、太陽系の場面で求める
+      inFront = solar.projectSun(sunNdc);
+    } else {
+      inFront = toSun.dot(camera.getWorldDirection(cameraForward)) > 0;
+      sunNdc.copy(sky.sunPosition).project(camera);
+    }
     const visibility =
       screenPresence(sunNdc.x, sunNdc.y, inFront) *
       earthClearance(camera.position.toArray(), toSun.toArray(), GLOBE_RADIUS);
@@ -707,6 +774,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       renderer.setPixelRatio(ratio);
       hdr.setPixelRatio(ratio);
       sky.setPixelRatio(ratio);
+      solar.setPixelRatio(ratio);
       gpuParticles?.resize();
     }
   }
@@ -749,9 +817,16 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const measureGpu = !fpsCounter.hidden;
     if (measureGpu) gpuTimer.begin();
 
-    if (regionView) updateRegion(dt);
+    if (solar.active) {
+      solar.update(dt, camera);
+      solar.applyToEarth(camera, sky.siderealRotation);
+      hdr.setBackdrop(solar.scene, solar.camera, solar.showsEarthScene);
+    } else if (regionView) updateRegion(dt);
     else updateFlight(dt);
     updateNearPlane();
+    sky.follow(camera.position);
+    // 太陽系へ引いて地球が小さく写るようになったら、雲は描かない
+    earth.setCloudsEnabled(mode === 'weather' && (!solar.active || solar.earthPixels() >= CLOUD_LOD_PIXELS));
     updateRegionBlend(dt);
     updateRegionDetail(dt);
     // 線を描かない間は、詳しい線のデータを読み込まない
@@ -784,7 +859,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (mode === 'wind') gpuParticles?.composite();
     updateMarker();
     // 星を描かない風速モードとデモの間は出さない
-    planetLabels.update(sky.planets, camera, planetLabelsEnabled && sky.group.visible && !demoMotion);
+    planetLabels.update(sky.planets, camera, planetLabelsEnabled && sky.group.visible && !demoMotion && !solar.active);
+    solar.updateLabels(!demoMotion);
     cameraPanel.update(dt, {
       focalLength,
       exposure: mode !== 'wind' && earthReady ? exposure * 2 ** exposureCompensation : null,
@@ -807,6 +883,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     sky,
     earth,
     regionView: () => regionView,
+    solar,
     setRegionView(next: Partial<RegionView>): void {
       if (!regionView) return;
       regionFlight = null;
@@ -842,7 +919,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     startFromOverview,
     returnToLocation,
     setView(next: GlobeView): void {
-      if (next === 'region') enterRegion();
+      if (next === 'solar') enterSolar();
+      else if (solar.active) exitSolar(next === 'region' ? enterRegion : undefined);
+      else if (next === 'region') enterRegion();
       else leaveRegion(EARTH_VIEW_DIST);
     },
     sunLonLat,
@@ -872,12 +951,20 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     // place を省くと設定地点へ向かう
     demoRegion(place?: LonLat): void {
       if (mode === 'wind') return;
+      if (solar.active) {
+        exitSolar(() => this.demoRegion(place));
+        return;
+      }
       const from = beginRegion();
       const { lat, lon } = place ?? homeLonLat(from);
       flyRegion({ lat, lon, heading: 0, tilt: DEMO_TILT, distance: DEMO_DISTANCE }, false, DEMO_FLY_SECONDS);
     },
     // 風速モードへの切り替えで既に離れ始めていたら、その動きに任せる
     demoGlobe(dayside = false): void {
+      if (solar.active) {
+        exitSolar(() => this.demoGlobe(dayside));
+        return;
+      }
       if (!regionView || regionFlight?.leaving) return;
       const distance = viewDistance(mode) - GLOBE_RADIUS;
       const sun = sunLonLat();

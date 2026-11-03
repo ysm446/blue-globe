@@ -102,6 +102,10 @@ export function initDemo(
     globe.setDemoMotion(false);
     modes.apply(mode);
     views.show(view);
+    if (view === 'solar') {
+      globe.setView('solar');
+      return;
+    }
     if (view === 'region') globe.setView('region');
     else globe.demoGlobe();
     globe.returnToLocation();

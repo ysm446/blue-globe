@@ -7,6 +7,7 @@ import { PLANETS, planetSky } from './planets';
 import starCatalog from './data/stars.json';
 
 const STAR_DISTANCE = 90;
+const Y_AXIS = new THREE.Vector3(0, 1, 0);
 const SUN_DISTANCE = 85;
 const SUN_HALF_SIZE = 22;
 const MOON_DISTANCE = 60;
@@ -91,11 +92,12 @@ void main() {
 // 太陽は常にカメラを向く板に、計算で光を描く。画像だと暗い部分の階調が足りず、
 // 明るさを上げたときに同心円や点の模様が出る
 const SUN_VS = /* glsl */ `
+uniform float uHalfSize;
 varying vec2 vOffset;
 void main() {
   vOffset = position.xy;
   vec4 center = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-  center.xy += position.xy * ${SUN_HALF_SIZE.toFixed(1)};
+  center.xy += position.xy * uHalfSize;
   gl_Position = projectionMatrix * center;
 }
 `;
@@ -161,10 +163,12 @@ function createStars(uniforms: StarUniforms): THREE.Points {
   return points;
 }
 
-function createSun(): THREE.Mesh {
+// halfSize は板の半分の大きさ。描く距離に対する比で、見かけの大きさが決まる
+export function createSun(halfSize: number): THREE.Mesh {
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(2, 2),
     new THREE.ShaderMaterial({
+      uniforms: { uHalfSize: { value: halfSize } },
       vertexShader: SUN_VS,
       fragmentShader: SUN_FS,
       transparent: true,
@@ -176,6 +180,9 @@ function createSun(): THREE.Mesh {
   return mesh;
 }
 
+// 太陽の板の大きさと描く距離の比。太陽系の場面でも、地球から見たときに同じ見かけになるよう使う
+export const SUN_SIZE_RATIO = SUN_HALF_SIZE / SUN_DISTANCE;
+
 export class Sky {
   readonly group = new THREE.Group();
   readonly sunDir = new THREE.Vector3(1, 0, 0);
@@ -184,9 +191,11 @@ export class Sky {
   // 名前を添えるための、惑星の世界座標での位置
   readonly planets = PLANETS.map((planet) => ({ name: planet.name, position: new THREE.Vector3() }));
   private readonly starUniforms: StarUniforms;
-  private readonly stars: THREE.Points;
+  // 太陽系の場面でも同じ星を描くので、形と見た目は共有する
+  readonly stars: THREE.Points;
   private readonly planetPoints: THREE.Points;
-  private readonly sun = createSun();
+  private readonly planetOffsets = PLANETS.map(() => new THREE.Vector3()); // カメラから見た位置
+  private readonly sun = createSun(SUN_HALF_SIZE);
   private readonly moon: THREE.Mesh;
 
   constructor(pixelRatio: number) {
@@ -206,6 +215,26 @@ export class Sky {
     this.group.add(this.stars, this.sun, this.moon);
   }
 
+  // 星と太陽は無限に遠いものとして、カメラを中心に置く。カメラがどこへ動いても星空がずれない。
+  // 月は地球を中心に回るので動かさない。描く前に毎フレーム呼ぶ
+  follow(camera: THREE.Vector3): void {
+    this.stars.position.copy(camera);
+    this.sunPosition.copy(this.sunDir).multiplyScalar(SUN_DISTANCE).add(camera);
+    this.sun.position.copy(this.sunPosition);
+    this.planetOffsets.forEach((offset, i) => this.planets[i].position.copy(offset).add(camera));
+  }
+
+  // 太陽系の場面が星と太陽を描く間は、こちらでは月だけを描く
+  setBackdropVisible(visible: boolean): void {
+    this.stars.visible = visible;
+    this.sun.visible = visible;
+  }
+
+  // 星を回している角度 (恒星時の分)。太陽系の場面とこの場面の向きを合わせるのに使う
+  get siderealRotation(): number {
+    return this.stars.rotation.y;
+  }
+
   setPixelRatio(pixelRatio: number): void {
     this.starUniforms.uPixelRatio.value = pixelRatio;
   }
@@ -222,8 +251,6 @@ export class Sky {
     this.updatePlanets(date);
     const sun = subsolarPoint(date);
     lonLatToVector3(sun.lon, sun.lat, 1, this.sunDir);
-    this.sunPosition.copy(this.sunDir).multiplyScalar(SUN_DISTANCE);
-    this.sun.position.copy(this.sunPosition);
     const moon = sublunarPoint(date);
     lonLatToVector3(moon.lon, moon.lat, 1, this.moonDir);
     this.moon.position.copy(this.moonDir).multiplyScalar(MOON_DISTANCE);
@@ -237,7 +264,7 @@ export class Sky {
       local.toArray(position.array, i * 3);
       setStarColor(planet.bv, color).toArray(starColor.array, i * 3);
       intensity.array[i] = starIntensity(planet.magnitude);
-      this.planets[i].position.copy(local).applyMatrix4(this.stars.matrix);
+      this.planetOffsets[i].copy(local).applyAxisAngle(Y_AXIS, this.stars.rotation.y);
     });
     position.needsUpdate = true;
     starColor.needsUpdate = true;

@@ -85,18 +85,24 @@ export const PLANETS: readonly PlanetData[] = [
   },
 ];
 
-type Vec = [number, number, number];
+export type Vec = [number, number, number];
 
-// 太陽を中心とした J2000 の赤道座標 (AU)
-function heliocentric(elements: Elements, rates: Elements, t: number): Vec {
+// ある時刻の軌道要素 (度は弧度にする)
+function elementsAt(elements: Elements, rates: Elements, t: number) {
   const [a, e, inclination, meanLon, periLon, nodeLon] = elements.map((value, i) => value + rates[i] * t);
-  const peri = (periLon - nodeLon) * DEG;
-  const node = nodeLon * DEG;
-  const inc = inclination * DEG;
-  const anomaly = ((((meanLon - periLon) % 360) + 540) % 360 - 180) * DEG;
-  // ケプラー方程式をニュートン法で解く
-  let ecc = anomaly + e * Math.sin(anomaly);
-  for (let i = 0; i < 8; i++) ecc -= (ecc - e * Math.sin(ecc) - anomaly) / (1 - e * Math.cos(ecc));
+  return {
+    a,
+    e,
+    peri: (periLon - nodeLon) * DEG,
+    node: nodeLon * DEG,
+    inc: inclination * DEG,
+    anomaly: ((((meanLon - periLon) % 360) + 540) % 360 - 180) * DEG,
+  };
+}
+
+// 離心近点角 ecc の位置を、太陽を中心とした J2000 の赤道座標 (AU) で返す
+function positionOnOrbit(orbit: ReturnType<typeof elementsAt>, ecc: number): Vec {
+  const { a, e, peri, node, inc } = orbit;
   const px = a * (Math.cos(ecc) - e);
   const py = a * Math.sqrt(1 - e * e) * Math.sin(ecc);
   const [cw, sw, cn, sn, ci, si] = [Math.cos(peri), Math.sin(peri), Math.cos(node), Math.sin(node), Math.cos(inc), Math.sin(inc)];
@@ -104,6 +110,34 @@ function heliocentric(elements: Elements, rates: Elements, t: number): Vec {
   const y = (cw * sn + sw * cn * ci) * px + (-sw * sn + cw * cn * ci) * py;
   const z = sw * si * px + cw * si * py;
   return [x, y * Math.cos(OBLIQUITY) - z * Math.sin(OBLIQUITY), y * Math.sin(OBLIQUITY) + z * Math.cos(OBLIQUITY)];
+}
+
+function heliocentric(elements: Elements, rates: Elements, t: number): Vec {
+  const orbit = elementsAt(elements, rates, t);
+  // ケプラー方程式をニュートン法で解く
+  let ecc = orbit.anomaly + orbit.e * Math.sin(orbit.anomaly);
+  for (let i = 0; i < 8; i++) {
+    ecc -= (ecc - orbit.e * Math.sin(ecc) - orbit.anomaly) / (1 - orbit.e * Math.cos(ecc));
+  }
+  return positionOnOrbit(orbit, ecc);
+}
+
+const centuries = (date: Date): number => (date.getTime() - J2000_MS) / CENTURY_MS;
+
+// 地球と、PLANETS と同じ順の惑星の位置。太陽を中心とした J2000 の赤道座標 (AU)。地球は地球と月の重心で代える
+export function heliocentricPositions(date: Date): { earth: Vec; planets: Vec[] } {
+  const t = centuries(date);
+  return {
+    earth: heliocentric(EARTH.elements, EARTH.rates, t),
+    planets: PLANETS.map((planet) => heliocentric(planet.elements, planet.rates, t)),
+  };
+}
+
+// その時刻の軌道を segments 個の点で返す。index は PLANETS の順で、-1 は地球
+export function orbitPoints(index: number, date: Date, segments: number): Vec[] {
+  const { elements, rates } = index < 0 ? EARTH : PLANETS[index];
+  const orbit = elementsAt(elements, rates, centuries(date));
+  return Array.from({ length: segments }, (_, i) => positionOnOrbit(orbit, (2 * Math.PI * i) / segments));
 }
 
 export interface PlanetSky {
@@ -115,11 +149,10 @@ export interface PlanetSky {
 }
 
 export function planetSky(date: Date): PlanetSky[] {
-  const t = (date.getTime() - J2000_MS) / CENTURY_MS;
-  const earth = heliocentric(EARTH.elements, EARTH.rates, t);
+  const { earth, planets } = heliocentricPositions(date);
   const sunDistance = Math.hypot(...earth);
-  return PLANETS.map((planet) => {
-    const helio = heliocentric(planet.elements, planet.rates, t);
+  return PLANETS.map((planet, index) => {
+    const helio = planets[index];
     const geo: Vec = [helio[0] - earth[0], helio[1] - earth[1], helio[2] - earth[2]];
     const r = Math.hypot(...helio);
     const delta = Math.hypot(...geo);
