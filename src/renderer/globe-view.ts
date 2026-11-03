@@ -95,12 +95,18 @@ const DEMO_TURN_DEGREES_PER_SECOND = 1.2; // 地域ビューで中心のまわ�
 const CRUISE_LEVELS = 5;
 // 1 段目の速さ。高さ (距離) 1 あたり、1 秒に進む角度 (地球の中心から見た弧度)。
 // 1 段ごとに 2 倍にし、遅い段で景色を眺められ、速い段で遠くへ移れるようにする
-const CRUISE_RATE = 0.01;
+const CRUISE_RATE = 0.02;
 const CRUISE_STEP_RATIO = 2;
 const CRUISE_SECONDS = 0.8; // 速さを変えるときの時定数
-const TURN_DEGREES_PER_SECOND = 30;
+const TURN_DEGREES_PER_SECOND = 20;
 const TURN_SECONDS = 0.35; // 旋回を始めるときと止めるときの時定数
 const BANK_DEGREES = 6; // 旋回中に画面を傾ける角度
+// 中心の地点のまわりを回る旋回。Q と E で速さの段を変え、手を離しても回り続ける。巡航とは同時にしない
+const ORBIT_LEVELS = 5;
+const ORBIT_DEGREES_PER_SECOND = 1.2; // 1 段目の速さ (デモと同じ。1 周約 5 分)。1 段ごとに 2 倍にする
+const ORBIT_STEP_RATIO = 2;
+const ORBIT_SECONDS = 0.8; // 速さを変えるときの時定数
+const ORBIT_KEYS: Record<string, 1 | -1> = { KeyE: 1, KeyQ: -1 }; // 1 は右回り (カメラが右へ回り込む)
 const CRUISE_KEYS: Record<string, 'faster' | 'slower' | 'left' | 'right'> = {
   ArrowUp: 'faster',
   KeyW: 'faster',
@@ -467,20 +473,32 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let cruiseThrottle = 0;
   let turnRate = 0;
   const turnKeys = new Set<'left' | 'right'>();
+  // 旋回の段 (-ORBIT_LEVELS〜ORBIT_LEVELS。正が右回り) と、なめらかにしたあとの値
+  let orbitLevel = 0;
+  let orbitThrottle = 0;
   const viewHint = el('view-hint');
   const viewHintText = viewHint.textContent ?? '';
 
+  // 巡航と、中心のまわりの旋回をどちらも止める
   function stopCruise(): void {
     cruiseLevel = 0;
     cruiseThrottle = 0;
     turnRate = 0;
     turnKeys.clear();
+    orbitLevel = 0;
+    orbitThrottle = 0;
     showCruise();
   }
 
   function showCruise(): void {
-    viewHint.textContent =
-      cruiseLevel > 0 ? `巡航中 速さ ${cruiseLevel} / ${CRUISE_LEVELS}(↑↓ で速さ、←→ で旋回)` : viewHintText;
+    if (cruiseLevel > 0) {
+      viewHint.textContent = `巡航中 速さ ${cruiseLevel} / ${CRUISE_LEVELS}(↑↓ で速さ、←→ で向き、Q/E で旋回)`;
+    } else if (orbitLevel !== 0) {
+      const direction = orbitLevel > 0 ? '右回り' : '左回り';
+      viewHint.textContent = `旋回中 ${direction} 速さ ${Math.abs(orbitLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、↑ で巡航)`;
+    } else {
+      viewHint.textContent = viewHintText;
+    }
   }
 
   // 地域ビューで、入力欄や設定画面を操作していないときだけ受け付ける
@@ -500,7 +518,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   window.addEventListener('keydown', (event) => {
     const action = CRUISE_KEYS[event.code];
-    if (!action) return;
+    const orbitStep = ORBIT_KEYS[event.code];
+    if (!action && !orbitStep) return;
     releaseButtonFocus(event);
     if (!acceptsCruiseKey(event)) return;
     event.preventDefault();
@@ -509,7 +528,14 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       return;
     }
     if (event.repeat) return; // 押し続けても 1 段ずつ変える
-    cruiseLevel = THREE.MathUtils.clamp(cruiseLevel + (action === 'faster' ? 1 : -1), 0, CRUISE_LEVELS);
+    // 巡航は中心を動かし、旋回は中心を固定するので、片方を始めたらもう片方は止める (速さはなめらかに落ちる)
+    if (orbitStep) {
+      orbitLevel = THREE.MathUtils.clamp(orbitLevel + orbitStep, -ORBIT_LEVELS, ORBIT_LEVELS);
+      cruiseLevel = 0;
+    } else {
+      cruiseLevel = THREE.MathUtils.clamp(cruiseLevel + (action === 'faster' ? 1 : -1), 0, CRUISE_LEVELS);
+      if (action === 'faster') orbitLevel = 0;
+    }
     showCruise();
   });
   window.addEventListener('keyup', (event) => {
@@ -525,8 +551,20 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     return CRUISE_RATE * CRUISE_STEP_RATIO ** (throttle - 1);
   }
 
+  // 旋回の段の値 (符号つき) から、方角の変わる速さ (度/秒) を求める。巡航と同じく 0〜1 段の間は比例させる。
+  // 右回りでカメラが右へ回り込むと、カメラの向く方角は左へ回る
+  function orbitDegreesPerSecond(throttle: number): number {
+    const size = Math.abs(throttle);
+    const rate = size < 1 ? ORBIT_DEGREES_PER_SECOND * size : ORBIT_DEGREES_PER_SECOND * ORBIT_STEP_RATIO ** (size - 1);
+    return -Math.sign(throttle) * rate;
+  }
+
   function updateCruise(dt: number): void {
     if (!regionView) return;
+    orbitThrottle += (orbitLevel - orbitThrottle) * (1 - Math.exp(-dt / ORBIT_SECONDS));
+    if (!regionDrag && Math.abs(orbitThrottle) > 1e-4) {
+      regionView = { ...regionView, heading: wrapDegrees(regionView.heading + orbitDegreesPerSecond(orbitThrottle) * dt) };
+    }
     cruiseThrottle += (cruiseLevel - cruiseThrottle) * (1 - Math.exp(-dt / CRUISE_SECONDS));
     const turnGoal = ((turnKeys.has('right') ? 1 : 0) - (turnKeys.has('left') ? 1 : 0)) * TURN_DEGREES_PER_SECOND;
     turnRate += (turnGoal - turnRate) * (1 - Math.exp(-dt / TURN_SECONDS));
