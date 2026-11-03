@@ -341,19 +341,32 @@ void main() {
   float lit = smoothstep(-0.25, 0.55, dot(n, uSunDir));
   float a = pow(inner, 2.6) * lit * 0.9;
   // 太陽の向きへの強い散乱 (前方散乱)。日の出や日の入りのように、縁の向こうに太陽があると縁が細く明るく光る。
-  // 昼と夜の境目では、光が大気を長く通るので低い層は黄色から橙に、その上の層は青紫になる
+  // 昼と夜の境目では、光が大気を長く通るので低い層は黄色から橙になり、その上に青い層が残る
   float toward = max(dot(ray, uSunDir), 0.0);
   float dusk = 1.0 - smoothstep(-0.05, 0.3, sunHeight);
   float reach = smoothstep(-0.18, 0.0, sunHeight); // 地球の影に深く入った層には光が届かない
   float layer = clamp((closest - 1.0) / 0.07, 0.0, 1.0); // 0 が地表、1 が大気の上端
   float facingSun = dusk * smoothstep(0.8, 0.97, toward); // 縁のほぼ真後ろに太陽があるとき
-  // 昼側の青い光は、境目で太陽の方を見るときは青紫にして弱める
-  vec3 color = mix(vec3(0.27, 0.55, 1.0), vec3(0.42, 0.3, 1.0), facingSun) * a * a * (1.0 - 0.45 * facingSun);
+  // 縁の向こうに太陽があるとき、境目の縁は太陽から離れたところまで低い層が橙に光る
+  // (光が大気を横に長く通り、赤い光だけが残る)。太陽を背にしたときや真横にあるときの縁は光らせない。
+  // 散った光はほとんど太陽の向きへ進むので、ほかの向きからは暗く見える。
+  // 光が当たるのは境目から夜側へ約 7° まで (高さ 50km の層が地球の影から出る範囲。太陽の高さ -0.12)。
+  // 地球ビューの距離では、見えている縁は境目より約 14° 夜側にあるので、縁の向こうに太陽があっても
+  // 橙は太陽の近くの縁だけになる (一周の輪に見えるのは、境目と縁が重なるほど遠くから見たとき)。
+  // 前方散乱の線より厚くする。同じ厚さでは地球ビューで 1〜2 画素になって見えなかった。
+  // 大気の層を薄くしている地域ビューでは、同じ割合で薄くする
+  float beltReach = smoothstep(-0.12, -0.02, sunHeight);
+  float lowLayer = exp(-layer * 5.0 * uThinness) * inner * inner;
+  float belt = dusk * beltReach * lowLayer * smoothstep(0.6, 0.95, toward);
+  // 昼側の青い光は、境目で太陽の方を見るときは弱める。橙の層では青を橙に置き換え、青は上の層にだけ残す。
+  // 混ぜたままだとピンクに見えた。青紫に寄せると、地球ビューでは縁が一周紫に見えた
+  vec3 color = vec3(0.27, 0.55, 1.0) * a * a * (1.0 - 0.45 * facingSun) * (1.0 - 0.85 * belt);
   vec3 warm = mix(vec3(1.0, 0.82, 0.45), vec3(1.0, 0.32, 0.04), smoothstep(0.75, 0.2, toward)); // 太陽から離れるほど赤い
   vec3 tint = mix(vec3(0.85, 0.92, 1.0), warm, dusk);
   float forward = pow(toward, 4.0) * 0.8 + pow(toward, 60.0) * 1.4 + pow(toward, 3000.0) * 3.0;
   float density = exp(-layer * 16.0) * inner * inner; // 低い層ほど濃く、縁を細く見せる
   color += tint * forward * density * reach;
+  color += vec3(1.0, 0.38, 0.08) * belt * 0.6;
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
 }
