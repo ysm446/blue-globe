@@ -106,7 +106,7 @@ export class DepthOfFieldPass extends Pass {
       new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
     this.half = [target(), target()];
 
-    // 半分の解像度へ縮める。ピントの合った点の色は、奥のぼけへ混ぜないよう錯乱円の大きさで重みを下げる。
+    // 半分の解像度へ縮める。4 点の色は、ぼけの大きい点ほど重く混ぜる。
     // 4 点のうち絶対値が最も大きい錯乱円を残す (a に画面の高さを 1 とした半径を入れる)
     this.prefilter = fullscreenMaterial(
       { tColor: { value: null }, uTexel: { value: new THREE.Vector2() }, ...this.lens },
@@ -125,15 +125,16 @@ export class DepthOfFieldPass extends Pass {
         for (int i = 0; i < 4; i++) {
           vec2 uv = vUv + offsets[i] * uTexel;
           float coc = cocAt(uv);
-          float weight = abs(coc);
+          float weight = abs(coc) + 1e-4;
           sum += max(texture2D(tColor, uv).rgb, vec3(0.0)) * weight;
           weightSum += weight;
           cocMin = min(cocMin, coc);
           cocMax = max(cocMax, coc);
         }
         float coc = (-cocMin > cocMax ? cocMin : cocMax) * ${MAX_COC.toFixed(4)};
-        vec3 color = sum / max(weightSum, 1e-5) * smoothstep(0.0, uTexel.y * 4.0, abs(coc));
-        gl_FragColor = vec4(color, coc);
+        // ピントの合った点の色は暗くしない。暗くすると、元の解像度の像と混ぜ始める錯乱円の帯で
+        // その暗さが写り、奥行きに沿った薄い線になった。奥のぼけへの混ざりは、集めるときの重みで防ぐ
+        gl_FragColor = vec4(sum / weightSum, coc);
       }`,
     );
 
@@ -165,7 +166,7 @@ export class DepthOfFieldPass extends Pass {
           float farCoc = max(min(center.a, tap.a), 0.0);
           float farWeight = clamp((farCoc - distance + margin) / margin, 0.0, 1.0);
           float nearWeight = clamp((-tap.a - distance + margin) / margin, 0.0, 1.0);
-          // ピントの合った点は縮めるときに暗くしてあるので、手前のぼけには入れない
+          // 手前にぼけていない点 (ピントの合った点と奥の点) は、手前のぼけに入れない
           nearWeight *= step(uTexel.y, -tap.a);
           far += vec4(tap.rgb, 1.0) * farWeight;
           near += vec4(tap.rgb, 1.0) * nearWeight;
