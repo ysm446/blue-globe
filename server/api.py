@@ -100,7 +100,7 @@ class GraphicsUpdate(BaseModel):
     cloud_edge_detail: float = Field(ge=0, le=1)
     cloud_edge_sharpness: float = Field(ge=0, le=1)
     cloud_puffiness: float = Field(ge=0, le=2)
-    cloud_height: float = Field(ge=0.5, le=1.5)
+    cloud_height: float = Field(ge=0.5, le=3)
 
 
 @app.get("/health")

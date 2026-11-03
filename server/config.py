@@ -35,7 +35,7 @@ DEFAULT_SETTINGS = {
         "cloud_edge_detail": 0.7,
         "cloud_edge_sharpness": 0.3,
         "cloud_puffiness": 1.0,
-        "cloud_height": 1.0,  # 1 が実際の約 2 倍に誇張した高さ
+        "cloud_height": 1.0,  # 1 で上端が約 16km (実際の雲の上限に近い)
     },
     # True で開いている。カメラのパネルは計器のようなものなので、既定では閉じておく
     "panels": {"news": True, "hourly": True, "weekly": True, "details": True, "camera": False},

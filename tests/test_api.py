@@ -136,7 +136,7 @@ class SettingsApiTest(unittest.TestCase):
             {"cloud_edge_sharpness": -0.1},
             {"cloud_puffiness": 2.1},
             {"cloud_height": 0.45},
-            {"cloud_height": 1.55},
+            {"cloud_height": 3.05},
         ):
             response = self.client.put("/settings/graphics", json={**self.GRAPHICS, **change})
             self.assertEqual(response.status_code, 422)

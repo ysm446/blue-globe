@@ -9,7 +9,7 @@ import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, PIXEL_JITTER_GLSL } from './glsl';
 import type { Vec3 } from './math';
 
 const CLOUD_BASE = 0.0005; // 約 3km
-const CLOUD_TOP = 0.0045; // 約 29km。実際の 2 倍ほどあり、遠くから見ても起伏が分かるように誇張している。設定の高さ (100%) のときの値
+const CLOUD_TOP = 0.0025; // 約 16km。実際の雲の上限 (対流圏の天井) に近い。設定の高さ (100%) のときの値
 const FLAT_MATCH_HEIGHT = 0.375; // 平らな雲と混ぜるときに平らな雲を置く、層の下からの割合。雲の量の多い高さに近い
 const SHAPE_PERIOD = 0.03; // 大きなかたまりのノイズが繰り返す長さ (約 190km)
 const DETAIL_PERIOD = 0.007; // 細かいかたまりのノイズが繰り返す長さ (約 45km)
@@ -38,13 +38,13 @@ const SHAPE_NOISE_MEAN = 0.478; // 大きなかたまりのノイズの平均。
 const SHARPEST_SOFTNESS = 0.06;
 const SOFTEST_SOFTNESS = 0.3;
 
-// 設定画面で変えられる雲の形。解像度 0.5、縁の 2 つが 0、起伏と高さが 1 で、設定を足す前の見た目になる
+// 設定画面で変えられる雲の形。解像度 0.5、縁の 2 つが 0、起伏が 1、高さが 2 で、設定を足す前の見た目になる
 export interface CloudStyle {
   resolution: number; // 画面に対する、雲を描く解像度の割合 (0.5〜1)
   edgeDetail: number; // 縁の細かさ (0〜1)
   edgeSharpness: number; // 縁の鋭さ (0〜1)
   puffiness: number; // かたまりの起伏の強さ。1 がもとの強さ (0〜2)
-  height: number; // 層の厚さの倍率。1 が実際の約 2 倍に誇張した今の高さ (0.5〜1.5)
+  height: number; // 層の厚さの倍率。1 で上端が約 16km (0.5〜3)
 }
 
 function cloudTopFor(height: number): number {
