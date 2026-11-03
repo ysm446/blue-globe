@@ -71,6 +71,8 @@ class SettingsApiTest(unittest.TestCase):
         "render_scale": 75,
         "bloom": False,
         "auto_exposure": False,
+        "exposure_compensation": 0.5,
+        "focal_length": 35.5,
         "show_fps": True,
         "show_map_lines": False,
         "show_city_labels": False,
@@ -116,6 +118,10 @@ class SettingsApiTest(unittest.TestCase):
             {"region_bloom": -0.1},
             {"glint_strength": 3.5},
             {"glint_strength": -0.1},
+            {"focal_length": 13.9},
+            {"focal_length": 70.1},
+            {"exposure_compensation": 2.5},
+            {"exposure_compensation": -2.5},
         ):
             response = self.client.put("/settings/graphics", json={**self.GRAPHICS, **change})
             self.assertEqual(response.status_code, 422)
@@ -134,6 +140,8 @@ class SettingsApiTest(unittest.TestCase):
         self.assertTrue(graphics["volume_clouds"])
         self.assertEqual(graphics["region_bloom"], 0.5)
         self.assertEqual(graphics["glint_strength"], 1.3)
+        self.assertEqual(graphics["focal_length"], 24)
+        self.assertEqual(graphics["exposure_compensation"], 0)
 
     def test_panels_default_to_open(self):
         self.assertEqual(self.client.get("/settings").json()["panels"], {"news": True, "hourly": True, "weekly": True, "details": True})

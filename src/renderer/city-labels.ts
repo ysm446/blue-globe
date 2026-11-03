@@ -58,7 +58,7 @@ export class CityLabels {
     this.excluded = name;
   }
 
-  // 毎フレーム呼ぶ。blocked はラベルを重ねない範囲、altitude はカメラの高さ
+  // 毎フレーム呼ぶ。blocked はラベルを重ねない範囲、altitude はレンズの分を換算したカメラの高さ
   update(toScreen: WorldToScreen, blocked: LabelBox[], altitude: number): void {
     if (this.container.hidden) return;
     const tier = tierAtAltitude(altitude);

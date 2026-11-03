@@ -216,12 +216,17 @@ a:hover {
   background: #fff;
   border-radius: 50%;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6), 0 0 3px rgba(0, 0, 0, 0.9);
+  transition: transform 120ms;
 }
 
-.city-label:hover,
-.city-label:focus-visible {
-  color: #fff;
-  background: rgba(10, 14, 20, 0.7);
+/* 地図の上に面を出さず、押せることは点の大きさで示す。共通のボタンの背景を打ち消す */
+button.city-label:hover,
+button.city-label:active {
+  background: none;
+}
+
+.city-label:hover::before {
+  transform: scale(1.6);
 }
 
 .city-label.off {

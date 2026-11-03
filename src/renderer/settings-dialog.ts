@@ -1,4 +1,5 @@
 // 設定画面
+import { focalLengthForFov, verticalFov } from './camera-lens';
 import { el, errorMessage, setStatus } from './dom';
 import { audioFileName } from './music-player';
 
@@ -171,7 +172,36 @@ export function initSettingsDialog(
     cloud_shadow: percentSlider('cloud-shadow'),
     region_bloom: percentSlider('region-bloom'),
     glint_strength: percentSlider('glint-strength'),
+    focal_length: graphicsSlider('focal-length', (position) => position, (value) => value, (value) => `${Number.isInteger(value) ? value : value.toFixed(1)}mm`),
+    exposure_compensation: graphicsSlider('exposure-compensation', (position) => position, (value) => value, (value) => `${value > 0 ? '+' : ''}${value} EV`),
   };
+
+  // 縦の画角のスライダー。設定には持たず、焦点距離と今の窓の形から求めて連動させる
+  const fovSlider = graphicsSlider('field-of-view', (position) => position, (value) => value, (value) => `${value.toFixed(1)}°`);
+  const focalInput = sliders.focal_length.input;
+  const windowAspect = (): number => window.innerWidth / window.innerHeight;
+  const roundTenth = (value: number): number => Math.round(value * 10) / 10;
+
+  function showFov(): void {
+    const aspect = windowAspect();
+    // 端の値から求めた焦点距離が範囲の外へ出ないよう、内側へ丸める
+    fovSlider.input.min = String(Math.ceil(verticalFov(Number(focalInput.max), aspect) * 10) / 10);
+    fovSlider.input.max = String(Math.floor(verticalFov(Number(focalInput.min), aspect) * 10) / 10);
+    fovSlider.write(roundTenth(verticalFov(sliders.focal_length.read(), aspect)));
+  }
+
+  focalInput.addEventListener('input', showFov);
+  fovSlider.input.addEventListener('input', () => {
+    const focal = roundTenth(focalLengthForFov(fovSlider.read(), windowAspect()));
+    sliders.focal_length.write(Math.min(Math.max(focal, Number(focalInput.min)), Number(focalInput.max)));
+    showFov(); // 焦点距離を丸めた分だけ画角も変わるので、実際の値を出す
+    onGraphicsChange(readGraphics());
+    syncResetButtons();
+  });
+  fovSlider.input.addEventListener('change', commitGraphics);
+  window.addEventListener('resize', () => {
+    if (dialog.open) showFov();
+  });
 
   function readGraphics(): GraphicsSettings {
     const graphics = {} as GraphicsSettings;
@@ -185,6 +215,7 @@ export function initSettingsDialog(
     for (const key of keysOf(selects)) selects[key].value = String(graphics[key]);
     for (const key of keysOf(toggles)) toggles[key].checked = graphics[key];
     for (const key of keysOf(sliders)) sliders[key].write(graphics[key]);
+    showFov();
   }
 
   // 変更はすぐ画面に反映し、そのあと保存する。保存は順番に行い、最後の操作が必ず残るようにする

@@ -192,6 +192,7 @@
         <button id="tab-location" type="button" role="tab" aria-controls="panel-location">地点</button>
         <button id="tab-performance" type="button" role="tab" aria-controls="panel-performance">パフォーマンス</button>
         <button id="tab-graphics" type="button" role="tab" aria-controls="panel-graphics">グラフィックス</button>
+        <button id="tab-camera" type="button" role="tab" aria-controls="panel-camera">カメラ</button>
         <button id="tab-music" type="button" role="tab" aria-controls="panel-music">音楽</button>
         <button id="tab-credit" type="button" role="tab" aria-controls="panel-credit">出典</button>
       </div>
@@ -271,10 +272,6 @@
           <button class="reset-button" data-reset="bloom" type="button" aria-label="光のにじみを既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="exposure-toggle" type="checkbox" />自動露出(通常・天気モード)</label>
-          <button class="reset-button" data-reset="auto_exposure" type="button" aria-label="自動露出を既定に戻す" title="既定に戻す"></button>
-        </div>
-        <div class="check-line">
           <label class="check-row"><input id="map-lines-toggle" type="checkbox" />海岸線と国境線を表示(通常・天気モード)</label>
           <button class="reset-button" data-reset="show_map_lines" type="button" aria-label="海岸線と国境線の表示を既定に戻す" title="既定に戻す"></button>
         </div>
@@ -282,6 +279,35 @@
           <label class="check-row"><input id="city-labels-toggle" type="checkbox" />都市ラベルを表示(クリックでその都市の天気に切り替え)</label>
           <button class="reset-button" data-reset="show_city_labels" type="button" aria-label="都市ラベルの表示を既定に戻す" title="既定に戻す"></button>
         </div>
+        <button class="reset-all" data-reset-section type="button">すべて既定に戻す</button>
+      </section>
+
+      <section id="panel-camera" role="tabpanel" aria-labelledby="tab-camera" hidden>
+        <div class="field-grid">
+          <label for="focal-length">焦点距離</label>
+          <div class="range-row">
+            <input id="focal-length" type="range" min="14" max="70" step="0.1" />
+            <output id="focal-length-value" for="focal-length"></output>
+          </div>
+          <button class="reset-button" data-reset="focal_length" type="button" aria-label="焦点距離を既定に戻す" title="既定に戻す"></button>
+          <label for="field-of-view">画角(縦)</label>
+          <div class="range-row">
+            <input id="field-of-view" type="range" step="0.1" />
+            <output id="field-of-view-value" for="field-of-view"></output>
+          </div>
+          <span></span>
+          <label for="exposure-compensation">露出補正</label>
+          <div class="range-row">
+            <input id="exposure-compensation" type="range" min="-2" max="2" step="0.25" />
+            <output id="exposure-compensation-value" for="exposure-compensation"></output>
+          </div>
+          <button class="reset-button" data-reset="exposure_compensation" type="button" aria-label="露出補正を既定に戻す" title="既定に戻す"></button>
+        </div>
+        <div class="check-line">
+          <label class="check-row"><input id="exposure-toggle" type="checkbox" />自動露出(通常・天気モード)</label>
+          <button class="reset-button" data-reset="auto_exposure" type="button" aria-label="自動露出を既定に戻す" title="既定に戻す"></button>
+        </div>
+        <p class="settings-help">焦点距離はフルサイズ換算です。画角は今の窓での縦の角度で、焦点距離と連動します。露出補正は通常・天気モードで効きます。</p>
         <button class="reset-all" data-reset-section type="button">すべて既定に戻す</button>
       </section>
 

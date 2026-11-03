@@ -82,6 +82,8 @@ class GraphicsUpdate(BaseModel):
     render_scale: Literal[50, 75, 100]
     bloom: bool
     auto_exposure: bool
+    exposure_compensation: float = Field(ge=-2, le=2)
+    focal_length: float = Field(ge=14, le=70)
     show_fps: bool
     show_map_lines: bool
     show_city_labels: bool

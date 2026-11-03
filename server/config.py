@@ -17,6 +17,8 @@ DEFAULT_SETTINGS = {
         "render_scale": 100,
         "bloom": True,
         "auto_exposure": True,
+        "exposure_compensation": 0.0,
+        "focal_length": 24,  # フルサイズ換算 (mm)。camera-lens.ts と合わせる
         "show_fps": False,
         "show_map_lines": True,
         "show_city_labels": True,

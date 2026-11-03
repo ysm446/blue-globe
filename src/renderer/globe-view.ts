@@ -1,6 +1,7 @@
 // 地球儀の表示とカメラ操作。モード、地域ビュー、描画の設定をここで扱う
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { apparentScale, BASE_FOCAL_LENGTH, verticalFov } from './camera-lens';
 import { CityLabels } from './city-labels';
 import { MAP_CITIES } from './cities';
 import type { DemoPlace } from './demo';
@@ -106,8 +107,17 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   const scene = new THREE.Scene();
 
-  const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+  const cameraAspect = window.innerWidth / window.innerHeight;
+  const camera = new THREE.PerspectiveCamera(verticalFov(BASE_FOCAL_LENGTH, cameraAspect), cameraAspect, 0.1, 100);
   camera.position.set(0, 1, 3.6);
+  let focalLength = BASE_FOCAL_LENGTH;
+  let lensScale = apparentScale(camera.fov);
+
+  function applyLens(): void {
+    camera.fov = verticalFov(focalLength, camera.aspect);
+    lensScale = apparentScale(camera.fov);
+    camera.updateProjectionMatrix();
+  }
 
   // 広い画面では地球儀を中央に置く。狭い画面ではパネルが下に並ぶので、残りの領域の中央に寄せる
   function applyViewOffset(): void {
@@ -203,6 +213,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   function cameraAltitude(): number {
     return camera.position.length() - GLOBE_RADIUS;
+  }
+
+  // 写り方で決めるものに使う高さ。望遠では、同じ高さでも地表が大きく写るので低いものとして扱う
+  function apparentAltitude(): number {
+    return cameraAltitude() * lensScale;
   }
 
   // 風速モードは粒子が見やすい距離、他のモードは地球全体が見える距離
@@ -509,13 +524,13 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   function updateRegionBlend(dt: number): void {
     const goal = regionView && !regionFlight?.leaving ? 1 : 0;
     regionBlend += (goal - regionBlend) * (1 - Math.exp(-dt / REGION_BLEND_SECONDS));
-    earth.setRegionBlend(regionBlend, cameraAltitude());
+    earth.setRegionBlend(regionBlend, apparentAltitude());
     if (regionView) {
       lonLatToVector3(regionView.lon, regionView.lat, EARTH_SURFACE_RADIUS, shadowFocus);
-      earth.setVolumeShadowFocus(shadowFocus, regionView.distance);
+      earth.setVolumeShadowFocus(shadowFocus, regionView.distance * lensScale);
     } else {
       shadowFocus.copy(camera.position).setLength(EARTH_SURFACE_RADIUS);
-      earth.setVolumeShadowFocus(shadowFocus, cameraAltitude());
+      earth.setVolumeShadowFocus(shadowFocus, apparentAltitude());
     }
     // 風速モードでは粒子の面より上に線を置く必要があるので、元の高さのまま
     const lineRadius = (radius: number): number =>
@@ -593,7 +608,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   function updateFlight(dt: number): void {
     if (!flight) {
       // 寄るほどゆっくり回し、触ったときに地表が指に付いてくる感覚に近づける
-      controls.rotateSpeed = THREE.MathUtils.clamp(cameraAltitude() * 0.32, 0.05, 0.6);
+      controls.rotateSpeed = THREE.MathUtils.clamp(apparentAltitude() * 0.32, 0.05, 0.6);
       // 慣性はフレームごとに減衰するので、FPS によらず同じ時間で止まるように換算する
       controls.dampingFactor = 1 - Math.pow(1 - DAMPING_AT_REFERENCE, dt * REFERENCE_HZ);
       controls.update(dt); // 自動回転の速さを FPS によらず同じにする
@@ -628,13 +643,13 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const markerBox = point
       ? [{ x: point.x - MARKER_BOX_LEFT, y: point.y - MARKER_BOX_HEIGHT / 2, width: MARKER_BOX_LEFT + MARKER_LABEL_OFFSET + markerLabelWidth, height: MARKER_BOX_HEIGHT }]
       : [];
-    cityLabels.update(toScreen, markerBox, cameraAltitude());
+    cityLabels.update(toScreen, markerBox, apparentAltitude());
   }
 
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     applyViewOffset();
-    camera.updateProjectionMatrix();
+    applyLens();
     renderer.setSize(window.innerWidth, window.innerHeight);
     hdr.setSize(window.innerWidth, window.innerHeight);
     gpuParticles?.resize();
@@ -643,6 +658,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   // 太陽の見え方から露出を決める。風速モードでは使わない
   let exposure = 1;
   let autoExposure = true;
+  let exposureCompensation = 0; // EV。1 で明るさが 2 倍
   const toSun = new THREE.Vector3();
   const sunNdc = new THREE.Vector3();
   const cameraForward = new THREE.Vector3();
@@ -655,7 +671,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       earthClearance(camera.position.toArray(), toSun.toArray(), GLOBE_RADIUS);
     const facing = camera.position.dot(sky.sunDir) / camera.position.length();
     exposure = adaptExposure(exposure, autoExposure ? targetExposure(facing, visibility) : 1, dt);
-    hdr.setExposure(exposure, autoExposure ? visibility : 0, THREE.MathUtils.lerp(1, regionBloom, regionBlend));
+    hdr.setExposure(exposure * 2 ** exposureCompensation, autoExposure ? visibility : 0, THREE.MathUtils.lerp(1, regionBloom, regionBlend));
   }
 
   let fpsLimit = 0;
@@ -663,6 +679,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   function applyGraphics(graphics: GraphicsSettings): void {
     fpsLimit = graphics.fps_limit;
     autoExposure = graphics.auto_exposure;
+    exposureCompensation = graphics.exposure_compensation;
+    focalLength = graphics.focal_length;
+    applyLens();
     hdr.setBloomEnabled(graphics.bloom);
     sky.setStarBrightness(graphics.star_brightness);
     earth.setCloudShadow(graphics.cloud_shadow);

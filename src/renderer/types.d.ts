@@ -34,6 +34,8 @@ interface GraphicsSettings {
   render_scale: number; // 描画解像度 (%)
   bloom: boolean;
   auto_exposure: boolean;
+  exposure_compensation: number; // 露出補正 (EV。-2〜2)
+  focal_length: number; // カメラの焦点距離。フルサイズ換算 (mm。14〜70。0.1 刻み)
   show_fps: boolean;
   show_map_lines: boolean; // 海岸線と国境線 (通常・天気モード。風速モードでは常に描く)
   show_city_labels: boolean; // 地球儀の上の都市のラベル
