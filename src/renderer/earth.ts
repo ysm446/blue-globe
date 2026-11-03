@@ -1,8 +1,10 @@
 // 写実的な地球。地表写真、夜の街明かり、大気の縁、雲の層を描く。
 // 雲は天気モードのときだけ表示し (setCloudsEnabled)、地表より少し高い別の球に載せる。
 // 回すと地面とずれて動くので、ボリューム雲を使わなくても高さが感じられる。
-// 地球ビューでも地域ビューでも、近づくと立体の雲 (volume-clouds.ts) に入れ替える
+// 地球ビューでも地域ビューでも、近づくと立体の雲 (volume-clouds.ts) に入れ替える。
+// 新しい時刻の雲は一瞬で切り替えず、見えている雲から線形に混ぜて入れ替える (cloud-blend.ts)
 import * as THREE from 'three';
+import { CloudBlend } from './cloud-blend';
 import { stepFade } from './fade';
 import { moonlightStrength } from './astro';
 import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, MOONLIGHT_GLSL, VALUE_NOISE_GLSL } from './glsl';
@@ -22,6 +24,7 @@ const COAST_REACH = 2; // 沖の色を取りに行く距離 (縮小段階の画�
 const WAVE_SLOPE_VARIANCE = 0.016;
 const GLINT_STRENGTH = 0.9;
 const GLINT_MAX = 0.4;
+const SHADOW_REBAKE_STEP = 0.1; // 雲を入れ替えている間、この割合だけ進むごとに立体の雲の影を焼き直す
 const REGION_CLOUD_ALTITUDE = 0.002; // 斜めに見ると誇張した分だけ雲が地面からずれるので、地域ビューでは実際に近づける
 const REGION_HAZE = 0.3; // 縁の青は地球全体を見るためのもので、斜めの視点では画面の大半に乗ってしまう
 const ATMOSPHERE_SCALE_HEIGHT = 0.02; // 縁の青い光が 1/e になる高さ (約 130km)。明るさは 2 乗で効くので半分になるのは約 45km
@@ -388,7 +391,8 @@ export class RealisticEarth {
   private readonly cloudMesh: THREE.Mesh;
   private readonly cloudMaterial: THREE.ShaderMaterial;
   private readonly sunDir = new THREE.Vector3(1, 0, 0);
-  private cloudTexture: THREE.DataTexture | null = null;
+  private readonly cloudBlend = new CloudBlend();
+  private bakedBlend = 1; // 立体の雲の影を焼いたときの、雲の入れ替えの進み具合
   private cloudsWanted = false;
   private cloudFade = 0;
   private readonly haze = { value: 1 };
@@ -574,6 +578,16 @@ export class RealisticEarth {
     this.volume.setShadowFocus(center, distance);
   }
 
+  // 画面を描く前に呼ぶ。雲を入れ替えている間は混ぜた雲を描き、立体の雲の影も少しずつ焼き直す
+  renderCloudBlend(renderer: THREE.WebGLRenderer): void {
+    if (!this.cloudBlend.render(renderer)) return;
+    const progress = this.cloudBlend.progress;
+    if (progress >= 1 || progress - this.bakedBlend >= SHADOW_REBAKE_STEP) {
+      this.bakedBlend = progress;
+      this.volume.setCloudTexture(this.cloudBlend.texture!);
+    }
+  }
+
   // 画面を描く前に呼ぶ
   renderVolumeClouds(renderer: THREE.WebGLRenderer, camera: THREE.PerspectiveCamera): void {
     if (this.volumeEnabled && this.cloudFade >= 1) this.volume.prepare(renderer, camera);
@@ -604,25 +618,15 @@ export class RealisticEarth {
     if (detail) uniforms.uDetailCenter.value = detail.center;
   }
 
-  // data は 1 画素 1 バイトの雲の濃さ。1 行目が北端、左端が経度 -180 度
+  // data は 1 画素 1 バイトの雲の濃さ。1 行目が北端、左端が経度 -180 度。
+  // 前の雲が見えていれば、そこから混ぜて入れ替える
   setCloudData(nx: number, ny: number, data: Uint8Array): void {
-    const texture = new THREE.DataTexture(
-      data as Uint8Array<ArrayBuffer>,
-      nx,
-      ny,
-      THREE.RedFormat,
-      THREE.UnsignedByteType,
-    );
-    texture.minFilter = THREE.LinearMipmapLinearFilter;
-    texture.magFilter = THREE.LinearFilter;
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.generateMipmaps = true;
-    texture.needsUpdate = true;
-    this.cloudTexture?.dispose();
-    this.cloudTexture = texture;
+    this.cloudBlend.setData(nx, ny, data);
+    const texture = this.cloudBlend.texture!;
     this.material.uniforms.uCloud.value = texture;
     this.cloudMaterial.uniforms.uCloud.value = texture;
     this.volume.setCloudTexture(texture);
+    this.bakedBlend = this.cloudBlend.progress;
   }
 
   setCloudsEnabled(enabled: boolean): void {
@@ -637,7 +641,8 @@ export class RealisticEarth {
 
   // 毎フレーム呼ぶ。データが届くまでは現れ始めない
   updateClouds(dt: number): void {
-    this.cloudFade = stepFade(this.cloudFade, this.cloudsWanted && this.cloudTexture !== null, dt);
+    this.cloudFade = stepFade(this.cloudFade, this.cloudsWanted && this.cloudBlend.texture !== null, dt);
+    this.cloudBlend.update(dt);
     this.applyCloudFade();
   }
 

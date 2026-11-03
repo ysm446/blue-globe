@@ -1193,6 +1193,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (mode !== 'wind' && earthReady) {
       earth.updateClouds(dt);
       updateExposure(dt);
+      earth.renderCloudBlend(renderer);
       earth.renderVolumeClouds(renderer, camera);
       // 太陽系の場面は地球の球で奥行きを求められないので、ぼかさない
       hdr.setDepthOfField(solar.active ? null : depthOfField);
