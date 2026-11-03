@@ -382,9 +382,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     return hit ? lonLatOf(hit.toArray()) : null;
   }
 
+  // 地域ビューの中で別の場所へ移るときは、中心のまわりの旋回を続ける (飛んでいる間は回さず、着いたら同じ速さで回る)
   function flyRegion(to: RegionView, leaving: boolean, seconds = FLY_SECONDS): void {
     if (!regionView) return;
-    stopCruise();
+    if (leaving) stopCruise();
+    else stopForwardCruise();
     regionFlight = { from: regionView, to, elapsed: 0, seconds, leaving };
     regionVelocity = REGION_STILL;
     regionDrag = null;
@@ -486,12 +488,17 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   // 巡航と、中心のまわりの旋回をどちらも止める
   function stopCruise(): void {
+    orbitLevel = 0;
+    orbitThrottle = 0;
+    stopForwardCruise();
+  }
+
+  // 巡航だけを止める
+  function stopForwardCruise(): void {
     cruiseLevel = 0;
     cruiseThrottle = 0;
     turnRate = 0;
     turnKeys.clear();
-    orbitLevel = 0;
-    orbitThrottle = 0;
     showCruise();
   }
 
