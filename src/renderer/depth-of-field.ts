@@ -2,18 +2,25 @@
 // 地球を直径「地球儀の大きさ」の模型に見立て (ミニチュアの縮尺)、実際のレンズの式で錯乱円を求める。
 // レンズの側 (焦点距離、F 値、センサー) は現実のままで、場面の距離だけを縮める。焦点距離は画角から求め、二重に持たない。
 // 奥行きは深度バッファを使わず、視線と地球の球の交点から計算する (大気や雲は深度を書かず、場面はほぼ球のため)。
-// ぼかし方は、半分の解像度で円盤状に周りを集め (奥と手前のぼけを分けて集める)、元の解像度の像と混ぜる
+// ぼかし方は、半分の解像度で円盤状に周りを集め (自分のぼけと、手前のぼけのはみ出しを分けて集める)、元の解像度の像と混ぜる。
+// 小さなぼけは元の解像度で直接ぼかし、ピント面から離れるにつれて途切れずにぼけが増えるようにする
 import * as THREE from 'three';
 import { FullScreenQuad, Pass } from 'three/addons/postprocessing/Pass.js';
 import { focalLengthForFov, sensorHeight, sphereRayDistance } from './camera-lens';
 import { FULLSCREEN_VS } from './glsl';
 
 const MAX_COC = 0.025; // ぼけの半径の上限 (画面の高さが 1)。大きくすると円盤の点の間が空いて粗く見える
-const KERNEL_SIZE = 106; // 円盤の点の数
+const KERNEL_SIZE = 106; // 自分のぼけを集める円盤の点の数
+const NEAR_SIZE = 48; // 手前のぼけのはみ出しを探す円盤の点の数
 const FILL_SIZE = 24; // 点の間を埋めるときの点の数
+const SMALL_SIZE = 16; // 小さなぼけを元の解像度でぼかすときの点の数
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-// 円盤の点の間隔 (画面の高さが 1)。円盤は常に上限の大きさで集めるので、間隔はぼけの大きさによらない
-const KERNEL_SPACING = Math.sqrt(Math.PI / KERNEL_SIZE) * MAX_COC;
+// 円盤の点の間隔の、円盤の半径に対する割合
+const KERNEL_SPACING = Math.sqrt(Math.PI / KERNEL_SIZE);
+const NEAR_SPACING = Math.sqrt(Math.PI / NEAR_SIZE);
+// 半分の解像度の結果へ移る、ぼけの半径の範囲 (元の解像度の画素)。これより小さいぼけは元の解像度でぼかす
+const HALF_FROM = 3;
+const HALF_TO = 6;
 
 // 半径 1 の円盤の点。同心の輪に並べると明るい点のぼけに輪の模様が写るので、黄金角でずらしながら外へ広げる。
 // 半径を平方根にして、面積あたりの点の数を揃える
@@ -25,7 +32,9 @@ function diskKernel(size: number): THREE.Vector2[] {
 }
 
 const KERNEL = diskKernel(KERNEL_SIZE);
+const NEAR_KERNEL = diskKernel(NEAR_SIZE);
 const FILL_KERNEL = diskKernel(FILL_SIZE);
+const SMALL_KERNEL = diskKernel(SMALL_SIZE);
 
 // 画面の点の錯乱円。camera-lens.ts の sphereRayDistance と circleOfConfusion と同じ式
 const COC_GLSL = /* glsl */ `
@@ -81,7 +90,7 @@ function fullscreenMaterial(uniforms: Record<string, THREE.IUniform>, fragmentSh
     uniforms,
     vertexShader: FULLSCREEN_VS,
     fragmentShader,
-    defines: { KERNEL_SIZE, FILL_SIZE },
+    defines: { KERNEL_SIZE, NEAR_SIZE, FILL_SIZE, SMALL_SIZE },
     depthTest: false,
     depthWrite: false,
     blending: THREE.NoBlending,
@@ -142,13 +151,17 @@ export class DepthOfFieldPass extends Pass {
       }`,
     );
 
-    // 円盤状に周りを集める。奥のぼけは自分と相手の小さいほうの錯乱円で届く範囲だけを集め、
-    // 手前のぼけは相手の錯乱円で届いていれば集める (手前のぼけはピントの合った物の上へはみ出す)
+    // 円盤状に周りを集める。自分のぼけは、自分の錯乱円の大きさの円盤で集める (ぼけの大きさによらず円盤の中の点の数が同じなので、
+    // 小さなぼけも粗くならず、ピント面から途切れずに大きくなる)。相手の錯乱円が自分より小さい点は、その届く範囲だけを入れる
+    // (ピントの合った物を、奥のぼけへ混ぜない)。
+    // 手前のぼけは、ピントの合った物や奥の上へもはみ出してくるので、上限の大きさの円盤で、届いている手前の点を探す。
+    // 手前の点は自分の錯乱円の面積に光を広げるので、面積で割った重みで集め、その合計を覆う割合とする
     this.bokeh = fullscreenMaterial(
       {
         tSource: { value: null },
         uTexel: { value: new THREE.Vector2() },
         uKernel: { value: KERNEL },
+        uNearKernel: { value: NEAR_KERNEL },
         uRcpAspect: { value: 1 },
       },
       /* glsl */ `
@@ -156,35 +169,45 @@ export class DepthOfFieldPass extends Pass {
       uniform sampler2D tSource;
       uniform vec2 uTexel;
       uniform vec2 uKernel[KERNEL_SIZE];
+      uniform vec2 uNearKernel[NEAR_SIZE];
       uniform float uRcpAspect;
       varying vec2 vUv;
       void main() {
         vec4 center = texture2D(tSource, vUv);
-        vec4 far = vec4(0.0);
-        vec4 near = vec4(0.0);
+        float radius = abs(center.a);
         float margin = uTexel.y * 2.0;
+        vec4 self = vec4(center.rgb, 1.0);
         for (int i = 0; i < KERNEL_SIZE; i++) {
-          vec2 offset = uKernel[i] * ${MAX_COC.toFixed(4)};
-          float distance = length(offset);
+          vec2 offset = uKernel[i] * radius;
           vec4 tap = texture2D(tSource, vUv + vec2(offset.x * uRcpAspect, offset.y));
-          float farCoc = max(min(center.a, tap.a), 0.0);
-          float farWeight = clamp((farCoc - distance + margin) / margin, 0.0, 1.0);
-          float nearWeight = clamp((-tap.a - distance + margin) / margin, 0.0, 1.0);
-          // 手前にぼけていない点 (ピントの合った点と奥の点) は、手前のぼけに入れない
-          nearWeight *= step(uTexel.y, -tap.a);
-          far += vec4(tap.rgb, 1.0) * farWeight;
-          near += vec4(tap.rgb, 1.0) * nearWeight;
+          float reach = min(radius, abs(tap.a));
+          float weight = clamp((reach - length(offset) + margin) / margin, 0.0, 1.0);
+          self += vec4(tap.rgb, 1.0) * weight;
         }
-        far.rgb /= far.a + (far.a == 0.0 ? 1.0 : 0.0);
+        self.rgb /= self.a;
+
+        float maxCoc = ${MAX_COC.toFixed(4)};
+        vec4 near = vec4(0.0);
+        for (int i = 0; i < NEAR_SIZE; i++) {
+          vec2 offset = uNearKernel[i] * maxCoc;
+          vec4 tap = texture2D(tSource, vUv + vec2(offset.x * uRcpAspect, offset.y));
+          // 自分より手前にぼけている点だけ
+          float tapRadius = -tap.a;
+          float inFront = step(uTexel.y, tapRadius) * step(tap.a, center.a - uTexel.y);
+          float reach = clamp((tapRadius - length(offset) + margin) / margin, 0.0, 1.0);
+          float area = maxCoc / max(tapRadius, uTexel.y);
+          float weight = reach * inFront * area * area;
+          near += vec4(tap.rgb, 1.0) * weight;
+        }
         near.rgb /= near.a + (near.a == 0.0 ? 1.0 : 0.0);
-        // 手前のぼけがこの点を覆う割合
-        float alpha = clamp(near.a * 3.14159265 / float(KERNEL_SIZE), 0.0, 1.0);
-        gl_FragColor = vec4(mix(far.rgb, near.rgb, alpha), alpha);
+        float alpha = clamp(near.a / float(NEAR_SIZE), 0.0, 1.0);
+        gl_FragColor = vec4(mix(self.rgb, near.rgb, alpha), alpha);
       }`,
     );
 
     // 円盤の点の間を埋める。街明かりのような小さな明るい点は、ぼけると円盤の点の並びがそのまま写り、
-    // ぼつぼつに見える。ぼけているところだけ、点の間隔ほどの範囲をならす (ピントの合ったところは細部を残す)
+    // ぼつぼつに見える。点の間隔はぼけの大きさに比例するので、ならす範囲も錯乱円に比例させる。
+    // 手前のぼけのはみ出しは上限の大きさの円盤で探すので、覆う割合に応じてその間隔でならす
     this.postfilter = fullscreenMaterial(
       {
         tSource: { value: null },
@@ -203,11 +226,10 @@ export class DepthOfFieldPass extends Pass {
       varying vec2 vUv;
       void main() {
         vec4 center = texture2D(tSource, vUv);
-        float spacing = ${KERNEL_SPACING.toFixed(5)};
-        // 手前のぼけは、ピントの合ったところの上にもはみ出してくるので、覆う割合でも広げる
-        float blur = max(smoothstep(0.0, spacing, abs(texture2D(tCoc, vUv).a)), center.a);
         // 間隔ちょうどでは細かい斜めの縞が残ったので、少し広くならす
-        float radius = max(spacing * 1.3 * blur, uTexel.y * 0.5);
+        float selfRadius = abs(texture2D(tCoc, vUv).a) * ${(KERNEL_SPACING * 1.3).toFixed(4)};
+        float nearRadius = center.a * ${(NEAR_SPACING * 1.3 * MAX_COC).toFixed(5)};
+        float radius = max(max(selfRadius, nearRadius), uTexel.y * 0.5);
         vec4 sum = center;
         for (int i = 0; i < FILL_SIZE; i++) {
           vec2 offset = uKernel[i] * radius;
@@ -217,22 +239,46 @@ export class DepthOfFieldPass extends Pass {
       }`,
     );
 
-    // 元の解像度の像と混ぜる。奥のぼけは自分の錯乱円で、手前のぼけは覆う割合で混ぜる
+    // 元の解像度の像と混ぜる。半分の解像度では数画素より小さいぼけを表せないので、小さなぼけはここで直接ぼかし、
+    // 錯乱円が ${HALF_FROM}〜${HALF_TO} 画素の間で半分の解像度の結果へ移す。手前のぼけのはみ出しは覆う割合で混ぜる
     this.composite = fullscreenMaterial(
-      { tColor: { value: null }, tDof: { value: null }, uTexel: { value: new THREE.Vector2() }, ...this.lens },
+      {
+        tColor: { value: null },
+        tDof: { value: null },
+        uTexel: { value: new THREE.Vector2() },
+        uKernel: { value: SMALL_KERNEL },
+        uRcpAspect: { value: 1 },
+        ...this.lens,
+      },
       /* glsl */ `
       precision highp float;
       uniform sampler2D tColor;
       uniform sampler2D tDof;
       uniform vec2 uTexel;
+      uniform vec2 uKernel[SMALL_SIZE];
+      uniform float uRcpAspect;
       varying vec2 vUv;
       ${COC_GLSL}
       void main() {
         vec4 color = texture2D(tColor, vUv);
         vec4 dof = texture2D(tDof, vUv);
-        float coc = cocAt(vUv) * ${MAX_COC.toFixed(4)};
-        float farAlpha = smoothstep(uTexel.y * 2.0, uTexel.y * 4.0, coc);
-        gl_FragColor = vec4(mix(color.rgb, dof.rgb, farAlpha + dof.a - farAlpha * dof.a), color.a);
+        float radius = abs(cocAt(vUv)) * ${MAX_COC.toFixed(4)};
+        float pixels = radius / uTexel.y;
+        vec3 small = color.rgb;
+        if (pixels > 0.5 && pixels < ${HALF_TO.toFixed(1)}) {
+          vec3 sum = color.rgb;
+          float weightSum = 1.0;
+          for (int i = 0; i < SMALL_SIZE; i++) {
+            vec2 uv = vUv + vec2(uKernel[i].x * uRcpAspect, uKernel[i].y) * radius;
+            // ピントの合った物を、ぼけた後ろへ広げない
+            float weight = clamp(abs(cocAt(uv)) * ${MAX_COC.toFixed(4)} / radius, 0.25, 1.0);
+            sum += texture2D(tColor, uv).rgb * weight;
+            weightSum += weight;
+          }
+          small = sum / weightSum;
+        }
+        float halfAmount = smoothstep(${HALF_FROM.toFixed(1)}, ${HALF_TO.toFixed(1)}, pixels);
+        gl_FragColor = vec4(mix(small, dof.rgb, max(halfAmount, dof.a)), color.a);
       }`,
     );
   }
@@ -252,6 +298,7 @@ export class DepthOfFieldPass extends Pass {
     this.postfilter.uniforms.uTexel.value.set(1 / w, 1 / h);
     this.bokeh.uniforms.uRcpAspect.value = h / w;
     this.postfilter.uniforms.uRcpAspect.value = h / w;
+    this.composite.uniforms.uRcpAspect.value = height / width;
   }
 
   private updateLens(): void {
