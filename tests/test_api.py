@@ -73,6 +73,9 @@ class SettingsApiTest(unittest.TestCase):
         "auto_exposure": False,
         "exposure_compensation": 0.5,
         "focal_length": 35.5,
+        "depth_of_field": False,
+        "f_number": 8.0,
+        "globe_size": 2.5,
         "show_fps": True,
         "show_map_lines": False,
         "show_city_labels": False,
@@ -139,6 +142,10 @@ class SettingsApiTest(unittest.TestCase):
             {"glint_strength": -0.1},
             {"focal_length": 13.9},
             {"focal_length": 70.1},
+            {"f_number": 1.0},
+            {"f_number": 32},
+            {"globe_size": 0.1},
+            {"globe_size": 100},
             {"exposure_compensation": 2.5},
             {"exposure_compensation": -2.5},
             {"cloud_resolution": 60},
@@ -170,6 +177,9 @@ class SettingsApiTest(unittest.TestCase):
         self.assertTrue(graphics["moonlight"])
         self.assertEqual(graphics["glint_strength"], 1.3)
         self.assertEqual(graphics["focal_length"], 24)
+        self.assertTrue(graphics["depth_of_field"])
+        self.assertEqual(graphics["f_number"], 4.0)
+        self.assertEqual(graphics["globe_size"], 1.0)
         self.assertEqual(graphics["exposure_compensation"], 0)
         self.assertEqual(graphics["cloud_resolution"], 50)
         self.assertEqual(graphics["cloud_edge_detail"], 0.7)

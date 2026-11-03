@@ -39,6 +39,9 @@ interface GraphicsSettings {
   auto_exposure: boolean;
   exposure_compensation: number; // 露出補正 (EV。-2〜2)
   focal_length: number; // カメラの焦点距離。フルサイズ換算 (mm。14〜70。0.1 刻み)
+  depth_of_field: boolean; // 被写界深度 (通常・天気モード)
+  f_number: number; // レンズの F 値 (1.4〜22。1/3 段の値)。被写界深度のぼけの強さに効く
+  globe_size: number; // 被写界深度で地球を見立てる地球儀の直径 (m。0.3〜32)
   show_fps: boolean;
   show_map_lines: boolean; // 海岸線と国境線 (通常・天気モード。風速モードでは常に描く)
   show_city_labels: boolean; // 地球儀の上の都市のラベル

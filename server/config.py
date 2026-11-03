@@ -19,6 +19,9 @@ DEFAULT_SETTINGS = {
         "auto_exposure": True,
         "exposure_compensation": 0.0,
         "focal_length": 24,  # フルサイズ換算 (mm)。camera-lens.ts と合わせる
+        "depth_of_field": True,
+        "f_number": 4.0,
+        "globe_size": 1.0,  # 被写界深度で地球を見立てる地球儀の直径 (m)
         "show_fps": False,
         "show_map_lines": True,
         "show_city_labels": True,

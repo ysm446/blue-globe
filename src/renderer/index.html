@@ -397,6 +397,18 @@
             <output id="exposure-compensation-value" for="exposure-compensation"></output>
           </div>
           <button class="reset-button" data-reset="exposure_compensation" type="button" aria-label="露出補正を既定に戻す" title="既定に戻す"></button>
+          <label for="f-number" data-help="レンズの絞り。小さいほどぼけが強く、ピントの合う範囲が狭くなります。被写界深度がオンのときに効きます。既定: F4">F 値</label>
+          <div class="range-row">
+            <input id="f-number" type="range" min="0" max="24" step="1" />
+            <output id="f-number-value" for="f-number"></output>
+          </div>
+          <button class="reset-button" data-reset="f_number" type="button" aria-label="F 値を既定に戻す" title="既定に戻す"></button>
+          <label for="globe-size" data-help="被写界深度で、地球を直径何 m の地球儀に見立てて撮るか。小さいほど模型を近くから撮ることになり、ぼけが強くなります。実物大の地球ではほとんどぼけません。既定: 1.0 m">地球儀の大きさ</label>
+          <div class="range-row">
+            <input id="globe-size" type="range" min="-5" max="15" step="1" />
+            <output id="globe-size-value" for="globe-size"></output>
+          </div>
+          <button class="reset-button" data-reset="globe_size" type="button" aria-label="地球儀の大きさを既定に戻す" title="既定に戻す"></button>
           <label for="cruise-mode" data-help="地域ビューの W/S の効き方。アナログ式は押している間に速さが変わり、段階式は 1 回押すごとに 1 段(2 倍)変わります。既定: アナログ式">巡航の操作</label>
           <select id="cruise-mode">
             <option value="analog">アナログ式</option>
@@ -409,10 +421,14 @@
           <button class="reset-button" data-reset="auto_exposure" type="button" aria-label="自動露出を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
+          <label class="check-row" data-help="地球を地球儀の模型に見立てて撮ったように、ピントの合った画面の中心から奥や手前へ離れるほどぼかします。地域ビューで寄るほど強く、地球ビューではほとんどぼけません。既定: オン"><input id="depth-of-field-toggle" type="checkbox" />被写界深度(通常・天気モード)</label>
+          <button class="reset-button" data-reset="depth_of_field" type="button" aria-label="被写界深度を既定に戻す" title="既定に戻す"></button>
+        </div>
+        <div class="check-line">
           <label class="check-row" data-help="巡航で A/D で曲がるときに、曲がる向きへ画面を傾けます。既定: オン"><input id="cruise-bank-toggle" type="checkbox" />巡航で曲がるときに画面を傾ける</label>
           <button class="reset-button" data-reset="cruise_bank" type="button" aria-label="巡航で曲がるときの傾きを既定に戻す" title="既定に戻す"></button>
         </div>
-        <p class="settings-help">焦点距離はフルサイズ換算です。画角は今の窓での縦の角度で、焦点距離と連動します。露出補正は通常・天気モードで効きます。巡航(地域ビューの W/S)は、アナログ式では押している間に速さが変わり、段階式では 1 回押すごとに 1 段変わります。</p>
+        <p class="settings-help">焦点距離はフルサイズ換算です。画角は今の窓での縦の角度で、焦点距離と連動します。露出補正は通常・天気モードで効きます。被写界深度は地球を地球儀の模型に見立てたぼけ方で、F 値が小さいほど、地球儀が小さいほど強くなります。巡航(地域ビューの W/S)は、アナログ式では押している間に速さが変わり、段階式では 1 回押すごとに 1 段変わります。</p>
         <button class="reset-all" data-reset-section type="button">すべて既定に戻す</button>
       </section>
 

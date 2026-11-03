@@ -85,6 +85,9 @@ class GraphicsUpdate(BaseModel):
     auto_exposure: bool
     exposure_compensation: float = Field(ge=-2, le=2)
     focal_length: float = Field(ge=14, le=70)
+    depth_of_field: bool
+    f_number: float = Field(ge=1.4, le=22)
+    globe_size: float = Field(ge=0.3, le=32)
     show_fps: bool
     show_map_lines: bool
     show_city_labels: bool

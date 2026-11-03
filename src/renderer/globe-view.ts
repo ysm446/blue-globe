@@ -200,7 +200,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let earthReady = false;
   let baseTextures: BaseTextures | null = null; // 地域ビューの高解像度の画像が届くまで代わりに写す
 
-  const hdr = new HdrPipeline(renderer, scene, camera);
+  const hdr = new HdrPipeline(renderer, scene, camera, EARTH_SURFACE_RADIUS);
   const flatBackground = new THREE.Color(COLORS.background);
   const spaceCanvas = document.createElement('canvas');
   const spaceBackground = createSpaceBackground(spaceCanvas);
@@ -1038,6 +1038,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const sunNdc = new THREE.Vector3();
   const cameraForward = new THREE.Vector3();
   let lensFlare = true;
+  let depthOfField: { fNumber: number; globeSize: number } | null = null;
   const sunTint = new THREE.Vector3(1, 1, 1);
   const glareTint = new THREE.Vector3();
   function updateExposure(dt: number): void {
@@ -1083,6 +1084,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     exposureCompensation = graphics.exposure_compensation;
     focalLength = graphics.focal_length;
     applyLens();
+    depthOfField = graphics.depth_of_field ? { fNumber: graphics.f_number, globeSize: graphics.globe_size } : null;
     hdr.setBloomEnabled(graphics.bloom);
     sky.setStarBrightness(graphics.star_brightness);
     paintSpaceBackground(spaceCanvas, graphics.space_tint);
@@ -1192,6 +1194,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       earth.updateClouds(dt);
       updateExposure(dt);
       earth.renderVolumeClouds(renderer, camera);
+      // 太陽系の場面は地球の球で奥行きを求められないので、ぼかさない
+      hdr.setDepthOfField(solar.active ? null : depthOfField);
       hdr.render();
     } else {
       renderer.render(scene, camera);

@@ -5,6 +5,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { DepthOfFieldPass } from './depth-of-field';
 import { FULLSCREEN_VS, PIXEL_JITTER_GLSL } from './glsl';
 
 const BLOOM_STRENGTH = 0.42;
@@ -68,10 +69,12 @@ export class HdrPipeline {
   private readonly composer: EffectComposer;
   private readonly scenePass: RenderPass;
   private backdropPass: RenderPass | null = null;
+  private readonly depthOfField: DepthOfFieldPass;
   private readonly bloom: UnrealBloomPass;
   private readonly finalPass: ShaderPass;
 
-  constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.Camera) {
+  // earthRadius は被写界深度で奥行きを求める地球の球の半径
+  constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, earthRadius: number) {
     const floatable =
       renderer.extensions.has('EXT_color_buffer_float') ||
       renderer.extensions.has('EXT_color_buffer_half_float');
@@ -87,6 +90,8 @@ export class HdrPipeline {
     this.composer.setSize(size.x, size.y);
     this.scenePass = new RenderPass(scene, camera);
     this.composer.addPass(this.scenePass);
+    this.depthOfField = new DepthOfFieldPass(camera, earthRadius);
+    this.composer.addPass(this.depthOfField);
     this.bloom = new UnrealBloomPass(size, BLOOM_STRENGTH, BLOOM_RADIUS, BLOOM_THRESHOLD);
     this.composer.addPass(this.bloom);
     this.finalPass = new ShaderPass(FINAL_SHADER);
@@ -126,6 +131,12 @@ export class HdrPipeline {
     this.scenePass.clear = !layered;
     this.scenePass.clearDepth = layered;
     this.scenePass.enabled = !layered || sceneVisible;
+  }
+
+  // fNumber は F 値、globeSize は地球を見立てる地球儀の直径 (m)。null で掛けない
+  setDepthOfField(lens: { fNumber: number; globeSize: number } | null): void {
+    this.depthOfField.enabled = lens !== null;
+    if (lens) this.depthOfField.setLens(lens.fNumber, lens.globeSize);
   }
 
   setBloomEnabled(enabled: boolean): void {
