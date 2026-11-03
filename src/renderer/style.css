@@ -1,19 +1,19 @@
 :root {
   color-scheme: dark;
-  --bg: #0a0e14;
+  --bg: #0e0e0e;
   /* すりガラスのパネル。透明にするだけでは明るい陸の上で文字が読めないので、後ろの明るさも落とす。
      その上に明るい色を薄く重ね、宇宙の上でも背景より少し明るく見せる */
-  --panel: rgba(170, 190, 225, 0.04);
-  --panel-strong: rgba(26, 33, 45, 0.75);
+  --panel: rgba(190, 190, 190, 0.04);
+  --panel-strong: rgba(32, 32, 32, 0.75);
   --glass: blur(8px) brightness(0.35) saturate(1.4);
-  --panel-glow: inset 0 0 16px rgba(190, 210, 240, 0.04); /* 内側の縁をぼかして明るくし、柔らかく見せる */
-  --panel-solid: #111825;
-  --field: #0c121c;
-  --line: rgba(157, 180, 214, 0.18);
-  --text: #eef2f8;
-  --text-2: #b3bfd0;
-  --text-3: #a3b0c3;
-  --accent: #7fb2ff;
+  --panel-glow: inset 0 0 16px rgba(208, 208, 208, 0.04); /* 内側の縁をぼかして明るくし、柔らかく見せる */
+  --panel-solid: #181818;
+  --field: #121212;
+  --line: rgba(178, 178, 178, 0.18);
+  --text: #f2f2f2;
+  --text-2: #bebebe;
+  --text-3: #afafaf;
+  --accent: #e6e6e6; /* UI はグレーだけでまとめ、選んでいるものは明るさで見分ける */
   --warn: #f2c56b;
   --icon-sun: #ffc857;
   --icon-moon: #dfe6f5;
@@ -66,18 +66,18 @@ select {
 button {
   min-height: 30px;
   padding: 3px 12px;
-  background: rgba(157, 180, 214, 0.1);
+  background: rgba(178, 178, 178, 0.1);
   border: 1px solid var(--line);
   border-radius: 6px;
   cursor: pointer;
 }
 
 button:hover:not(:disabled) {
-  background: rgba(157, 180, 214, 0.2);
+  background: rgba(178, 178, 178, 0.2);
 }
 
 button:active:not(:disabled) {
-  background: rgba(157, 180, 214, 0.28);
+  background: rgba(178, 178, 178, 0.28);
 }
 
 button:disabled {
@@ -153,7 +153,7 @@ a:hover {
   margin: -5px 0 0 -5px;
   background: #fff;
   border-radius: 50%;
-  box-shadow: 0 0 0 2px rgba(10, 14, 20, 0.7);
+  box-shadow: 0 0 0 2px rgba(14, 14, 14, 0.7);
 }
 
 .marker-dot::after {
@@ -181,7 +181,7 @@ a:hover {
   left: 13px;
   top: -11px;
   padding: 1px 7px;
-  background: rgba(10, 14, 20, 0.78);
+  background: rgba(14, 14, 14, 0.78);
   border-radius: 4px;
   font-size: 13px;
   white-space: nowrap;
@@ -297,14 +297,14 @@ button.city-label:active {
 
 #mode-switch button:hover,
 #view-switch button:hover:not(:disabled) {
-  background: rgba(157, 180, 214, 0.14);
+  background: rgba(178, 178, 178, 0.14);
 }
 
 #mode-switch button[aria-pressed='true'],
 #view-switch button[aria-pressed='true'] {
   color: var(--text);
   font-weight: 600;
-  background: rgba(157, 180, 214, 0.26);
+  background: rgba(178, 178, 178, 0.26);
   border-color: var(--line);
 }
 
@@ -599,7 +599,7 @@ body.demo #view-hint {
 
 #start-demo[aria-pressed='true'],
 #music-toggle.playing {
-  color: var(--accent);
+  background: rgba(178, 178, 178, 0.26);
 }
 
 /* 通知と同じように、パネルより後ろに置いて上に重ねる */
@@ -665,7 +665,7 @@ body.demo-idle * {
   white-space: nowrap;
   transform: translateX(-50%);
   pointer-events: none;
-  text-shadow: 0 1px 8px rgba(4, 7, 11, 0.9);
+  text-shadow: 0 1px 8px rgba(6, 6, 6, 0.9);
 }
 
 
@@ -699,7 +699,7 @@ body.demo-idle * {
   padding: 14px 20px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(157, 180, 214, 0.28) transparent;
+  scrollbar-color: rgba(178, 178, 178, 0.28) transparent;
   background: var(--panel);
   border-radius: 8px;
 }
@@ -1123,7 +1123,7 @@ body.demo #camera-panel {
   padding: 10px 14px;
   background: var(--panel-strong);
   border-radius: 8px;
-  box-shadow: var(--panel-glow), 0 6px 20px rgba(4, 7, 11, 0.6);
+  box-shadow: var(--panel-glow), 0 6px 20px rgba(6, 6, 6, 0.6);
 }
 
 #screenshot-toast[hidden] {
@@ -1170,7 +1170,7 @@ body.demo #camera-panel {
 
 #screenshot-toast-hint {
   margin-top: 4px;
-  color: var(--accent);
+  color: var(--text);
   font-size: 12px;
 }
 
@@ -1266,7 +1266,7 @@ body.demo #camera-panel {
   padding: 14px 2px 2px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(157, 180, 214, 0.28) transparent;
+  scrollbar-color: rgba(178, 178, 178, 0.28) transparent;
 }
 
 .field-row {
@@ -1340,7 +1340,7 @@ body.demo #camera-panel {
   background: linear-gradient(
     to right,
     var(--accent) var(--fill, 0%),
-    rgba(157, 180, 214, 0.28) var(--fill, 0%)
+    rgba(178, 178, 178, 0.28) var(--fill, 0%)
   );
   border-radius: 2px;
 }
@@ -1468,7 +1468,7 @@ body.panels-right #panels {
   gap: 8px;
   overflow-y: auto;
   scrollbar-width: thin;
-  scrollbar-color: rgba(157, 180, 214, 0.28) transparent;
+  scrollbar-color: rgba(178, 178, 178, 0.28) transparent;
 }
 
 body.panels-right #news,
@@ -1512,7 +1512,7 @@ body.panels-right #forecasts {
     gap: 8px;
     overflow-y: auto;
     scrollbar-width: thin;
-    scrollbar-color: rgba(157, 180, 214, 0.28) transparent;
+    scrollbar-color: rgba(178, 178, 178, 0.28) transparent;
   }
 
   #news,
