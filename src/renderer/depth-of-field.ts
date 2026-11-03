@@ -10,18 +10,22 @@ import { FULLSCREEN_VS } from './glsl';
 
 const MAX_COC = 0.025; // ぼけの半径の上限 (画面の高さが 1)。大きくすると円盤の点の間が空いて粗く見える
 const KERNEL_SIZE = 106; // 円盤の点の数
+const FILL_SIZE = 24; // 点の間を埋めるときの点の数
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+// 円盤の点の間隔 (画面の高さが 1)。円盤は常に上限の大きさで集めるので、間隔はぼけの大きさによらない
+const KERNEL_SPACING = Math.sqrt(Math.PI / KERNEL_SIZE) * MAX_COC;
 
-// 円盤の点。同心の輪に並べると明るい点のぼけに輪の模様が写るので、黄金角でずらしながら外へ広げる。
+// 半径 1 の円盤の点。同心の輪に並べると明るい点のぼけに輪の模様が写るので、黄金角でずらしながら外へ広げる。
 // 半径を平方根にして、面積あたりの点の数を揃える
-function diskKernel(): THREE.Vector2[] {
-  return Array.from({ length: KERNEL_SIZE }, (_, i) => {
-    const radius = Math.sqrt((i + 0.5) / KERNEL_SIZE);
+function diskKernel(size: number): THREE.Vector2[] {
+  return Array.from({ length: size }, (_, i) => {
+    const radius = Math.sqrt((i + 0.5) / size);
     return new THREE.Vector2(Math.cos(i * GOLDEN_ANGLE) * radius, Math.sin(i * GOLDEN_ANGLE) * radius);
   });
 }
 
-const KERNEL = diskKernel();
+const KERNEL = diskKernel(KERNEL_SIZE);
+const FILL_KERNEL = diskKernel(FILL_SIZE);
 
 // 画面の点の錯乱円。camera-lens.ts の sphereRayDistance と circleOfConfusion と同じ式
 const COC_GLSL = /* glsl */ `
@@ -77,7 +81,7 @@ function fullscreenMaterial(uniforms: Record<string, THREE.IUniform>, fragmentSh
     uniforms,
     vertexShader: FULLSCREEN_VS,
     fragmentShader,
-    defines: { KERNEL_SIZE },
+    defines: { KERNEL_SIZE, FILL_SIZE },
     depthTest: false,
     depthWrite: false,
     blending: THREE.NoBlending,
@@ -87,7 +91,7 @@ function fullscreenMaterial(uniforms: Record<string, THREE.IUniform>, fragmentSh
 export class DepthOfFieldPass extends Pass {
   private readonly lens: LensUniforms = lensUniforms();
   private readonly quad = new FullScreenQuad();
-  private readonly half: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget];
+  private readonly half: [THREE.WebGLRenderTarget, THREE.WebGLRenderTarget, THREE.WebGLRenderTarget];
   private readonly prefilter: THREE.ShaderMaterial;
   private readonly bokeh: THREE.ShaderMaterial;
   private readonly postfilter: THREE.ShaderMaterial;
@@ -104,7 +108,7 @@ export class DepthOfFieldPass extends Pass {
     this.lens.uSphereRadius.value = sphereRadius;
     const target = (): THREE.WebGLRenderTarget =>
       new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, depthBuffer: false });
-    this.half = [target(), target()];
+    this.half = [target(), target(), target()];
 
     // 半分の解像度へ縮める。4 点の色は、ぼけの大きい点ほど重く混ぜる。
     // 4 点のうち絶対値が最も大きい錯乱円を残す (a に画面の高さを 1 とした半径を入れる)
@@ -179,18 +183,37 @@ export class DepthOfFieldPass extends Pass {
       }`,
     );
 
-    // 点の間の粗さをならす (双線形の 4 点で 3×3 のテント)
+    // 円盤の点の間を埋める。街明かりのような小さな明るい点は、ぼけると円盤の点の並びがそのまま写り、
+    // ぼつぼつに見える。ぼけているところだけ、点の間隔ほどの範囲をならす (ピントの合ったところは細部を残す)
     this.postfilter = fullscreenMaterial(
-      { tSource: { value: null }, uTexel: { value: new THREE.Vector2() } },
+      {
+        tSource: { value: null },
+        tCoc: { value: null },
+        uTexel: { value: new THREE.Vector2() },
+        uKernel: { value: FILL_KERNEL },
+        uRcpAspect: { value: 1 },
+      },
       /* glsl */ `
       precision highp float;
       uniform sampler2D tSource;
+      uniform sampler2D tCoc;
       uniform vec2 uTexel;
+      uniform vec2 uKernel[FILL_SIZE];
+      uniform float uRcpAspect;
       varying vec2 vUv;
       void main() {
-        vec2 d = uTexel * 0.5;
-        gl_FragColor = (texture2D(tSource, vUv - d) + texture2D(tSource, vUv + vec2(d.x, -d.y))
-          + texture2D(tSource, vUv + vec2(-d.x, d.y)) + texture2D(tSource, vUv + d)) * 0.25;
+        vec4 center = texture2D(tSource, vUv);
+        float spacing = ${KERNEL_SPACING.toFixed(5)};
+        // 手前のぼけは、ピントの合ったところの上にもはみ出してくるので、覆う割合でも広げる
+        float blur = max(smoothstep(0.0, spacing, abs(texture2D(tCoc, vUv).a)), center.a);
+        // 間隔ちょうどでは細かい斜めの縞が残ったので、少し広くならす
+        float radius = max(spacing * 1.3 * blur, uTexel.y * 0.5);
+        vec4 sum = center;
+        for (int i = 0; i < FILL_SIZE; i++) {
+          vec2 offset = uKernel[i] * radius;
+          sum += texture2D(tSource, vUv + vec2(offset.x * uRcpAspect, offset.y));
+        }
+        gl_FragColor = sum / float(FILL_SIZE + 1);
       }`,
     );
 
@@ -228,6 +251,7 @@ export class DepthOfFieldPass extends Pass {
     this.bokeh.uniforms.uTexel.value.set(1 / w, 1 / h);
     this.postfilter.uniforms.uTexel.value.set(1 / w, 1 / h);
     this.bokeh.uniforms.uRcpAspect.value = h / w;
+    this.postfilter.uniforms.uRcpAspect.value = h / w;
   }
 
   private updateLens(): void {
@@ -254,7 +278,7 @@ export class DepthOfFieldPass extends Pass {
     readBuffer: THREE.WebGLRenderTarget,
   ): void {
     this.updateLens();
-    const [a, b] = this.half;
+    const [a, b, c] = this.half;
     const draw = (material: THREE.ShaderMaterial, target: THREE.WebGLRenderTarget | null): void => {
       this.quad.material = material;
       renderer.setRenderTarget(target);
@@ -265,9 +289,10 @@ export class DepthOfFieldPass extends Pass {
     this.bokeh.uniforms.tSource.value = a.texture;
     draw(this.bokeh, b);
     this.postfilter.uniforms.tSource.value = b.texture;
-    draw(this.postfilter, a);
+    this.postfilter.uniforms.tCoc.value = a.texture;
+    draw(this.postfilter, c);
     this.composite.uniforms.tColor.value = readBuffer.texture;
-    this.composite.uniforms.tDof.value = a.texture;
+    this.composite.uniforms.tDof.value = c.texture;
     draw(this.composite, this.renderToScreen ? null : writeBuffer);
   }
 
