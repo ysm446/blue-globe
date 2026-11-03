@@ -1210,12 +1210,13 @@ body.demo #camera-panel {
   position: absolute;
   inset: 0;
   z-index: -1;
-  background: var(--panel-strong);
+  background: var(--panel);
   border-radius: inherit;
 }
 
+/* 後ろの画面を暗くすると、すりガラス越しの色も沈み、ほかのパネルより暗く見える */
 #settings::backdrop {
-  background: rgba(4, 7, 11, 0.55);
+  background: transparent;
 }
 
 .settings-head {
