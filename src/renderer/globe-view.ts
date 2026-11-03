@@ -583,6 +583,13 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (target?.closest('button, summary') && !target.closest('dialog')) target.blur();
   }
 
+  // スライダー (時刻、音量) はドラッグを離したらフォーカスを外す。残っていると入力欄の操作中と見なされ、
+  // W/A/S/D などが効かない。Tab で移ってきたときは矢印キーで動かせるよう、マウスで動かしたときだけにする
+  document.addEventListener('pointerup', (event) => {
+    const target = event.target instanceof HTMLInputElement ? event.target : null;
+    if (target?.type === 'range' && !target.closest('dialog')) target.blur();
+  });
+
   window.addEventListener('keydown', (event) => {
     const action = CRUISE_KEYS[event.code];
     const orbitStep = ORBIT_KEYS[event.code];
