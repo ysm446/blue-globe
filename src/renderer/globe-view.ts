@@ -858,6 +858,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       edgeDetail: graphics.cloud_edge_detail,
       edgeSharpness: graphics.cloud_edge_sharpness,
       puffiness: graphics.cloud_puffiness,
+      height: graphics.cloud_height,
     });
     regionBloom = graphics.region_bloom;
     regionDetailEnabled = graphics.region_detail;

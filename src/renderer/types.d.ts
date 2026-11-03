@@ -51,6 +51,7 @@ interface GraphicsSettings {
   cloud_edge_detail: number; // 立体の雲の縁の細かさ (0〜1)
   cloud_edge_sharpness: number; // 立体の雲の縁の鋭さ (0〜1)
   cloud_puffiness: number; // 立体の雲のかたまりの起伏。1 がもとの強さ (0〜2)
+  cloud_height: number; // 立体の雲の層の厚さの倍率。1 が実際の約 2 倍に誇張した高さ (0.5〜1.5)
 }
 
 interface PanelSettings {

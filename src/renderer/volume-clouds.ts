@@ -9,7 +9,8 @@ import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, PIXEL_JITTER_GLSL } from './glsl';
 import type { Vec3 } from './math';
 
 const CLOUD_BASE = 0.0005; // 約 3km
-const CLOUD_TOP = 0.0045; // 約 29km。実際の 2 倍ほどあり、遠くから見ても起伏が分かるように誇張している
+const CLOUD_TOP = 0.0045; // 約 29km。実際の 2 倍ほどあり、遠くから見ても起伏が分かるように誇張している。設定の高さ (100%) のときの値
+const FLAT_MATCH_HEIGHT = 0.375; // 平らな雲と混ぜるときに平らな雲を置く、層の下からの割合。雲の量の多い高さに近い
 const SHAPE_PERIOD = 0.03; // 大きなかたまりのノイズが繰り返す長さ (約 190km)
 const DETAIL_PERIOD = 0.007; // 細かいかたまりのノイズが繰り返す長さ (約 45km)
 const SWELL_PERIOD = 0.083; // 雲頂の大きなうねりの周期 (約 530km)。他の周期の整数倍にしない
@@ -37,12 +38,22 @@ const SHAPE_NOISE_MEAN = 0.478; // 大きなかたまりのノイズの平均。
 const SHARPEST_SOFTNESS = 0.06;
 const SOFTEST_SOFTNESS = 0.3;
 
-// 設定画面で変えられる雲の形。解像度 0.5、縁の 2 つが 0、起伏が 1 で、設定を足す前の見た目になる
+// 設定画面で変えられる雲の形。解像度 0.5、縁の 2 つが 0、起伏と高さが 1 で、設定を足す前の見た目になる
 export interface CloudStyle {
   resolution: number; // 画面に対する、雲を描く解像度の割合 (0.5〜1)
   edgeDetail: number; // 縁の細かさ (0〜1)
   edgeSharpness: number; // 縁の鋭さ (0〜1)
   puffiness: number; // かたまりの起伏の強さ。1 がもとの強さ (0〜2)
+  height: number; // 層の厚さの倍率。1 が実際の約 2 倍に誇張した今の高さ (0.5〜1.5)
+}
+
+function cloudTopFor(height: number): number {
+  return CLOUD_BASE + (CLOUD_TOP - CLOUD_BASE) * height;
+}
+
+// 平らな雲から立体の雲へ切り替わる間に、平らな雲を置く高さ。立体の雲と二重に見えないよう、層の高さに合わせる
+export function flatCloudAltitude(height: number): number {
+  return CLOUD_BASE + (CLOUD_TOP - CLOUD_BASE) * height * FLAT_MATCH_HEIGHT;
 }
 
 // 雲マップは左端が経度 -180 度、1 行目が北端
@@ -81,11 +92,11 @@ uniform float uRadius;
 uniform float uEdgeDetail; // 縁の細かさ (0〜1)
 uniform float uSoftness; // 縁のぼけ幅。小さいほど縁が締まる
 uniform float uPuffiness; // かたまりの起伏の強さ。1 がもとの強さ
+uniform float uCloudTop; // 層の上端の高さ。設定の高さで変わる
 ${CLOUD_UV_GLSL}
 ${PIXEL_JITTER_GLSL}
 
 const float BASE = ${CLOUD_BASE.toFixed(5)};
-const float TOP = ${CLOUD_TOP.toFixed(5)};
 const float SIGMA = ${EXTINCTION.toFixed(1)};
 
 float cloudLod;
@@ -117,7 +128,7 @@ vec2 hitSphere(vec3 origin, vec3 ray, float radius) {
 float densityAt(vec3 p, bool withDetail) {
   float r = length(p);
   vec3 up = p / r;
-  float h = (r - uRadius - BASE) / (TOP - BASE);
+  float h = (r - uRadius - BASE) / (uCloudTop - BASE);
   vec2 warp = textureLod(uNoise, p / ${WARP_PERIOD.toFixed(3)}, shapeLod + 1.0).rg - 0.5;
   vec3 warped = normalize(up + vec3(warp.x, warp.y, warp.x - warp.y) * ${WARP_AMOUNT.toFixed(4)});
   float cover = textureLod(uCloud, cloudUvOf(warped), cloudLod).r;
@@ -176,7 +187,7 @@ void main() {
   vec2 plane = vUv * 2.0 - 1.0;
   vec3 origin = uBakeCenter + uBakeAxisU * plane.x + uBakeAxisV * plane.y + uSunDir * 2.0;
   vec3 ray = -uSunDir;
-  vec2 shell = hitSphere(origin, ray, uRadius + TOP);
+  vec2 shell = hitSphere(origin, ray, uRadius + uCloudTop);
   if (shell.x > shell.y) {
     gl_FragColor = vec4(1.0, ${NO_CLOUD_DEPTH.toFixed(1)}, 0.0, 1.0);
     return;
@@ -243,7 +254,7 @@ void main() {
   vec4 far = uViewToWorld * vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
   vec3 origin = cameraPosition;
   vec3 ray = normalize(far.xyz / far.w - origin);
-  vec2 shell = hitSphere(origin, ray, uRadius + TOP);
+  vec2 shell = hitSphere(origin, ray, uRadius + uCloudTop);
   if (shell.x > shell.y || shell.y < 0.0) {
     gl_FragColor = vec4(0.0);
     return;
@@ -256,6 +267,8 @@ void main() {
   // 歩幅の刻みが縞に見えないよう、始点を画素ごとにずらす
   // 層を縦に通る視線は短いので、遠くからでも層の中で一定の歩数を確保する。少ないと雲が粒に見える
   float stride = clamp(min(start * 0.002, (end - start) / MIN_LAYER_STEPS), 0.0002, 0.004);
+  // 斜めの視線は層の中を長く通る。歩数の上限で地表まで届かないと、低いところにある雲の本体を見落とす
+  stride = max(stride, (end - start) / float(MAX_STEPS));
   float t = start + stride * pixelJitter();
   float transmit = 1.0;
   vec3 color = vec3(0.0);
@@ -267,7 +280,7 @@ void main() {
       vec3 up = normalize(p);
       float ndl = dot(up, uSunDir);
       // 雲頂を 1 とした高さ。低い雲も上面は明るくなる
-      float h = clamp((length(p) - uRadius - BASE) / (TOP - BASE) / columnTop, 0.0, 1.0);
+      float h = clamp((length(p) - uRadius - BASE) / (uCloudTop - BASE) / columnTop, 0.0, 1.0);
       float dayLight = smoothstep(-0.06, 0.5, ndl);
       float sunlight = dayLight > 0.0 ? sunlightAt(p) * farShadowAt(p) : 0.0;
       // 地球ビューの雲と同じ色合い。影の部分は黒くせず、空の光を受けた青灰色にする
@@ -341,6 +354,7 @@ export class VolumeClouds {
     uEdgeDetail: { value: 0 },
     uSoftness: { value: SOFTEST_SOFTNESS },
     uPuffiness: { value: 1 },
+    uCloudTop: { value: CLOUD_TOP },
   };
 
   constructor(radius: number, sunDir: THREE.Vector3, haze: { value: number }) {
@@ -428,13 +442,16 @@ export class VolumeClouds {
   setStyle(style: CloudStyle): void {
     const uniforms = this.styleUniforms;
     const softness = THREE.MathUtils.lerp(SOFTEST_SOFTNESS, SHARPEST_SOFTNESS, style.edgeSharpness);
+    const top = cloudTopFor(style.height);
     const changed =
       uniforms.uEdgeDetail.value !== style.edgeDetail ||
       uniforms.uSoftness.value !== softness ||
-      uniforms.uPuffiness.value !== style.puffiness;
+      uniforms.uPuffiness.value !== style.puffiness ||
+      uniforms.uCloudTop.value !== top;
     uniforms.uEdgeDetail.value = style.edgeDetail;
     uniforms.uSoftness.value = softness;
     uniforms.uPuffiness.value = style.puffiness;
+    uniforms.uCloudTop.value = top;
     if (changed) this.cloudVersion++; // 形が変わると影も変わるので焼き直す
     this.resolutionScale = style.resolution;
   }

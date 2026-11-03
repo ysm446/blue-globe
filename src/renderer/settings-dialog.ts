@@ -175,6 +175,7 @@ export function initSettingsDialog(
     cloud_edge_detail: percentSlider('cloud-edge-detail'),
     cloud_edge_sharpness: percentSlider('cloud-edge-sharpness'),
     cloud_puffiness: percentSlider('cloud-puffiness'),
+    cloud_height: percentSlider('cloud-height'),
     region_bloom: percentSlider('region-bloom'),
     city_glow: percentSlider('city-glow'),
     glint_strength: percentSlider('glint-strength'),

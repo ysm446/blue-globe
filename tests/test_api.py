@@ -88,6 +88,7 @@ class SettingsApiTest(unittest.TestCase):
         "cloud_edge_detail": 0.2,
         "cloud_edge_sharpness": 0.9,
         "cloud_puffiness": 1.5,
+        "cloud_height": 0.75,
     }
 
     def test_graphics_defaults(self):
@@ -134,6 +135,8 @@ class SettingsApiTest(unittest.TestCase):
             {"cloud_edge_detail": 1.1},
             {"cloud_edge_sharpness": -0.1},
             {"cloud_puffiness": 2.1},
+            {"cloud_height": 0.45},
+            {"cloud_height": 1.55},
         ):
             response = self.client.put("/settings/graphics", json={**self.GRAPHICS, **change})
             self.assertEqual(response.status_code, 422)
@@ -160,6 +163,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["cloud_edge_detail"], 0.7)
         self.assertEqual(graphics["cloud_edge_sharpness"], 0.3)
         self.assertEqual(graphics["cloud_puffiness"], 1.0)
+        self.assertEqual(graphics["cloud_height"], 1.0)
 
     def test_panels_default_to_open(self):
         # カメラのパネルだけは既定で閉じている

@@ -8,7 +8,7 @@ import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, VALUE_NOISE_GLSL } from './glsl';
 import { easeInOut } from './math';
 import type { RegionDetail } from './region-detail';
 import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
-import { BAKED_SHADOW_GLSL, CLOUD_UV_GLSL, VolumeClouds, type CloudStyle } from './volume-clouds';
+import { BAKED_SHADOW_GLSL, CLOUD_UV_GLSL, flatCloudAltitude, VolumeClouds, type CloudStyle } from './volume-clouds';
 
 export const CLOUD_ALTITUDE = 0.008; // 実際より高い。視差が見える程度に誇張している
 const OPEN_SEA_COLOR = ['0.0006', '0.0015', '0.007']; // 地球ビューの地表の画像の沖の色 (線形)。世界中でほぼ同じ
@@ -345,6 +345,7 @@ export class RealisticEarth {
   private readonly volume: VolumeClouds;
   private volumeEnabled = false;
   private volumeMix = 0; // 0 は平らな雲だけ、1 は立体の雲だけ
+  private volumeHeight = 1; // 立体の雲の層の厚さの倍率
 
   constructor(private readonly radius: number) {
     this.material = new THREE.ShaderMaterial({
@@ -468,7 +469,9 @@ export class RealisticEarth {
       ? 1 - THREE.MathUtils.smoothstep(cameraAltitude, VOLUME_FULL_ALTITUDE, VOLUME_START_ALTITUDE)
       : 0;
     // 立体の雲は低いところにあるので、混ざる間は平らな雲も下げる。高いままだと雲が二重に見える
-    const altitude = THREE.MathUtils.lerp(CLOUD_ALTITUDE, REGION_CLOUD_ALTITUDE, Math.max(blend, this.volumeMix));
+    // 立体の雲の層の高さを変えたときは、混ざる間の平らな雲もそれに合わせる
+    const lowered = THREE.MathUtils.lerp(REGION_CLOUD_ALTITUDE, flatCloudAltitude(this.volumeHeight), this.volumeMix);
+    const altitude = THREE.MathUtils.lerp(CLOUD_ALTITUDE, lowered, Math.max(blend, this.volumeMix));
     this.material.uniforms.uCloudAltitude.value = altitude;
     this.cloudMesh.scale.setScalar((this.radius + altitude) / (this.radius + CLOUD_ALTITUDE));
     this.haze.value = THREE.MathUtils.lerp(1, REGION_HAZE, blend);
@@ -481,6 +484,7 @@ export class RealisticEarth {
   }
 
   setVolumeCloudStyle(style: CloudStyle): void {
+    this.volumeHeight = style.height;
     this.volume.setStyle(style);
   }
 
