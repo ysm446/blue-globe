@@ -5,6 +5,7 @@ NOAA の全球衛星合成画像 (GMGSI、赤外) から、薄い雲も濃い雲
 - 晴れた場所の値は緯度で大きく違うので、GFS が晴れとする場所から緯度ごとの基準を求める
 - 赤外は冷たいほど明るいので、冷たい地面も雲に見える。GFS が晴れとする場所では抑える
 - 衛星のない極付近は GFS で埋める
+衛星のデータが一時的に欠けた範囲は、1 時間前の画像で埋め、それでも残る分は GFS で埋める。
 赤外は暖かい低い雲が写りにくいので、海面近くの雲は実際より少なく見える。
 GFS の取得はメインプロセスが行い、data/cloud-cache/ に置く。
 """
@@ -24,7 +25,7 @@ TIMEOUT_SECONDS = 90
 WIDTH = 4096
 HEIGHT = 2048
 
-MAP_VERSION = 2  # 作り方を変えたら増やす。同じ時刻のデータでも作り直す
+MAP_VERSION = 3  # 作り方を変えたら増やす。同じ時刻のデータでも作り直す
 
 # 赤外の値を雲の濃さへ直す。2026-11-01 の実測で、晴れた場所の値は熱帯で約 73、南緯 60 度で約 136
 IR_THICK = 215.0  # 台風の中心は約 205
@@ -37,6 +38,7 @@ GFS_CLEAR_COVER = 0.1
 POLE_FADE_START = 68.0  # 衛星のある範囲 (約 ±72.7°) の内側から GFS へ切り替える
 POLE_FADE_END = 72.0
 POLE_COVER = 0.75
+MISSING_LIMIT = 0.001  # 衛星の範囲のうち、これより多く欠けていたら 1 時間前の画像で埋める
 
 
 class CloudError(Exception):
@@ -131,8 +133,38 @@ def read_gmgsi(path) -> np.ndarray:
         lat = f["lat"][()]
         lon = f["lon"][()]
         fill = f["data"].attrs["_FillValue"]
+        quality = f["dqf"][()].squeeze() if "dqf" in f else None
     data[data == fill] = np.nan
+    # 品質フラグが 0 以外の画素は使わない。衛星のデータが欠けた範囲は 255 (最も冷たい値) で埋まっていて、
+    # そのままだと一面の厚い雲になる (2026-11-03 12 時の画像でヨーロッパと北大西洋が dqf=20 だった)
+    if quality is not None:
+        data[quality != 0] = np.nan
     return reproject(data, lat[:, lat.shape[1] // 2], lon[lat.shape[0] // 2, :])
+
+
+def missing_fraction(ir: np.ndarray) -> float:
+    """衛星の範囲 (極の近くを除く) のうち、データが欠けている割合。"""
+    lats = np.abs(target_latitudes(ir.shape[0]))
+    return float(np.isnan(ir[lats < POLE_FADE_START]).mean())
+
+
+def fill_from_previous_hour(ir: np.ndarray, key: str, folder) -> np.ndarray:
+    """欠けが多いときは、1 時間前の画像で埋める。取れなければそのまま返し、残りは compose が GFS で埋める。"""
+    if missing_fraction(ir) <= MISSING_LIMIT:
+        return ir
+    download = folder / "gmgsi-previous.nc"
+    try:
+        previous = nearest_key(datetime.fromisoformat(valid_time_of(key)) - timedelta(hours=1))
+        if previous == key:
+            return ir
+        response = httpx.get(f"{GMGSI_BASE}/{previous}", timeout=TIMEOUT_SECONDS)
+        response.raise_for_status()
+        atomic_write(download, response.content)
+        return np.where(np.isnan(ir), read_gmgsi(download), ir)
+    except (httpx.HTTPError, OSError, ValueError, KeyError, CloudError):
+        return ir
+    finally:
+        download.unlink(missing_ok=True)
 
 
 def _dilate_and_blur(a: np.ndarray, radius: int) -> np.ndarray:
@@ -210,7 +242,9 @@ def compose(ir: np.ndarray, gfs: np.ndarray | None) -> np.ndarray:
     density = density * np.clip((mask - GFS_CLEAR_COVER) / 0.5, 0, 1)
     lats = np.abs(target_latitudes(height))
     edge = np.clip((lats - POLE_FADE_START) / (POLE_FADE_END - POLE_FADE_START), 0, 1)[:, None]
-    return density * (1 - edge) + target * POLE_COVER * edge
+    density = density * (1 - edge) + target * POLE_COVER * edge
+    # 衛星のデータが欠けた範囲は、晴れにせず GFS の雲量で埋める (極の近くと同じ)
+    return np.where(np.isnan(ir), target * POLE_COVER, density)
 
 
 def _read_gfs(name: str = "current-cloud") -> np.ndarray | None:
@@ -242,7 +276,7 @@ def update_satellite_map(now: datetime | None = None) -> dict:
         response.raise_for_status()
         download = cache / "gmgsi.nc"
         atomic_write(download, response.content)
-        density = compose(read_gmgsi(download), _read_gfs())
+        density = compose(fill_from_previous_hour(read_gmgsi(download), key, cache), _read_gfs())
     except (httpx.HTTPError, OSError, ValueError, KeyError, CloudError) as e:
         if previous and bin_path.exists():
             return {**previous, "stale": True}
@@ -280,7 +314,7 @@ def past_satellite_map(target: datetime, gfs_name: str | None = None) -> dict:
             response.raise_for_status()
             atomic_write(download, response.content)
             gfs = _read_gfs(f"past/{gfs_name}") if gfs_name else None
-            density = compose(read_gmgsi(download), gfs)
+            density = compose(fill_from_previous_hour(read_gmgsi(download), key, past), gfs)
         except (httpx.HTTPError, OSError, ValueError, KeyError) as e:
             raise CloudError(f"衛星画像を取得できませんでした: {e}") from e
         finally:

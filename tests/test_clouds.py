@@ -56,6 +56,73 @@ class GfsTargetTest(unittest.TestCase):
         self.assertLess(float(sample(result, 0, -70)), 0.01)
 
 
+class ReadGmgsiTest(unittest.TestCase):
+    def test_bad_quality_pixels_are_missing(self):
+        # 品質フラグが 0 以外の画素は、値が 255 (最も冷たい) で埋まっていても使わない
+        import h5py
+
+        lon = np.concatenate([[179.95], np.arange(-179.5, 180, 1.0)])
+        lat = np.linspace(72, -72, 145)
+        data = np.full((1, lat.size, lon.size), 100, dtype=np.float32)
+        quality = np.zeros((1, lat.size, lon.size), dtype=np.int8)
+        rows = (lat > 40) & (lat < 60)
+        cols = (lon > -10) & (lon < 20)
+        data[0][np.ix_(rows, cols)] = 255
+        quality[0][np.ix_(rows, cols)] = 20
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "gmgsi.nc"
+            with h5py.File(path, "w") as f:
+                f.create_dataset("data", data=data).attrs["_FillValue"] = np.float32(-9999)
+                f.create_dataset("dqf", data=quality)
+                f.create_dataset("lat", data=np.repeat(lat[:, None], lon.size, axis=1))
+                f.create_dataset("lon", data=np.repeat(lon[None, :], lat.size, axis=0))
+            ir = clouds.read_gmgsi(path)
+        self.assertTrue(np.isnan(sample(ir, 5, 50)))
+        self.assertAlmostEqual(float(sample(ir, 60, 50)), 100, places=3)
+
+
+class FillFromPreviousHourTest(unittest.TestCase):
+    KEY = "GMGSI_LW/2026/11/03/12/GLOBCOMPLIR_v3r0_blend_s202611031200000_e202611031209599_c202611031233468.nc"
+    PREVIOUS = "GMGSI_LW/2026/11/03/11/GLOBCOMPLIR_v3r0_blend_s202611031100000_e202611031109599_c202611031133468.nc"
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.folder = Path(tmp.name)
+        self.ir = np.full((360, 720), 100, dtype=np.float32)
+
+    def fill(self, previous_ir):
+        response = mock.Mock(content=b"nc", raise_for_status=mock.Mock())
+        with mock.patch.object(clouds, "nearest_key", return_value=self.PREVIOUS) as nearest, mock.patch.object(
+            clouds.httpx, "get", return_value=response
+        ) as get, mock.patch.object(clouds, "read_gmgsi", return_value=previous_ir):
+            result = clouds.fill_from_previous_hour(self.ir, self.KEY, self.folder)
+        return result, nearest, get
+
+    def test_large_missing_area_is_filled_from_previous_hour(self):
+        self.ir[100:160, 340:400] = np.nan
+        result, nearest, get = self.fill(np.full((360, 720), 150, dtype=np.float32))
+        self.assertEqual(nearest.call_args.args[0], datetime(2026, 11, 3, 11, tzinfo=timezone.utc))
+        self.assertIn(self.PREVIOUS, get.call_args.args[0])
+        self.assertEqual(float(sample(result, 5, 30)), 150)  # 欠けていた場所だけ 1 時間前の値
+        self.assertEqual(float(sample(result, 60, 30)), 100)
+        self.assertFalse((self.folder / "gmgsi-previous.nc").exists())
+
+    def test_small_missing_area_is_left_to_gfs(self):
+        self.ir[170, 360] = np.nan
+        result, _, get = self.fill(np.full((360, 720), 150, dtype=np.float32))
+        get.assert_not_called()
+        self.assertTrue(np.isnan(result[170, 360]))
+
+    def test_download_failure_keeps_missing_area(self):
+        self.ir[100:160, 340:400] = np.nan
+        with mock.patch.object(clouds, "nearest_key", return_value=self.PREVIOUS), mock.patch.object(
+            clouds.httpx, "get", side_effect=httpx.ConnectError("down")
+        ):
+            result = clouds.fill_from_previous_hour(self.ir, self.KEY, self.folder)
+        self.assertTrue(np.isnan(sample(result, 5, 30)))
+
+
 class ComposeTest(unittest.TestCase):
     def build(self, ir_value, gfs_value):
         ir = np.full((360, 720), ir_value, dtype=np.float32)
@@ -122,6 +189,15 @@ class ComposeTest(unittest.TestCase):
         gfs = np.ones((181, 360), dtype=np.float32)
         result = clouds.compose(ir, gfs)
         self.assertAlmostEqual(float(sample(result, 0, 85)), clouds.POLE_COVER, places=3)
+
+    def test_missing_satellite_data_uses_gfs(self):
+        # 衛星のデータが欠けた範囲は晴れにせず、GFS の雲量で埋める
+        ir = np.full((360, 720), 76, dtype=np.float32)
+        ir[100:160, 340:380] = np.nan
+        gfs = np.full((181, 360), 0.8, dtype=np.float32)
+        result = clouds.compose(ir, gfs)
+        self.assertAlmostEqual(float(sample(result, 0, 30)), 0.8 * clouds.POLE_COVER, places=3)
+        self.assertEqual(float(sample(result, 60, 30)), 0.0)  # 欠けていない晴れの場所は晴れのまま
 
     def test_without_gfs_uses_infrared_only(self):
         ir = np.full((360, 720), 215, dtype=np.float32)
