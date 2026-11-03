@@ -93,7 +93,10 @@ const DEMO_ROTATE_SPEED = 0.42; // OrbitControls の単位。毎秒約 2.5 度�
 const DEMO_TURN_DEGREES_PER_SECOND = 1.2; // 地域ビューで中心のまわりを回る速さ
 // 地域ビューの巡航。上下のキーで速さの段を変え、手を離してもその速さで飛び続ける。左右のキーを押している間は旋回する
 const CRUISE_LEVELS = 5;
-const CRUISE_RATE = 0.08; // 1 段あたりの速さ。高さ (距離) 1 あたり、1 秒に進む角度 (地球の中心から見た弧度)
+// 1 段目の速さ。高さ (距離) 1 あたり、1 秒に進む角度 (地球の中心から見た弧度)。
+// 1 段ごとに 2 倍にし、遅い段で景色を眺められ、速い段で遠くへ移れるようにする
+const CRUISE_RATE = 0.01;
+const CRUISE_STEP_RATIO = 2;
 const CRUISE_SECONDS = 0.8; // 速さを変えるときの時定数
 const TURN_DEGREES_PER_SECOND = 30;
 const TURN_SECONDS = 0.35; // 旋回を始めるときと止めるときの時定数
@@ -515,13 +518,19 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   window.addEventListener('blur', () => turnKeys.clear());
 
   // 巡航で進め、旋回の分だけ画面を傾ける。ドラッグしている間は進めない
+  // なめらかにした段の値から速さを求める。0〜1 段の間は 1 段目の速さへ比例させ、止まるところでも途切れないようにする
+  function cruiseRate(throttle: number): number {
+    if (throttle < 1) return CRUISE_RATE * throttle;
+    return CRUISE_RATE * CRUISE_STEP_RATIO ** (throttle - 1);
+  }
+
   function updateCruise(dt: number): void {
     if (!regionView) return;
     cruiseThrottle += (cruiseLevel - cruiseThrottle) * (1 - Math.exp(-dt / CRUISE_SECONDS));
     const turnGoal = ((turnKeys.has('right') ? 1 : 0) - (turnKeys.has('left') ? 1 : 0)) * TURN_DEGREES_PER_SECOND;
     turnRate += (turnGoal - turnRate) * (1 - Math.exp(-dt / TURN_SECONDS));
     if (regionDrag || (cruiseThrottle < 1e-4 && Math.abs(turnRate) < 1e-3)) return;
-    regionView = cruiseRegionView(regionView, cruiseThrottle * CRUISE_RATE * regionView.distance * dt, turnRate * dt);
+    regionView = cruiseRegionView(regionView, cruiseRate(cruiseThrottle) * regionView.distance * dt, turnRate * dt);
   }
 
   function updateRegion(dt: number): void {
