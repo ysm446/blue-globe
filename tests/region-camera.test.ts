@@ -5,13 +5,14 @@ import {
   approachDistance,
   clampRegionView,
   coastRegionView,
+  cruiseRegionView,
   interpolateRegionView,
   lonLatOf,
   panRegionView,
   regionPose,
   type RegionView,
 } from '../src/renderer/region-camera.ts';
-import type { Vec3 } from '../src/renderer/math.ts';
+import { DEG, wrapDegrees, type Vec3 } from '../src/renderer/math.ts';
 
 const TOKYO: RegionView = { lat: 35.6, lon: 139.7, heading: 0, tilt: 0, distance: 0.3 };
 
@@ -126,4 +127,50 @@ test('距離は FPS によらず同じように目標へ近づく', () => {
   };
   assert.ok(Math.abs(run(30) - run(120)) < 1e-9);
   assert.ok(run(60) < 0.5 && run(60) > 0.1);
+});
+
+test('巡航は今の向きへ大円に沿って進む', () => {
+  const east = cruiseRegionView({ lat: 0, lon: 10, heading: 90, tilt: 50, distance: 0.24 }, 0.1, 0);
+  assert.ok(Math.abs(east.lat) < 1e-9);
+  assert.ok(Math.abs(east.lon - (10 + 0.1 / DEG)) < 1e-9);
+  assert.ok(Math.abs(east.heading - 90) < 1e-9);
+  const north = cruiseRegionView({ lat: 20, lon: 10, heading: 0, tilt: 50, distance: 0.24 }, 10 * DEG, 0);
+  assert.ok(Math.abs(north.lat - 30) < 1e-9 && Math.abs(north.lon - 10) < 1e-9);
+  // 東へまっすぐ進むと、北半球では方角が南寄りへ変わる
+  const curve = cruiseRegionView({ lat: 40, lon: 0, heading: 90, tilt: 50, distance: 0.24 }, 30 * DEG, 0);
+  assert.ok(curve.heading > 100, `${curve.heading}`);
+});
+
+test('巡航で進むと、カメラも同じ角度だけ進み、高さと傾きは変わらない', () => {
+  const view = { lat: 35, lon: 139, heading: 30, tilt: 50, distance: 0.24 };
+  const next = cruiseRegionView(view, 0.05, 0);
+  const before = regionPose(view).position;
+  const after = regionPose(next).position;
+  const angle = Math.acos(dot(before, after) / (Math.hypot(...before) * Math.hypot(...after)));
+  assert.ok(Math.abs(angle - 0.05) < 1e-6, `${angle}`);
+  assert.equal(next.tilt, view.tilt);
+  assert.equal(next.distance, view.distance);
+});
+
+test('巡航で向きを変えるときは、カメラの位置を軸にする', () => {
+  const view = { lat: 35, lon: 139, heading: 30, tilt: 50, distance: 0.24 };
+  const turned = cruiseRegionView(view, 0, 20);
+  const before = regionPose(view).position;
+  const after = regionPose(turned).position;
+  for (let i = 0; i < 3; i++) assert.ok(Math.abs(before[i] - after[i]) < 1e-9, `${i}: ${before[i]} と ${after[i]}`);
+  // カメラの真上の向きを軸にして、視線が水平に 20° 回る。中心の地点の方角は子午線の収束の分だけ違う
+  const vertical = before.map((v) => v / Math.hypot(...before)) as unknown as Vec3;
+  const level = (target: Vec3): Vec3 => {
+    const f = target.map((v, i) => v - before[i]) as unknown as Vec3;
+    const along = dot(f, vertical);
+    return f.map((v, i) => v - vertical[i] * along) as unknown as Vec3;
+  };
+  const [a, b] = [level(regionPose(view).target), level(regionPose(turned).target)];
+  near(Math.acos(dot(a, b) / (Math.hypot(...a) * Math.hypot(...b))) / DEG, 20, 'turn');
+  assert.ok(wrapDegrees(turned.heading - view.heading) > 0);
+});
+
+test('巡航でも緯度の上限を越えない', () => {
+  const next = cruiseRegionView({ lat: 79.9, lon: 0, heading: 0, tilt: 50, distance: 0.24 }, 1 * DEG, 0);
+  assert.ok(next.lat <= 80);
 });

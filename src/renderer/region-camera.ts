@@ -116,3 +116,34 @@ export function coastRegionView(
 export function approachDistance(distance: number, goal: number, dt: number): number {
   return distance * Math.pow(goal / distance, 1 - Math.exp(-dt / ZOOM_SECONDS));
 }
+
+// 大円に沿って angle (弧度) 進んだ地点と、そこでの進む向き (度)。まっすぐ進むと、方角は少しずつ変わる
+function travel(lat: number, lon: number, bearing: number, angle: number): { lat: number; lon: number; bearing: number } {
+  if (angle === 0) return { lat, lon, bearing };
+  const [p1, l1, b] = [lat * DEG, lon * DEG, bearing * DEG];
+  const p2 = Math.asin(clamp(Math.sin(p1) * Math.cos(angle) + Math.cos(p1) * Math.sin(angle) * Math.cos(b), -1, 1));
+  const l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(angle) * Math.cos(p1), Math.cos(angle) - Math.sin(p1) * Math.sin(p2));
+  // 着いた地点から元の地点への向きの反対
+  const back = Math.atan2(
+    Math.sin(l1 - l2) * Math.cos(p1),
+    Math.cos(p2) * Math.sin(p1) - Math.sin(p2) * Math.cos(p1) * Math.cos(l1 - l2),
+  );
+  return { lat: p2 / DEG, lon: wrapDegrees(l2 / DEG), bearing: wrapDegrees(back / DEG + 180) };
+}
+
+// 巡航。turn 度だけカメラの真下の地点を軸に向きを変え、forward (弧度) だけ今の向きへまっすぐ進む。
+// 中心の地点ではなくカメラの位置で向きを変えるので、航空機のようにその場で機首を振る。高さと傾きは変えない
+export function cruiseRegionView(view: RegionView, forward: number, turn: number): RegionView {
+  let { lat, lon, heading } = view;
+  if (turn !== 0) {
+    const tilt = view.tilt * DEG;
+    // 真下の地点から中心の地点までの、地球の中心から見た角度
+    const reach = Math.atan2(view.distance * Math.sin(tilt), 1 + view.distance * Math.cos(tilt));
+    const below = travel(lat, lon, heading + 180, reach);
+    const ahead = travel(below.lat, below.lon, below.bearing + 180 + turn, reach);
+    ({ lat, lon } = ahead);
+    heading = ahead.bearing;
+  }
+  const moved = travel(lat, lon, heading, forward);
+  return clampRegionView({ ...view, lat: moved.lat, lon: moved.lon, heading: moved.bearing });
+}

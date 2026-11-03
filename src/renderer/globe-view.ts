@@ -23,6 +23,7 @@ import {
   clampRegionDistance,
   clampRegionView,
   coastRegionView,
+  cruiseRegionView,
   interpolateRegionView,
   lonLatOf,
   panRegionView,
@@ -90,6 +91,23 @@ const MARKER_BOX_HEIGHT = 24;
 const MARKER_LABEL_OFFSET = 13;
 const DEMO_ROTATE_SPEED = 0.42; // OrbitControls の単位。毎秒約 2.5 度で、地表は実際の自転と同じ東向きに動く
 const DEMO_TURN_DEGREES_PER_SECOND = 1.2; // 地域ビューで中心のまわりを回る速さ
+// 地域ビューの巡航。上下のキーで速さの段を変え、手を離してもその速さで飛び続ける。左右のキーを押している間は旋回する
+const CRUISE_LEVELS = 5;
+const CRUISE_RATE = 0.08; // 1 段あたりの速さ。高さ (距離) 1 あたり、1 秒に進む角度 (地球の中心から見た弧度)
+const CRUISE_SECONDS = 0.8; // 速さを変えるときの時定数
+const TURN_DEGREES_PER_SECOND = 30;
+const TURN_SECONDS = 0.35; // 旋回を始めるときと止めるときの時定数
+const BANK_DEGREES = 6; // 旋回中に画面を傾ける角度
+const CRUISE_KEYS: Record<string, 'faster' | 'slower' | 'left' | 'right'> = {
+  ArrowUp: 'faster',
+  KeyW: 'faster',
+  ArrowDown: 'slower',
+  KeyS: 'slower',
+  ArrowLeft: 'left',
+  KeyA: 'left',
+  ArrowRight: 'right',
+  KeyD: 'right',
+};
 const DEMO_TILT = 62;
 const DEMO_DISTANCE = 0.22;
 const DEMO_DAYSIDE_OFFSET = 30; // 太陽の真下より東から始め、回転で真下を通る
@@ -348,6 +366,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   function flyRegion(to: RegionView, leaving: boolean, seconds = FLY_SECONDS): void {
     if (!regionView) return;
+    stopCruise();
     regionFlight = { from: regionView, to, elapsed: 0, seconds, leaving };
     regionVelocity = REGION_STILL;
     regionDrag = null;
@@ -435,6 +454,63 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     flyRegion({ ...regionView, heading: 0, tilt: 0, distance: distance - GLOBE_RADIUS }, true, seconds);
   }
 
+  // 巡航の速さの段 (0〜CRUISE_LEVELS) と、なめらかにしたあとの値。旋回は度/秒
+  let cruiseLevel = 0;
+  let cruiseThrottle = 0;
+  let turnRate = 0;
+  const turnKeys = new Set<'left' | 'right'>();
+  const viewHint = el('view-hint');
+  const viewHintText = viewHint.textContent ?? '';
+
+  function stopCruise(): void {
+    cruiseLevel = 0;
+    cruiseThrottle = 0;
+    turnRate = 0;
+    turnKeys.clear();
+    showCruise();
+  }
+
+  function showCruise(): void {
+    viewHint.textContent =
+      cruiseLevel > 0 ? `巡航中 速さ ${cruiseLevel} / ${CRUISE_LEVELS}(↑↓ で速さ、←→ で旋回)` : viewHintText;
+  }
+
+  // 地域ビューで、入力欄や設定画面を操作していないときだけ受け付ける
+  function acceptsCruiseKey(event: KeyboardEvent): boolean {
+    if (!regionView || regionFlight || demoMotion || event.ctrlKey || event.altKey || event.metaKey) return false;
+    if (document.querySelector('dialog[open]')) return false;
+    const target = event.target instanceof Element ? event.target : null;
+    return !target?.closest('input, select, textarea, [contenteditable="true"]');
+  }
+
+  window.addEventListener('keydown', (event) => {
+    const action = CRUISE_KEYS[event.code];
+    if (!action || !acceptsCruiseKey(event)) return;
+    event.preventDefault();
+    if (action === 'left' || action === 'right') {
+      turnKeys.add(action);
+      return;
+    }
+    if (event.repeat) return; // 押し続けても 1 段ずつ変える
+    cruiseLevel = THREE.MathUtils.clamp(cruiseLevel + (action === 'faster' ? 1 : -1), 0, CRUISE_LEVELS);
+    showCruise();
+  });
+  window.addEventListener('keyup', (event) => {
+    const action = CRUISE_KEYS[event.code];
+    if (action === 'left' || action === 'right') turnKeys.delete(action);
+  });
+  window.addEventListener('blur', () => turnKeys.clear());
+
+  // 巡航で進め、旋回の分だけ画面を傾ける。ドラッグしている間は進めない
+  function updateCruise(dt: number): void {
+    if (!regionView) return;
+    cruiseThrottle += (cruiseLevel - cruiseThrottle) * (1 - Math.exp(-dt / CRUISE_SECONDS));
+    const turnGoal = ((turnKeys.has('right') ? 1 : 0) - (turnKeys.has('left') ? 1 : 0)) * TURN_DEGREES_PER_SECOND;
+    turnRate += (turnGoal - turnRate) * (1 - Math.exp(-dt / TURN_SECONDS));
+    if (regionDrag || (cruiseThrottle < 1e-4 && Math.abs(turnRate) < 1e-3)) return;
+    regionView = cruiseRegionView(regionView, cruiseThrottle * CRUISE_RATE * regionView.distance * dt, turnRate * dt);
+  }
+
   function updateRegion(dt: number): void {
     if (!regionView) return;
     if (regionFlight) {
@@ -463,8 +539,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
         heading: regionView.heading + (demoMotion ? DEMO_TURN_DEGREES_PER_SECOND * dt : 0),
         distance: approachDistance(regionView.distance, regionDistanceGoal, dt),
       });
+      updateCruise(dt);
     }
     applyRegionPose(regionView);
+    // 旋回する向きへ傾ける (右へ曲がるときは右の翼を下げる)
+    if (turnRate !== 0) camera.rotateZ((-turnRate / TURN_DEGREES_PER_SECOND) * BANK_DEGREES * THREE.MathUtils.DEG2RAD);
   }
 
   renderer.domElement.addEventListener('pointerdown', (event) => {
@@ -621,6 +700,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   // 太陽系へ引く。地域ビューからも、その姿勢のまま引き始める
   function enterSolar(): void {
     if (mode === 'wind' || solar.entered) return;
+    stopCruise();
     flight = null;
     regionView = null;
     regionFlight = null;
@@ -884,6 +964,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     earth,
     regionView: () => regionView,
     solar,
+    cruise: () => ({ level: cruiseLevel, throttle: cruiseThrottle, turnRate }),
     setRegionView(next: Partial<RegionView>): void {
       if (!regionView) return;
       regionFlight = null;
@@ -927,6 +1008,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     sunLonLat,
     setDemoMotion(on: boolean): void {
       demoMotion = on;
+      if (on) stopCruise();
       syncCityLabels();
       controls.autoRotate = on;
       controls.autoRotateSpeed = DEMO_ROTATE_SPEED;
