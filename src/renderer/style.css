@@ -1398,6 +1398,30 @@ select option {
   margin-top: 8px;
 }
 
+/* 項目の説明のポップアップ。設定画面の中に置き、画面の座標で位置を決める */
+.settings-tip {
+  position: fixed;
+  z-index: 1;
+  max-width: 360px;
+  padding: 8px 10px;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+}
+
+label[data-help] {
+  cursor: help;
+}
+
+.check-row[data-help] {
+  cursor: pointer;
+}
+
 .settings-help:empty {
   display: none;
 }

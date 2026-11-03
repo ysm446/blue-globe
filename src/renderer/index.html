@@ -232,7 +232,7 @@
 
       <section id="panel-performance" role="tabpanel" aria-labelledby="tab-performance" hidden>
         <div class="field-grid">
-          <label for="fps-limit">FPS 上限</label>
+          <label for="fps-limit" data-help="描画の毎秒の回数の上限。モニターに合わせると最もなめらかで、下げると GPU の負荷と発熱が減ります。既定: モニターに合わせる">FPS 上限</label>
           <select id="fps-limit">
             <option value="0">モニターに合わせる</option>
             <option value="120">120</option>
@@ -240,7 +240,7 @@
             <option value="30">30</option>
           </select>
           <button class="reset-button" data-reset="fps_limit" type="button" aria-label="FPS 上限を既定に戻す" title="既定に戻す"></button>
-          <label for="render-scale">描画解像度</label>
+          <label for="render-scale" data-help="地球を描く解像度。下げると軽くなりますが、縁や雲がぼやけます。文字の大きさは変わりません。既定: 100%">描画解像度</label>
           <select id="render-scale">
             <option value="100">100%(鮮明)</option>
             <option value="75">75%</option>
@@ -249,18 +249,18 @@
           <button class="reset-button" data-reset="render_scale" type="button" aria-label="描画解像度を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="region-detail-toggle" type="checkbox" />地域ビューの高解像度の画像(NASA から取得)</label>
+          <label class="check-row" data-help="地域ビューで、視点のまわりに NASA GIBS の 500m の画像を取得して重ねます。通信とメモリを使います。既定: オン"><input id="region-detail-toggle" type="checkbox" />地域ビューの高解像度の画像(NASA から取得)</label>
           <button class="reset-button" data-reset="region_detail" type="button" aria-label="地域ビューの高解像度の画像を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="fps-toggle" type="checkbox" />FPS を表示</label>
+          <label class="check-row" data-help="毎秒の描画回数を画面に出します。既定: オフ"><input id="fps-toggle" type="checkbox" />FPS を表示</label>
           <button class="reset-button" data-reset="show_fps" type="button" aria-label="FPS の表示を既定に戻す" title="既定に戻す"></button>
         </div>
         <button class="reset-all" data-reset-section type="button">すべて既定に戻す</button>
       </section>
       <section id="panel-graphics" role="tabpanel" aria-labelledby="tab-graphics" hidden>
         <div class="field-grid">
-          <label for="ui-font">日本語フォント</label>
+          <label for="ui-font" data-help="画面の文字のフォント。PC に入っていないフォントは候補に出ません。既定: Noto Sans JP">日本語フォント</label>
           <select id="ui-font">
             <option value="noto-sans-jp">Noto Sans JP</option>
             <option value="yu-gothic-ui">游ゴシック UI</option>
@@ -269,31 +269,31 @@
             <option value="yu-mincho">游明朝</option>
           </select>
           <button class="reset-button" data-reset="ui_font" type="button" aria-label="日本語フォントを既定に戻す" title="既定に戻す"></button>
-          <label for="star-brightness">星の明るさ</label>
+          <label for="star-brightness" data-help="星と惑星の明るさの倍率。互いの明るさの比は変わりません。実際は昼の地球に合わせた露出で星は写らないので、×1 でも見やすさのために明るくしています。既定: ×1.00">星の明るさ</label>
           <div class="range-row">
             <input id="star-brightness" type="range" min="-3" max="3" step="0.25" />
             <output id="star-brightness-value" for="star-brightness"></output>
           </div>
           <button class="reset-button" data-reset="star_brightness" type="button" aria-label="星の明るさを既定に戻す" title="既定に戻す"></button>
-          <label for="space-tint">宇宙の青み</label>
+          <label for="space-tint" data-help="背景の宇宙の青さ。実際の宇宙は空気がなく光を散らさないので、0% の真っ黒が写真どおりです。既定: 100%">宇宙の青み</label>
           <div class="range-row">
             <input id="space-tint" type="range" min="0" max="100" step="5" />
             <output id="space-tint-value" for="space-tint"></output>
           </div>
           <button class="reset-button" data-reset="space_tint" type="button" aria-label="宇宙の青みを既定に戻す" title="既定に戻す"></button>
-          <label for="region-bloom">地域ビューのにじみ</label>
+          <label for="region-bloom" data-help="地域ビューでの光のにじみの強さ。地球ビューを 100% とした倍率です。既定: 50%">地域ビューのにじみ</label>
           <div class="range-row">
             <input id="region-bloom" type="range" min="0" max="100" step="5" />
             <output id="region-bloom-value" for="region-bloom"></output>
           </div>
           <button class="reset-button" data-reset="region_bloom" type="button" aria-label="地域ビューのにじみを既定に戻す" title="既定に戻す"></button>
-          <label for="city-glow">街明かりのにじみ</label>
+          <label for="city-glow" data-help="夜側の街のまわりをふんわり明るくする暈の強さ。低い大気で散った光のつもりのものです。既定: 100%">街明かりのにじみ</label>
           <div class="range-row">
             <input id="city-glow" type="range" min="0" max="200" step="5" />
             <output id="city-glow-value" for="city-glow"></output>
           </div>
           <button class="reset-button" data-reset="city_glow" type="button" aria-label="街明かりのにじみを既定に戻す" title="既定に戻す"></button>
-          <label for="glint-strength">海の反射の強さ</label>
+          <label for="glint-strength" data-help="海に映る太陽の光の強さ。100% が NASA の地球の写真に合わせた強さです。既定: 130%">海の反射の強さ</label>
           <div class="range-row">
             <input id="glint-strength" type="range" min="0" max="300" step="5" />
             <output id="glint-strength-value" for="glint-strength"></output>
@@ -301,27 +301,27 @@
           <button class="reset-button" data-reset="glint_strength" type="button" aria-label="海の反射の強さを既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="moonlight-toggle" type="checkbox" />月明かり(夜側の雲と地表を、月の位置と満ち欠けに合わせて照らす)</label>
+          <label class="check-row" data-help="夜側の雲と地表を、月の方向と満ち欠けに合わせて照らします。満月で最も明るく、半月では約 8 分の 1 です。既定: オン"><input id="moonlight-toggle" type="checkbox" />月明かり(夜側の雲と地表を、月の位置と満ち欠けに合わせて照らす)</label>
           <button class="reset-button" data-reset="moonlight" type="button" aria-label="月明かりを既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="bloom-toggle" type="checkbox" />光のにじみ(通常・天気モード)</label>
+          <label class="check-row" data-help="太陽や街明かりなど明るい部分のまわりを光らせます。オフにすると少し軽くなります。既定: オン"><input id="bloom-toggle" type="checkbox" />光のにじみ(通常・天気モード)</label>
           <button class="reset-button" data-reset="bloom" type="button" aria-label="光のにじみを既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="lens-flare-toggle" type="checkbox" />太陽のまぶしさ(光の筋と画面のかぶり。通常・天気モード)</label>
+          <label class="check-row" data-help="太陽が画面に入ったときの、レンズの中で散る光の筋と画面全体のかぶり。日の出と日の入りでは赤くなります。既定: オン"><input id="lens-flare-toggle" type="checkbox" />太陽のまぶしさ(光の筋と画面のかぶり。通常・天気モード)</label>
           <button class="reset-button" data-reset="lens_flare" type="button" aria-label="太陽のまぶしさを既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="map-lines-toggle" type="checkbox" />海岸線と国境線を表示(通常・天気モード)</label>
+          <label class="check-row" data-help="海岸線と国境線を地球に重ねます。風速モードでは設定にかかわらず描きます。既定: オン"><input id="map-lines-toggle" type="checkbox" />海岸線と国境線を表示(通常・天気モード)</label>
           <button class="reset-button" data-reset="show_map_lines" type="button" aria-label="海岸線と国境線の表示を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="city-labels-toggle" type="checkbox" />都市ラベルを表示(クリックでその都市の天気に切り替え)</label>
+          <label class="check-row" data-help="地球の上に都市名を出します。ズームするほど出る都市が増え、クリックするとその都市の天気に切り替わります。既定: オン"><input id="city-labels-toggle" type="checkbox" />都市ラベルを表示(クリックでその都市の天気に切り替え)</label>
           <button class="reset-button" data-reset="show_city_labels" type="button" aria-label="都市ラベルの表示を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="planet-labels-toggle" type="checkbox" />惑星の名前を表示(通常・天気モード)</label>
+          <label class="check-row" data-help="星空の惑星の点に名前を添えます。既定: オン"><input id="planet-labels-toggle" type="checkbox" />惑星の名前を表示(通常・天気モード)</label>
           <button class="reset-button" data-reset="show_planet_labels" type="button" aria-label="惑星の名前の表示を既定に戻す" title="既定に戻す"></button>
         </div>
         <button class="reset-all" data-reset-section type="button">すべて既定に戻す</button>
@@ -329,7 +329,7 @@
 
       <section id="panel-clouds" role="tabpanel" aria-labelledby="tab-clouds" hidden>
         <div class="field-grid">
-          <label for="cloud-shadow">雲の影の濃さ</label>
+          <label for="cloud-shadow" data-help="雲が地表に落とす影の濃さ。太陽が低いほど影は長く伸びます。既定: 55%">雲の影の濃さ</label>
           <div class="range-row">
             <input id="cloud-shadow" type="range" min="0" max="100" step="5" />
             <output id="cloud-shadow-value" for="cloud-shadow"></output>
@@ -337,37 +337,37 @@
           <button class="reset-button" data-reset="cloud_shadow" type="button" aria-label="雲の影の濃さを既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="volume-clouds-toggle" type="checkbox" />近づいたときに雲を立体で描く(天気モード。重くなります)</label>
+          <label class="check-row" data-help="地域ビューと、地球ビューで近づいたときに、雲を厚みのある立体で描きます。衛星の雲の濃さから高さを決めます。GPU の負荷が大きく増えます。既定: オン"><input id="volume-clouds-toggle" type="checkbox" />近づいたときに雲を立体で描く(天気モード。重くなります)</label>
           <button class="reset-button" data-reset="volume_clouds" type="button" aria-label="雲の立体表示を既定に戻す" title="既定に戻す"></button>
         </div>
         <p class="settings-help">以下は立体の雲(地域ビューと、地球ビューで近づいたとき)の見た目です。</p>
         <div class="field-grid">
-          <label for="cloud-resolution">雲の解像度</label>
+          <label for="cloud-resolution" data-help="立体の雲を描く解像度。画面に対する割合で、下げると軽くなります。既定: 50%">雲の解像度</label>
           <select id="cloud-resolution">
             <option value="100">100%(鮮明・重い)</option>
             <option value="75">75%</option>
             <option value="50">50%(軽い)</option>
           </select>
           <button class="reset-button" data-reset="cloud_resolution" type="button" aria-label="雲の解像度を既定に戻す" title="既定に戻す"></button>
-          <label for="cloud-edge-detail">縁の細かさ</label>
+          <label for="cloud-edge-detail" data-help="立体の雲の縁に、衛星データ(約 10km)より細かい形を足す量。既定: 70%">縁の細かさ</label>
           <div class="range-row">
             <input id="cloud-edge-detail" type="range" min="0" max="100" step="5" />
             <output id="cloud-edge-detail-value" for="cloud-edge-detail"></output>
           </div>
           <button class="reset-button" data-reset="cloud_edge_detail" type="button" aria-label="縁の細かさを既定に戻す" title="既定に戻す"></button>
-          <label for="cloud-edge-sharpness">縁の鋭さ</label>
+          <label for="cloud-edge-sharpness" data-help="立体の雲の縁のぼけ幅。上げると縁が締まり、下げるとふんわりします。既定: 30%">縁の鋭さ</label>
           <div class="range-row">
             <input id="cloud-edge-sharpness" type="range" min="0" max="100" step="5" />
             <output id="cloud-edge-sharpness-value" for="cloud-edge-sharpness"></output>
           </div>
           <button class="reset-button" data-reset="cloud_edge_sharpness" type="button" aria-label="縁の鋭さを既定に戻す" title="既定に戻す"></button>
-          <label for="cloud-puffiness">もこもこ</label>
+          <label for="cloud-puffiness" data-help="立体の雲のかたまりの起伏の強さ。0% で平らに、200% で凸凹が強くなります。既定: 100%">もこもこ</label>
           <div class="range-row">
             <input id="cloud-puffiness" type="range" min="0" max="200" step="5" />
             <output id="cloud-puffiness-value" for="cloud-puffiness"></output>
           </div>
           <button class="reset-button" data-reset="cloud_puffiness" type="button" aria-label="もこもこを既定に戻す" title="既定に戻す"></button>
-          <label for="cloud-height">雲の高さ</label>
+          <label for="cloud-height" data-help="立体の雲の層の厚さ。100% で上端が約 16km(実際の雲の上限に近い高さ)です。既定: 100%">雲の高さ</label>
           <div class="range-row">
             <input id="cloud-height" type="range" min="50" max="300" step="5" />
             <output id="cloud-height-value" for="cloud-height"></output>
@@ -379,25 +379,25 @@
 
       <section id="panel-camera" role="tabpanel" aria-labelledby="tab-camera" hidden>
         <div class="field-grid">
-          <label for="focal-length">焦点距離</label>
+          <label for="focal-length" data-help="カメラのレンズの焦点距離(フルサイズ換算)。小さいほど広角で地球が丸く大きく歪み、大きいほど望遠で平らに見えます。既定: 24mm">焦点距離</label>
           <div class="range-row">
             <input id="focal-length" type="range" min="14" max="70" step="0.1" />
             <output id="focal-length-value" for="focal-length"></output>
           </div>
           <button class="reset-button" data-reset="focal_length" type="button" aria-label="焦点距離を既定に戻す" title="既定に戻す"></button>
-          <label for="field-of-view">画角(縦)</label>
+          <label for="field-of-view" data-help="今の窓での縦の画角。焦点距離と連動していて、どちらを動かしても同じです。">画角(縦)</label>
           <div class="range-row">
             <input id="field-of-view" type="range" step="0.1" />
             <output id="field-of-view-value" for="field-of-view"></output>
           </div>
           <span></span>
-          <label for="exposure-compensation">露出補正</label>
+          <label for="exposure-compensation" data-help="画面全体の明るさの補正。+1 で 2 倍、-1 で半分になります。通常・天気モードで効きます。既定: 0 EV">露出補正</label>
           <div class="range-row">
             <input id="exposure-compensation" type="range" min="-2" max="2" step="0.25" />
             <output id="exposure-compensation-value" for="exposure-compensation"></output>
           </div>
           <button class="reset-button" data-reset="exposure_compensation" type="button" aria-label="露出補正を既定に戻す" title="既定に戻す"></button>
-          <label for="cruise-mode">巡航の操作</label>
+          <label for="cruise-mode" data-help="地域ビューの W/S の効き方。アナログ式は押している間に速さが変わり、段階式は 1 回押すごとに 1 段(2 倍)変わります。既定: アナログ式">巡航の操作</label>
           <select id="cruise-mode">
             <option value="analog">アナログ式</option>
             <option value="stepped">段階式</option>
@@ -405,11 +405,11 @@
           <button class="reset-button" data-reset="cruise_mode" type="button" aria-label="巡航の操作を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="exposure-toggle" type="checkbox" />自動露出(通常・天気モード)</label>
+          <label class="check-row" data-help="太陽が画面に入ると絞り、夜側を見ているときは少し開けます。画面の明るさの実測ではなく、太陽と地球の位置関係から決めます。既定: オン"><input id="exposure-toggle" type="checkbox" />自動露出(通常・天気モード)</label>
           <button class="reset-button" data-reset="auto_exposure" type="button" aria-label="自動露出を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row"><input id="cruise-bank-toggle" type="checkbox" />巡航で曲がるときに画面を傾ける</label>
+          <label class="check-row" data-help="巡航で A/D で曲がるときに、曲がる向きへ画面を傾けます。既定: オン"><input id="cruise-bank-toggle" type="checkbox" />巡航で曲がるときに画面を傾ける</label>
           <button class="reset-button" data-reset="cruise_bank" type="button" aria-label="巡航で曲がるときの傾きを既定に戻す" title="既定に戻す"></button>
         </div>
         <p class="settings-help">焦点距離はフルサイズ換算です。画角は今の窓での縦の角度で、焦点距離と連動します。露出補正は通常・天気モードで効きます。巡航(地域ビューの W/S)は、アナログ式では押している間に速さが変わり、段階式では 1 回押すごとに 1 段変わります。</p>

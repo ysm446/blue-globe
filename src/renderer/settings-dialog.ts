@@ -40,6 +40,72 @@ function percentSlider(id: string) {
   );
 }
 
+const HELP_DELAY_MS = 350; // すぐ出ると、スライダーへ向かう途中で次々に出て目障り
+const HELP_GAP = 6;
+
+// 項目の説明のポップアップ。data-help を持つラベルにマウスを乗せるか、中の入力にフォーカスすると、
+// その下に出す。設定画面は最前面の層にあるので、ポップアップも設定画面の中に置く
+function initHelpPopup(dialog: HTMLDialogElement): void {
+  const popup = document.createElement('div');
+  popup.className = 'settings-tip';
+  popup.setAttribute('role', 'tooltip');
+  popup.hidden = true;
+  dialog.append(popup);
+  let timer = 0;
+  let shownFor: HTMLElement | null = null;
+
+  function show(label: HTMLElement): void {
+    popup.textContent = label.dataset.help ?? '';
+    popup.hidden = false;
+    shownFor = label;
+    // 画面の下にはみ出すなら、ラベルの上に出す
+    const anchor = label.getBoundingClientRect();
+    const box = popup.getBoundingClientRect();
+    const dialogBox = dialog.getBoundingClientRect();
+    const left = Math.min(Math.max(anchor.left, dialogBox.left + 8), dialogBox.right - box.width - 8);
+    const below = anchor.bottom + HELP_GAP;
+    const top = below + box.height <= dialogBox.bottom - 8 ? below : anchor.top - HELP_GAP - box.height;
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
+  }
+
+  function hide(): void {
+    window.clearTimeout(timer);
+    timer = 0;
+    popup.hidden = true;
+    shownFor = null;
+  }
+
+  // ラベルの中の要素か、for で結ばれた入力 (スライダーや選択) からラベルを探す
+  function labelOf(target: EventTarget | null): HTMLElement | null {
+    if (!(target instanceof Element)) return null;
+    const inside = target.closest<HTMLElement>('[data-help]');
+    if (inside) return inside;
+    return target.id ? dialog.querySelector<HTMLElement>(`label[for="${target.id}"][data-help]`) : null;
+  }
+
+  dialog.addEventListener('mouseover', (event) => {
+    const label = labelOf(event.target);
+    if (!label || label === shownFor) return;
+    window.clearTimeout(timer);
+    timer = window.setTimeout(() => show(label), HELP_DELAY_MS);
+  });
+  dialog.addEventListener('mouseout', (event) => {
+    const label = labelOf(event.target);
+    if (label && !label.contains(event.relatedTarget as Node | null)) hide();
+  });
+  // キーボードで項目に移ったときも出す
+  dialog.addEventListener('focusin', (event) => {
+    const label = labelOf(event.target);
+    if (label) show(label);
+  });
+  dialog.addEventListener('focusout', hide);
+  // タブを切り替えるとラベルが隠れるので消す。チェックボックスを押したときも消えるが、また乗せ直せば出る
+  dialog.addEventListener('click', hide);
+  dialog.addEventListener('scroll', hide, true);
+  dialog.addEventListener('close', hide);
+}
+
 export function initSettingsDialog(
   onLocationChange: (settings: AppSettings) => void,
   onGraphicsChange: (graphics: GraphicsSettings) => void,
@@ -49,6 +115,8 @@ export function initSettingsDialog(
   const locationStatus = el('location-status');
   const results = el<HTMLUListElement>('location-results');
   let settings: AppSettings = { location: null };
+
+  initHelpPopup(dialog);
 
   // 開いていたタブは、次に開いたときもそのままにする
   const tabs = Array.from(dialog.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
