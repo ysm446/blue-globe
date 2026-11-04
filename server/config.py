@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 # 動作検証時に実際の設定を汚さないよう、環境変数で差し替えられる
-DATA_DIR = Path(os.environ.get("WEATHER_NEWS_DATA_DIR", ROOT / "data"))
+DATA_DIR = Path(os.environ.get("TINY_EARTH_DATA_DIR", ROOT / "data"))
 SETTINGS_FILE = DATA_DIR / "settings.json"
 
 DEFAULT_SETTINGS = {

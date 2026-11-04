@@ -1,7 +1,7 @@
 {
-  "name": "weather-news",
+  "name": "tiny-earth",
   "version": "0.1.0",
-  "description": "現在地の天気を地球儀とニュース文で伝えるデスクトップアプリ (Electron + Three.js + Python)",
+  "description": "手元で回せる地球儀で、天気と世界を眺めるデスクトップアプリ (Electron + Three.js + Python)",
   "main": "dist/main.js",
   "private": true,
   "scripts": {

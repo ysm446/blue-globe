@@ -6,7 +6,7 @@ import unicodedata
 import httpx
 
 TIMEOUT_SECONDS = 20
-HEADERS = {"User-Agent": "weather-news"}
+HEADERS = {"User-Agent": "tiny-earth"}
 
 PREFECTURE_OFFICES = {
     "青森県": "020000", "岩手県": "030000", "宮城県": "040000", "秋田県": "050000",

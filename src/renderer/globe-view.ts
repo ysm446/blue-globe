@@ -1546,7 +1546,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   });
 
   // 動作検証用: 太陽や月が地球の横に見える位置へカメラを動かす
-  window.__weatherNewsDebug = {
+  window.__tinyEarthDebug = {
     exposure: () => exposure,
     cloudProgress: () => earth.cloudProgress,
     camera,

@@ -140,7 +140,7 @@ interface NewsReport {
 }
 
 interface Window {
-  __weatherNewsDebug: { demoTimeScale: number; [key: string]: unknown }; // 動作検証用
+  __tinyEarthDebug: { demoTimeScale: number; [key: string]: unknown }; // 動作検証用
   weatherApi: {
     getWind(at?: string): Promise<WindResult>;
     getClouds(at?: string): Promise<CloudResult | null>;

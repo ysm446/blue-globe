@@ -128,7 +128,7 @@ async function init(): Promise<void> {
   initScreenshotToast();
   const { applyPanels, showPanels } = initPanelFolds();
   const globe = initGlobe(selectCity);
-  window.__weatherNewsDebug.renderHourly = renderHourly;
+  window.__tinyEarthDebug.renderHourly = renderHourly;
   const mapLayers = initMapLayers(globe);
   let mode: MapMode = 'normal';
 

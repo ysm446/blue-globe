@@ -20,7 +20,7 @@ protocol.registerSchemesAsPrivileged([{ scheme: AUDIO_SCHEME, privileges: { stan
 
 // 動作検証時に実際の設定を汚さないよう、環境変数で差し替えられる
 function dataDir(): string {
-  return process.env.WEATHER_NEWS_DATA_DIR || path.join(app.getAppPath(), 'data');
+  return process.env.TINY_EARTH_DATA_DIR || path.join(app.getAppPath(), 'data');
 }
 
 async function readJson(filePath: string): Promise<unknown> {
@@ -355,7 +355,7 @@ function createWindow(): void {
     height: 1080,
     useContentSize: true,
     backgroundColor: '#0a0e14',
-    icon: path.join(app.getAppPath(), 'assets', 'icons', 'weather-news-v2.png'),
+    icon: path.join(app.getAppPath(), 'assets', 'icons', 'tiny-earth.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
