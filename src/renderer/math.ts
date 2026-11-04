@@ -31,6 +31,15 @@ export function dot(a: Vec3, b: Vec3): number {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
 
+// a から b へ大円に沿って向かうときの、a での方角 (度。0 が北、90 が東、0 以上 360 未満)
+export function bearingDegrees(a: LonLat, b: LonLat): number {
+  const [lat1, lat2] = [a.lat * DEG, b.lat * DEG];
+  const dLon = (b.lon - a.lon) * DEG;
+  const y = Math.sin(dLon) * Math.cos(lat2);
+  const x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return (Math.atan2(y, x) / DEG + 360) % 360;
+}
+
 // 球面上の 2 点の角度
 export function separationDegrees(a: LonLat, b: LonLat): number {
   const cosine =

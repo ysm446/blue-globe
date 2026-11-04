@@ -17,7 +17,8 @@ import { formatFrameStats, formatVram, GpuTimer } from './frame-timer';
 import { createBorders, createCoastlines, Globe, lonLatToVector3 } from './globe';
 import { GpuParticleSystem } from './gpu-particles';
 import { HdrPipeline } from './hdr';
-import { easeInOut, wrapDegrees, type LonLat } from './math';
+import { HeadingTape, type TapeMarker } from './heading-tape';
+import { bearingDegrees, easeInOut, separationDegrees, wrapDegrees, type LonLat } from './math';
 import { SpeedOverlay } from './overlay';
 import { ParticleSystem } from './particles';
 import {
@@ -120,6 +121,16 @@ const TURN_SECONDS = 0.35; // 地球ビューの W/S の動きを始めるとき
 // 巡航の旋回の速さを 2 段でならす、各段の時定数。1 段だけだと押した瞬間に最も強く曲がり始めるので、
 // 2 段重ねて、押した直後はゆっくり、だんだん強く曲がるようにする
 const CRUISE_TURN_EASE_SECONDS = 0.3;
+// 方位テープは地域ビューで動いている間だけ出し、止まってこの時間がたつと消す
+const TAPE_LINGER_SECONDS = 1.5;
+const TAPE_MOVING_DEGREES_PER_SECOND = 0.5; // 方角がこれより速く変わっていれば動いているとみなす
+const TAPE_MOVING_ARC_PER_SECOND = 0.01; // 中心がこれより速く (度/秒) 動いていれば動いているとみなす
+const TAPE_HOME_MIN_KM = 1; // ホームの真上では方角が決まらないので、印を出さない
+const PIN_ICON =
+  '<svg viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M12 2a8 8 0 0 0-8 8c0 5.4 6.2 11.2 7.3 11.8a1.3 1.3 0 0 0 1.4 0C13.8 21.2 20 15.4 20 10a8 8 0 0 0-8-8Zm0 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z" /></svg>';
+const SUN_ICON =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5" fill="currentColor" />' +
+  '<path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8" /></svg>';
 const BANK_DEGREES = 6; // 旋回中に画面を傾ける角度
 // 中心の地点のまわりを回る旋回。Q と E で速さの段を変え、手を離しても回り続ける。巡航とは同時にしない
 const ORBIT_LEVELS = 5;
@@ -1045,6 +1056,49 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (flight.elapsed >= FLY_SECONDS) flight = null;
   }
 
+  const headingTape = new HeadingTape();
+  let tapeLast: { lat: number; lon: number; heading: number } | null = null;
+  let tapeIdle = Number.POSITIVE_INFINITY; // 動きが止まってからの秒数
+
+  // 巡航、旋回、ドラッグで中心か方角が変わっている間だけ出す。拡大縮小だけでは出さない。
+  // 地点へ飛ぶ途中は動いたとみなさない (地域ビューへ入るたびに出ないように)。出ていれば飛ぶ間も出したままにする
+  function updateHeadingTape(dt: number): void {
+    const view = regionView && !solar.active && !demoMotion && !regionFlight?.leaving ? regionView : null;
+    if (!view) {
+      tapeLast = null;
+      tapeIdle = Number.POSITIVE_INFINITY;
+      headingTape.setVisible(false);
+      return;
+    }
+    // 速さで判定する。旋回や巡航はなめらかに止まるので、変化があるかだけで見ると目に見えない動きがいつまでも続く
+    const moved =
+      tapeLast !== null &&
+      dt > 0 &&
+      (Math.abs(wrapDegrees(view.heading - tapeLast.heading)) / dt > TAPE_MOVING_DEGREES_PER_SECOND ||
+        separationDegrees(view, tapeLast) / dt > TAPE_MOVING_ARC_PER_SECOND);
+    tapeLast = { lat: view.lat, lon: view.lon, heading: view.heading };
+    if (moved && !regionFlight) tapeIdle = 0;
+    else if (!regionFlight) tapeIdle += dt;
+    headingTape.setVisible(tapeIdle < TAPE_LINGER_SECONDS);
+    if (!headingTape.visible) return; // 消えていく間は最後の表示のまま
+
+    // 方角と距離は、画面の中心の地点 (カメラのパネルの「中心」) から見たもの。
+    // カメラの真下の地点は、高いところから斜めに見ていると中心から 10° 近く離れる
+    const here = { lat: view.lat, lon: view.lon };
+    const markers: TapeMarker[] = [];
+    if (focused) {
+      const home = { lat: focused.latitude, lon: focused.longitude };
+      const km = (separationDegrees(here, home) * Math.PI * EARTH_RADIUS_KM) / 180;
+      if (km >= TAPE_HOME_MIN_KM) {
+        markers.push({ bearing: bearingDegrees(here, home), icon: PIN_ICON, label: `${focused.name} ${Math.round(km).toLocaleString('ja-JP')} km` });
+      }
+    }
+    // 太陽が地平線の下にあるときは薄くする
+    const sun = sunLonLat();
+    markers.push({ bearing: bearingDegrees(here, sun), icon: SUN_ICON, className: 'sun', dim: separationDegrees(here, sun) > 90 });
+    headingTape.update(view.heading, markers);
+  }
+
   function updateMarker(): void {
     const point = markerShown && !solar.active ? toScreen(markerPos) : null;
     if (markerShown) {
@@ -1216,6 +1270,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     } else if (regionView) updateRegion(dt);
     else updateFlight(dt);
     updateNearPlane();
+    updateHeadingTape(dt);
     sky.follow(camera.position);
     sky.advance(dt);
     // 太陽系へ引いて地球が小さく写るようになったら、雲は描かない
