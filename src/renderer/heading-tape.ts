@@ -1,5 +1,5 @@
-// 地域ビューの上部中央に出す方位テープ。向いている方角を中央の ▼ に合わせ、目盛りを横に流す。
-// ホームや太陽の方角に印を付ける。テープの外の方角にある印は、端に寄せて矢印を付ける
+// 地域ビューの上部中央に出す方位テープ。向いている方角を中央の ▲ に合わせ、目盛りを横に流す。
+// 太陽などの方角に印を付ける。テープの外の方角にある印は、端に寄せて矢印を付ける
 import { el } from './dom';
 import { wrapDegrees } from './math';
 
@@ -30,7 +30,6 @@ export interface TapeMarker {
 export class HeadingTape {
   private readonly root = el('heading-tape');
   private readonly strip = document.createElement('div');
-  private readonly readout = document.createElement('div');
   private readonly markerLayer = document.createElement('div');
   private shown = false;
 
@@ -44,13 +43,12 @@ export class HeadingTape {
       if (major) tick.dataset.label = LABELS[(((degrees / LABEL_DEGREES) % 8) + 8) % 8];
       this.strip.append(tick);
     }
-    this.readout.className = 'tape-readout';
     this.markerLayer.className = 'tape-markers';
     // 目盛りは窓の中で動かし、窓の左右をぼかす (印はぼかさない)
     const frame = document.createElement('div');
     frame.className = 'tape-window';
     frame.append(this.strip);
-    this.root.append(frame, this.markerLayer, this.readout);
+    this.root.append(frame, this.markerLayer);
   }
 
   setVisible(visible: boolean): void {
@@ -69,7 +67,6 @@ export class HeadingTape {
     this.root.style.setProperty('--deg', `${degreePixels}px`);
     const center = ((heading % 360) + 360) % 360;
     this.strip.style.transform = `translateX(${width / 2 - (center - STRIP_START) * degreePixels}px)`;
-    this.readout.textContent = `${Math.round(center) % 360}°`;
 
     const half = SPAN_DEGREES / 2 - EDGE_MARGIN_DEGREES;
     this.markerLayer.innerHTML = markers
