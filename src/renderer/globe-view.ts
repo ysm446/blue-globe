@@ -377,7 +377,15 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   // 地域ビュー。null の間は地球ビューで、OrbitControls がカメラを動かす
   let regionView: RegionView | null = null;
-  let regionFlight: { from: RegionView; to: RegionView; elapsed: number; seconds: number; leaving: boolean } | null = null;
+  // spin は飛んでいる間に中心のまわりの旋回で回した方角 (度)。補間した方角に足す
+  let regionFlight: {
+    from: RegionView;
+    to: RegionView;
+    elapsed: number;
+    seconds: number;
+    leaving: boolean;
+    spin: number;
+  } | null = null;
   let demoMotion = false;
   let regionVelocity: RegionVelocity = REGION_STILL;
   let regionDistanceGoal = REGION_DISTANCE;
@@ -403,12 +411,12 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     return hit ? lonLatOf(hit.toArray()) : null;
   }
 
-  // 地域ビューの中で別の場所へ移るときは、中心のまわりの旋回を続ける (飛んでいる間は回さず、着いたら同じ速さで回る)
+  // 地域ビューの中で別の場所へ移るときは、中心のまわりの旋回を止めず、飛んでいる間も回し続ける
   function flyRegion(to: RegionView, leaving: boolean, seconds = FLY_SECONDS): void {
     if (!regionView) return;
     if (leaving) stopCruise();
     else stopForwardCruise();
-    regionFlight = { from: regionView, to, elapsed: 0, seconds, leaving };
+    regionFlight = { from: regionView, to, elapsed: 0, seconds, leaving, spin: 0 };
     regionVelocity = REGION_STILL;
     regionDrag = null;
   }
@@ -703,12 +711,17 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     return -Math.sign(throttle) * rate;
   }
 
+  // 中心のまわりの旋回で、このフレームに回す方角 (度)。ドラッグの間は回さない
+  function orbitTurn(dt: number): number {
+    orbitThrottle += (orbitLevel - orbitThrottle) * (1 - Math.exp(-dt / ORBIT_SECONDS));
+    if (regionDrag || Math.abs(orbitThrottle) <= 1e-4) return 0;
+    return orbitDegreesPerSecond(orbitThrottle) * dt;
+  }
+
   function updateCruise(dt: number): void {
     if (!regionView) return;
-    orbitThrottle += (orbitLevel - orbitThrottle) * (1 - Math.exp(-dt / ORBIT_SECONDS));
-    if (!regionDrag && Math.abs(orbitThrottle) > 1e-4) {
-      regionView = { ...regionView, heading: wrapDegrees(regionView.heading + orbitDegreesPerSecond(orbitThrottle) * dt) };
-    }
+    const turn = orbitTurn(dt);
+    if (turn !== 0) regionView = { ...regionView, heading: wrapDegrees(regionView.heading + turn) };
     // 両方を押しているときは減速を優先する
     if (throttleKeys.has('slower') || cruiseBraking) {
       cruiseThrottle = Math.max(0, cruiseThrottle - CRUISE_DECELERATION * dt);
@@ -732,7 +745,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (regionFlight) {
       regionFlight.elapsed = Math.min(regionFlight.seconds, regionFlight.elapsed + dt);
       const t = regionFlight.elapsed / regionFlight.seconds;
-      regionView = interpolateRegionView(regionFlight.from, regionFlight.to, easeInOut(t));
+      if (!regionFlight.leaving) regionFlight.spin += orbitTurn(dt);
+      const view = interpolateRegionView(regionFlight.from, regionFlight.to, easeInOut(t));
+      regionView = { ...view, heading: wrapDegrees(view.heading + regionFlight.spin) };
       regionDistanceGoal = clampRegionDistance(regionView.distance);
       if (regionFlight.elapsed >= regionFlight.seconds) {
         const { leaving } = regionFlight;
