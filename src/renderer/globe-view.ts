@@ -143,7 +143,10 @@ const DEMO_DAYSIDE_OFFSET = 30; // 太陽の真下より東から始め、回転
 const REGION_RELEASE_BLEND = 0.01; // 地球ビューへ戻って、高解像度の画像が見えなくなったら解放する
 const WHEEL_ZOOM_RATE = 0.0012;
 const GLOBE_WHEEL_ZOOM_RATE = -Math.log(0.95) / 100; // 地球ビュー。OrbitControls と同じく、ホイール 1 段 (100) で 0.95 倍
-const ROTATE_DEGREES_PER_HEIGHT = 180; // 右ドラッグで画面の高さぶん動かしたときの回転
+// 地域ビューのドラッグのボタン (PointerEvent.button。0 が左、2 が右)。左で回転と傾き、右で移動
+const REGION_ROTATE_BUTTON = 0;
+const REGION_PAN_BUTTON = 2;
+const ROTATE_DEGREES_PER_HEIGHT = 180; // 回転のドラッグで画面の高さぶん動かしたときの回転
 const TILT_DEGREES_PER_HEIGHT = 90;
 const VELOCITY_SMOOTHING = 0.5;
 const VELOCITY_MIN_INTERVAL_MS = 16; // 間隔の詰まったイベントで速さを過大に見積もらない
@@ -787,7 +790,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     regionVelocity = REGION_STILL;
     regionDrag = {
       button: event.button,
-      grabbed: event.button === 0 ? groundUnderPointer(event) : null,
+      grabbed: event.button === REGION_PAN_BUTTON ? groundUnderPointer(event) : null,
       x: event.clientX,
       y: event.clientY,
       time: event.timeStamp,
@@ -797,11 +800,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   renderer.domElement.addEventListener('pointermove', (event) => {
     if (!regionView || !regionDrag) return;
     const before = regionView;
-    if (regionDrag.button === 0) {
+    if (regionDrag.button === REGION_PAN_BUTTON) {
       const current = groundUnderPointer(event);
       if (current && !regionDrag.grabbed) regionDrag.grabbed = current; // 空からドラッグして地面に入ったとき
       if (current && regionDrag.grabbed) regionView = panRegionView(regionView, regionDrag.grabbed, current);
-    } else if (regionDrag.button === 2) {
+    } else if (regionDrag.button === REGION_ROTATE_BUTTON) {
       regionView = clampRegionView({
         ...regionView,
         heading: regionView.heading + ((event.clientX - regionDrag.x) / window.innerHeight) * ROTATE_DEGREES_PER_HEIGHT,
