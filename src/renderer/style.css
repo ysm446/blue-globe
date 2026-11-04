@@ -103,6 +103,7 @@ a:hover {
 #clock,
 #mode-switch,
 #view-switch,
+#camera-style,
 #return-home,
 #time-panel,
 #detail-panel,
@@ -126,6 +127,7 @@ a:hover {
 #detail-panel,
 #mode-switch,
 #view-switch,
+#camera-style,
 #return-home,
 #top-right button,
 #demo-hint,
@@ -294,12 +296,22 @@ button.city-label:active {
   pointer-events: none; /* 隙間は、後ろの地球と都市のラベルへ通す */
 }
 
-#bottom-right > * {
+#bottom-right > *,
+#bottom-right-lead > * {
   pointer-events: auto;
 }
 
+/* 地域ビューのカメラのモードは表示モードと同じ行に置き、出し入れしても他の操作部の位置を変えない (縦に積む幅でも行を増やさない) */
+#bottom-right-lead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none !important;
+}
+
 #mode-switch,
-#view-switch {
+#view-switch,
+#camera-style {
   display: flex;
   padding: 3px;
   gap: 2px;
@@ -308,19 +320,22 @@ button.city-label:active {
 }
 
 #mode-switch button,
-#view-switch button {
+#view-switch button,
+#camera-style button {
   min-width: 64px;
   background: transparent;
   border-color: transparent;
 }
 
 #mode-switch button:hover,
-#view-switch button:hover:not(:disabled) {
+#view-switch button:hover:not(:disabled),
+#camera-style button:hover {
   background: rgba(178, 178, 178, 0.14);
 }
 
 #mode-switch button[aria-pressed='true'],
-#view-switch button[aria-pressed='true'] {
+#view-switch button[aria-pressed='true'],
+#camera-style button[aria-pressed='true'] {
   color: var(--text);
   font-weight: 600;
   background: rgba(178, 178, 178, 0.26);
@@ -328,8 +343,14 @@ button.city-label:active {
 }
 
 #mode-switch button[aria-pressed='false'],
-#view-switch button[aria-pressed='false']:not(:disabled) {
+#view-switch button[aria-pressed='false']:not(:disabled),
+#camera-style button[aria-pressed='false'] {
   color: var(--text-2);
+}
+
+/* display: flex が hidden 属性より強いので、隠すときは明示する */
+#camera-style[hidden] {
+  display: none;
 }
 
 #return-home {

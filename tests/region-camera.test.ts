@@ -272,3 +272,10 @@ test('巡航中のホイールは、真下の地点と見下ろす角度を変�
   const top = liftRegionView(view, 5);
   assert.ok(top.distance <= 1 + 1e-9 && flightOf(top).height > from.height);
 });
+
+test('ごく小さな移動では方角が乱れない', () => {
+  const view = { lat: 37.165, lon: 144.871, heading: -7.38, tilt: 69.14, distance: 0.24 };
+  for (const angle of [1e-11, 1e-13, 1e-16, 1e-21, -1e-16]) {
+    assert.ok(Math.abs(wrapDegrees(cruiseRegionView(view, angle, 0).heading - view.heading)) < 0.01, `cruise ${angle}`);
+  }
+});

@@ -118,7 +118,7 @@ const GLOBE_SPIN_REFERENCE_ALTITUDE = 2.3; // 既定の地球ビューの高さ�
 const GLOBE_SPIN_MIN_SCALE = 0.1;
 const GLOBE_SLIDE_DEGREES_PER_SECOND = 6; // W/S の速さ (既定の高さ)
 const GLOBE_MAX_LATITUDE = 85; // W/S で極に近づきすぎると、北が上の画面が不安定になる
-const GLOBE_HINT = '左ドラッグで回転、ホイールで拡大縮小、A/D で回転、W/S で南北、矢印キーで次の都市へ';
+const GLOBE_HINT = '左ドラッグで回転、ホイールで拡大縮小、WASD で移動、Q/E で自動回転、矢印キーで次の都市へ';
 const TURN_SECONDS = 0.35; // 地球ビューの W/S の動きを始めるときと止めるときの時定数
 // 巡航の旋回の速さを 2 段でならす、各段の時定数。1 段だけだと押した瞬間に最も強く曲がり始めるので、
 // 2 段重ねて、押した直後はゆっくり、だんだん強く曲がるようにする
@@ -136,7 +136,11 @@ const ORBIT_LEVELS = 5;
 const ORBIT_DEGREES_PER_SECOND = 1.2; // 1 段目の速さ (デモと同じ。1 周約 5 分)。1 段ごとに 2 倍にする
 const ORBIT_STEP_RATIO = 2;
 const ORBIT_SECONDS = 0.8; // 速さを変えるときの時定数
-const ORBIT_KEYS: Record<string, 1 | -1> = { KeyE: 1, KeyQ: -1 }; // 1 は右回り (カメラが右へ回り込む)
+// Q/E。旋回モードでは自動の旋回の段 (1 は右回り。カメラが右へ回り込む)、地球ビューでは自動の回転の段 (1 は東へ)。
+// 巡航モードでは使わない
+const ORBIT_KEYS: Record<string, 1 | -1> = { KeyE: 1, KeyQ: -1 };
+// W/A/S/D。巡航モードでは W/S が速さ、A/D が押している間の機首の向き。旋回モードでは押している間だけアームを回し (A/D が方角、W/S が傾き)、
+// 地球ビューでは押している間だけ東西南北へ動く
 const CRUISE_KEYS: Record<string, 'faster' | 'slower' | 'left' | 'right'> = {
   KeyW: 'faster',
   KeyS: 'slower',
@@ -146,7 +150,12 @@ const CRUISE_KEYS: Record<string, 'faster' | 'slower' | 'left' | 'right'> = {
 // 巡航中の高度。R で上昇、F で下降し、押している間だけ動く。速さは高さに比例させ (毎秒この割合の対数)、
 // どの高さでも同じ感覚にする。押し始めと離したときは旋回と同じく 2 段でならす
 const CLIMB_KEYS: Record<string, 1 | -1> = { KeyR: 1, KeyF: -1 };
-const CLIMB_RATE = 0.6; // 1 秒で約 1.8 倍
+const CLIMB_RATE = 0.3; // 1 秒で約 1.35 倍 (0.6 で 1.8 倍にしていたが、速すぎた)
+// 地域ビューのカメラのモード (旋回と巡航) を切り替えるキー。ゲームで視点の切り替えによく使われる
+const CAMERA_STYLE_KEY = 'KeyV';
+// 旋回モードの A/D と W/S で、押している間にアームを回す速さ (度/秒)
+const ARM_YAW_DEGREES_PER_SECOND = 6; // 30、20、9、5 と試し、ゆっくり眺められる速さにした
+const ARM_TILT_DEGREES_PER_SECOND = 6; // 方角と揃える
 // 矢印キーは、その向きにある次の都市へ移る。ラベルの出ていない都市は、カメラの距離のこの倍 (弧度) まで
 const CITY_HOP_REACH = 2;
 const CITY_HOP_KEYS: Record<string, HopDirection> = {
@@ -168,6 +177,24 @@ const ROTATE_DEGREES_PER_HEIGHT = 180; // 回転のドラッグで画面の高�
 const TILT_DEGREES_PER_HEIGHT = 90;
 
 export type GlobeController = ReturnType<typeof initGlobe>;
+
+// 押している間だけ効く操作の強さ (-1〜1)。巡航の旋回と同じく 2 段でならし、押した直後はゆっくり、だんだん強く効かせる
+interface HeldMotion {
+  ease: number;
+  rate: number;
+}
+
+function easeHeld(motion: HeldMotion, goal: number, dt: number): number {
+  const ease = 1 - Math.exp(-dt / CRUISE_TURN_EASE_SECONDS);
+  motion.ease += (goal - motion.ease) * ease;
+  motion.rate += (motion.ease - motion.rate) * ease;
+  if (goal === 0 && Math.abs(motion.rate) < 1e-4) motion.ease = motion.rate = 0;
+  return motion.rate;
+}
+
+function resetHeld(...motions: HeldMotion[]): void {
+  for (const motion of motions) motion.ease = motion.rate = 0;
+}
 
 export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const container = el('app');
@@ -540,6 +567,10 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const climbKeys = new Set<1 | -1>();
   let climbRate = 0;
   let climbEase = 0;
+  // 押している間だけ効く操作。旋回モードの W/A/S/D のアームの回転
+  const armKeys = new Set<'faster' | 'slower' | 'left' | 'right'>();
+  const armYawMotion: HeldMotion = { ease: 0, rate: 0 };
+  const armTiltMotion: HeldMotion = { ease: 0, rate: 0 };
   // 旋回の段 (-ORBIT_LEVELS〜ORBIT_LEVELS。正が右回り) と、なめらかにしたあとの値
   let orbitLevel = 0;
   let orbitThrottle = 0;
@@ -548,8 +579,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   // 地球ビューの回転の段 (-ORBIT_LEVELS〜ORBIT_LEVELS。正が東向き) と、なめらかにしたあとの値
   let globeSpinLevel = 0;
   let globeSpinThrottle = 0;
-  let globeSlide = 0; // W/S の南北の動き。-1〜1 で、押している間に向きの値へなめらかに近づける
-  const slideKeys = new Set<'faster' | 'slower'>(); // W が faster (北へ)、S が slower (南へ)
+  // W/A/S/D の東西南北の動き。-1〜1 で、押している間に向きの値へなめらかに近づける
+  let globeSlide = 0;
+  let globeSlideEast = 0;
+  // W が faster (北へ)、S が slower (南へ)、A が left (西へ)、D が right (東へ)
+  const slideKeys = new Set<'faster' | 'slower' | 'left' | 'right'>();
 
   // 巡航と、中心のまわりの旋回、地球ビューの回転をすべて止める
   function stopCruise(): void {
@@ -557,20 +591,33 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     orbitThrottle = 0;
     globeSpinLevel = 0;
     slideKeys.clear();
+    armKeys.clear();
+    resetHeld(armYawMotion, armTiltMotion);
     stopForwardCruise();
   }
 
-  // 巡航を始めると、カメラは中心の地点に繋がったアームから外れて単体で飛ぶ (ドラッグはカメラの位置を軸に向きを変え、
-  // ホイールは高さを変える)。中心のまわりの旋回を始めるか巡航を止められると、そのときの視線の先を中心にしてアームに戻る。
-  // 姿勢そのものはどちらも RegionView で持つので、切り替えでカメラは動かない
+  // 地域ビューのカメラのモード。freeFlight が true の間は巡航モードで、カメラは中心の地点に繋がったアームから外れて
+  // 単体で飛ぶ (ドラッグはカメラの位置を軸に向きを変え、R/F で高さを変える)。旋回モードに戻すと、そのときの視線の先を
+  // 中心にしてアームに戻る。姿勢そのものはどちらも RegionView で持つので、切り替えでカメラは動かない。
+  // V か右下のボタンで切り替え、都市や地点へ飛ぶ、地域ビューを離れる、デモを始めると旋回モードに戻る
   let freeFlight = false;
   let flightHeightGoal = 0;
+  const cameraStyle = el('camera-style');
+  const cameraStyleButtons = Array.from(cameraStyle.querySelectorAll<HTMLButtonElement>('button'));
+  for (const button of cameraStyleButtons) {
+    button.addEventListener('click', () => {
+      if (!regionView || regionFlight) return;
+      setCameraStyle(button.dataset.style === 'cruise');
+    });
+  }
 
   function releaseCamera(): void {
     if (freeFlight || !regionView) return;
     freeFlight = true;
     flightHeightGoal = flightOf(regionView).height;
     regionPending = REGION_STILL;
+    armKeys.clear();
+    resetHeld(armYawMotion, armTiltMotion);
   }
 
   function attachCamera(): void {
@@ -578,6 +625,27 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     freeFlight = false;
     if (regionView) regionDistanceGoal = clampRegionDistance(regionView.distance);
     regionPending = REGION_STILL;
+  }
+
+  // 巡航モードへ入ると自動の旋回は止め、旋回モードへ戻ると巡航はなめらかに減速して止める
+  function setCameraStyle(cruise: boolean): void {
+    if (cruise === freeFlight) return;
+    if (cruise) {
+      releaseCamera();
+      orbitLevel = 0;
+    } else {
+      attachCamera();
+      clearFlightKeys();
+      cruiseLevel = 0;
+      if (cruiseThrottle > 0) cruiseBraking = true;
+    }
+    showCruise();
+  }
+
+  function clearFlightKeys(): void {
+    throttleKeys.clear();
+    turnKeys.clear();
+    climbKeys.clear();
   }
 
   // 巡航だけを止める
@@ -588,11 +656,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     cruiseBraking = false;
     turnRate = 0;
     turnEase = 0;
-    throttleKeys.clear();
-    turnKeys.clear();
-    climbKeys.clear();
     climbRate = 0;
     climbEase = 0;
+    clearFlightKeys();
     showCruise();
   }
 
@@ -600,25 +666,32 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   function showCruise(): void {
     let text = regionView ? viewHintText : GLOBE_HINT;
     const cruising = cruiseMode === 'stepped' ? cruiseLevel > 0 : cruiseThrottle > 0;
-    if (cruising && orbitLevel === 0 && regionView) {
+    if (cruising && freeFlight && regionView) {
       const speed = cruiseRate(cruiseThrottle) * cruiseScale(regionView) * EARTH_RADIUS_KM;
       const shownSpeed = `${speed.toFixed(speed < 10 ? 1 : 0)} km/秒`;
       if (cruiseMode === 'stepped') {
         const level = Number.isInteger(cruiseLevel) ? String(cruiseLevel) : cruiseLevel.toFixed(1);
-        text = `巡航中 速さ ${level} / ${CRUISE_LEVELS}、${shownSpeed}(W/S で速さ、A/D で向き、R/F で高度、Q/E で旋回)`;
+        text = `巡航中 速さ ${level} / ${CRUISE_LEVELS}、${shownSpeed}(W/S で速さ、A/D で向き、R/F で高度、V で旋回モード)`;
       } else {
-        text = `巡航中 ${shownSpeed}(W で加速、S で減速、A/D で向き、R/F で高度、Q/E で旋回)`;
+        text = `巡航中 ${shownSpeed}(W で加速、S で減速、A/D で向き、R/F で高度、V で旋回モード)`;
       }
     } else if (freeFlight && regionView) {
-      text = '巡航で停止中(左ドラッグで見回す、右ドラッグで移動、R/F で高度、W で巡航、Q/E で旋回)';
-    } else if (orbitLevel !== 0) {
+      text = '巡航モード(左ドラッグで見回す、W で前進、A/D で向き、R/F で高度、V で旋回モード)';
+    } else if (orbitLevel !== 0 && regionView) {
       const direction = orbitLevel > 0 ? '右回り' : '左回り';
-      text = `旋回中 ${direction} 速さ ${Math.abs(orbitLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、W で巡航)`;
+      text = `旋回中 ${direction} 速さ ${Math.abs(orbitLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、WASD で回転と傾き、V で巡航モード)`;
     } else if (!regionView && globeSpinLevel !== 0) {
       const direction = globeSpinLevel > 0 ? '東へ' : '西へ';
-      text = `回転中 ${direction} 速さ ${Math.abs(globeSpinLevel)} / ${ORBIT_LEVELS}(A/D で速さと向き、W/S で南北)`;
+      text = `回転中 ${direction} 速さ ${Math.abs(globeSpinLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、WASD で移動)`;
     }
     if (viewHint.textContent !== text) viewHint.textContent = text;
+    // モードの切り替えは、地域ビューにいる間だけ出す
+    const styleShown = !!regionView && !regionFlight?.leaving;
+    if (cameraStyle.hidden === styleShown) cameraStyle.hidden = !styleShown;
+    for (const button of cameraStyleButtons) {
+      const pressed = String((button.dataset.style === 'cruise') === freeFlight);
+      if (button.getAttribute('aria-pressed') !== pressed) button.setAttribute('aria-pressed', pressed);
+    }
   }
 
   // 入力欄や設定画面を操作していないときだけ受け付ける
@@ -655,64 +728,60 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   window.addEventListener('keydown', (event) => {
     const action = CRUISE_KEYS[event.code];
-    const orbitStep = ORBIT_KEYS[event.code];
+    const turn = ORBIT_KEYS[event.code];
     const climb = CLIMB_KEYS[event.code];
-    if (!action && !orbitStep && !climb) return;
+    const toggle = event.code === CAMERA_STYLE_KEY;
+    if (!action && !turn && !climb && !toggle) return;
     releaseButtonFocus(event);
-    // 高度は巡航の操作なので、押すとカメラ単体で飛ぶ (地球ビューでは使わない)
-    if (climb) {
-      if (!acceptsCruiseKey(event)) return;
+    // 地球ビューでは W/A/S/D で押している間だけ東西南北へ動き、Q/E で 1 回押すごとに 1 段ずつ自動の回転を変える
+    if (acceptsGlobeKey(event)) {
+      if (climb || toggle) return;
       event.preventDefault();
-      releaseCamera();
-      climbKeys.add(climb);
-      return;
-    }
-    // 地球ビューでは A/D で地球を回し (D で東、地表は左へ流れる。1 回押すごとに 1 段)、W/S で押している間だけ南北へ動く
-    if (action && acceptsGlobeKey(event)) {
-      event.preventDefault();
-      if (action === 'faster' || action === 'slower') {
+      if (action) {
         slideKeys.add(action);
         return;
       }
       if (event.repeat) return; // 押し続けても 1 段ずつ変える
-      globeSpinLevel = THREE.MathUtils.clamp(globeSpinLevel + (action === 'right' ? 1 : -1), -ORBIT_LEVELS, ORBIT_LEVELS);
+      globeSpinLevel = THREE.MathUtils.clamp(globeSpinLevel + turn, -ORBIT_LEVELS, ORBIT_LEVELS);
       showCruise();
       return;
     }
     if (!acceptsCruiseKey(event)) return;
     event.preventDefault();
-    if (action === 'left' || action === 'right') {
-      releaseCamera();
-      turnKeys.add(action);
+    if (toggle) {
+      if (!event.repeat) setCameraStyle(!freeFlight);
       return;
     }
-    // 巡航は中心を動かし、旋回は中心を固定するので、片方を始めたらもう片方は止める (速さはなめらかに落ちる)
+    if (freeFlight) {
+      if (climb) climbKeys.add(climb);
+      else if (action === 'left' || action === 'right') turnKeys.add(action);
+      else if (action) pressThrottle(action, event.repeat);
+      return;
+    }
+    // 旋回モード。W/A/S/D は押している間だけアームを回し、Q/E は 1 回押すごとに 1 段ずつ自動の旋回を変える
     if (action) {
-      if (action === 'faster') {
-        releaseCamera();
-        orbitLevel = 0;
-        cruiseBraking = false;
-      }
-      if (cruiseMode === 'analog') {
-        throttleKeys.add(action);
-        return;
-      }
-      if (event.repeat) return; // 段階式は押し続けても 1 段ずつ変える
-      // 小数の段からは、押した向きの次の整数の段へ移る
-      cruiseLevel =
-        action === 'faster'
-          ? Math.min(CRUISE_LEVELS, Math.floor(cruiseLevel) + 1)
-          : Math.max(0, Math.ceil(cruiseLevel) - 1);
+      armKeys.add(action);
       return;
     }
-    if (event.repeat) return; // 旋回は押し続けても 1 段ずつ変える
-    attachCamera();
-    orbitLevel =THREE.MathUtils.clamp(orbitLevel + orbitStep, -ORBIT_LEVELS, ORBIT_LEVELS);
-    cruiseLevel = 0;
-    if (cruiseThrottle > 0) cruiseBraking = true;
-    throttleKeys.clear();
+    if (!turn || event.repeat) return; // R/F は使わない。旋回は押し続けても 1 段ずつ変える
+    orbitLevel = THREE.MathUtils.clamp(orbitLevel + turn, -ORBIT_LEVELS, ORBIT_LEVELS);
     showCruise();
   });
+
+  // 巡航モードの W/S。アナログ式は押している間に速さが変わり、段階式は 1 回押すごとに 1 段変わる
+  function pressThrottle(action: 'faster' | 'slower', repeat: boolean): void {
+    if (action === 'faster') cruiseBraking = false;
+    if (cruiseMode === 'analog') {
+      throttleKeys.add(action);
+      return;
+    }
+    if (repeat) return; // 段階式は押し続けても 1 段ずつ変える
+    // 小数の段からは、押した向きの次の整数の段へ移る
+    cruiseLevel =
+      action === 'faster'
+        ? Math.min(CRUISE_LEVELS, Math.floor(cruiseLevel) + 1)
+        : Math.max(0, Math.ceil(cruiseLevel) - 1);
+  }
   // 矢印キーで次の都市へ。都市へ向かっている途中なら、行き先から次を選ぶ。
   // 画面に出ているラベルの都市から選び、その向きになければ今の段の都市、すべての都市の順に広げる。
   // ラベルの出ていない都市は、海を越えて遠くへ飛ばないよう、画面に見える程度の範囲に限る
@@ -747,17 +816,16 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const climb = CLIMB_KEYS[event.code];
     if (climb) climbKeys.delete(climb);
     const action = CRUISE_KEYS[event.code];
+    if (!action) return;
+    slideKeys.delete(action);
+    armKeys.delete(action);
     if (action === 'left' || action === 'right') turnKeys.delete(action);
-    else if (action) {
-      throttleKeys.delete(action);
-      slideKeys.delete(action);
-    }
+    else throttleKeys.delete(action);
   });
-  // 窓を離れたら、押していたキーは離したことにする。巡航と地球の回転はその速さで続ける
+  // 窓を離れたら、押していたキーは離したことにする。巡航と自動の旋回、地球の回転はその速さで続ける
   window.addEventListener('blur', () => {
-    turnKeys.clear();
-    climbKeys.clear();
-    throttleKeys.clear();
+    clearFlightKeys();
+    armKeys.clear();
     slideKeys.clear();
   });
 
@@ -813,6 +881,18 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     regionView = cruiseRegionView(regionView, cruiseRate(cruiseThrottle) * cruiseScale(regionView) * dt, turnRate * dt);
   }
 
+  // 旋回モードの W/A/S/D。押している間だけアームを回す。D は右回り (カメラが右へ回り込み、方角は減る)、W は真下を見る向きへ (カメラが上へ回り込む)、S は水平へ近づける
+  function updateArmKeys(view: RegionView, dt: number): RegionView {
+    const yaw = easeHeld(armYawMotion, (armKeys.has('right') ? 1 : 0) - (armKeys.has('left') ? 1 : 0), dt);
+    const tilt = easeHeld(armTiltMotion, (armKeys.has('slower') ? 1 : 0) - (armKeys.has('faster') ? 1 : 0), dt);
+    if (yaw === 0 && tilt === 0) return view;
+    return clampRegionView({
+      ...view,
+      heading: view.heading - yaw * ARM_YAW_DEGREES_PER_SECOND * dt,
+      tilt: view.tilt + tilt * ARM_TILT_DEGREES_PER_SECOND * dt,
+    });
+  }
+
   function updateRegion(dt: number): void {
     if (!regionView) return;
     if (regionFlight) {
@@ -853,6 +933,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       updateCruise(dt);
     } else {
       ({ view: regionView, pending: regionPending } = followRegionDrag(regionView, regionPending, dt));
+      regionView = updateArmKeys(regionView, dt);
       regionView = clampRegionView({
         ...regionView,
         heading: regionView.heading + (demoMotion ? DEMO_TURN_DEGREES_PER_SECOND * dt : 0),
@@ -1071,7 +1152,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     flyTo(camera.position.clone().setLength(viewDistance(next)));
   }
 
-  // A/D の段に合わせて地球を回し、W/S を押している間は南北へ動かす。デモの自動回転とは同時にしない。
+  // Q/E の段に合わせて地球を回し、W/A/S/D を押している間は東西南北へ動かす。デモの自動回転とは同時にしない。
   // 回転は OrbitControls の自動回転を借りる (ドラッグしている間は回らない)。
   // 東向きは地表が左へ流れる向きで、自動回転の正の向き (地表が東へ動く) とは逆
   function updateGlobeMotion(dt: number): void {
@@ -1080,20 +1161,21 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const slideGoal = (slideKeys.has('faster') ? 1 : 0) - (slideKeys.has('slower') ? 1 : 0);
     globeSlide += (slideGoal - globeSlide) * (1 - Math.exp(-dt / TURN_SECONDS));
     if (Math.abs(globeSlide) < 1e-3) globeSlide = 0;
+    const eastGoal = (slideKeys.has('right') ? 1 : 0) - (slideKeys.has('left') ? 1 : 0);
+    globeSlideEast += (eastGoal - globeSlideEast) * (1 - Math.exp(-dt / TURN_SECONDS));
+    if (Math.abs(globeSlideEast) < 1e-3) globeSlideEast = 0;
     if (demoMotion) return;
     const scale = Math.max(GLOBE_SPIN_MIN_SCALE, apparentAltitude() / GLOBE_SPIN_REFERENCE_ALTITUDE);
     // 度/秒を OrbitControls の単位 (2 で 30 秒に 1 周) にする
     const degreesPerSecond = -orbitDegreesPerSecond(globeSpinThrottle) * scale;
     controls.autoRotate = globeSpinThrottle !== 0;
     controls.autoRotateSpeed = -degreesPerSecond / 6;
-    if (globeSlide !== 0) {
+    // 東西は地球を回す向き (経度) に動かす。南北と同じ速さの角度にする
+    if (globeSlide !== 0 || globeSlideEast !== 0) {
       const { lat, lon } = lonLatOf(camera.position.toArray());
-      const next = THREE.MathUtils.clamp(
-        lat + globeSlide * GLOBE_SLIDE_DEGREES_PER_SECOND * scale * dt,
-        -GLOBE_MAX_LATITUDE,
-        GLOBE_MAX_LATITUDE,
-      );
-      lonLatToVector3(lon, next, camera.position.length(), camera.position);
+      const step = GLOBE_SLIDE_DEGREES_PER_SECOND * scale * dt;
+      const next = THREE.MathUtils.clamp(lat + globeSlide * step, -GLOBE_MAX_LATITUDE, GLOBE_MAX_LATITUDE);
+      lonLatToVector3(lon + globeSlideEast * step, next, camera.position.length(), camera.position);
     }
   }
 

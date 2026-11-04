@@ -71,10 +71,16 @@
     </div>
 
     <div id="bottom-right">
-      <div id="mode-switch" role="group" aria-label="地図の表示モード">
-        <button type="button" data-mode="normal" aria-pressed="false">通常</button>
-        <button type="button" data-mode="weather" aria-pressed="false">天気</button>
-        <button type="button" data-mode="wind" aria-pressed="false">風速</button>
+      <div id="bottom-right-lead">
+        <div id="camera-style" role="group" aria-label="地域ビューのカメラ" hidden>
+          <button type="button" data-style="orbit" aria-pressed="true" title="中心の地点のまわりを回る(V で切り替え)">旋回</button>
+          <button type="button" data-style="cruise" aria-pressed="false" title="カメラが単体で飛ぶ(V で切り替え)">巡航</button>
+        </div>
+        <div id="mode-switch" role="group" aria-label="地図の表示モード">
+          <button type="button" data-mode="normal" aria-pressed="false">通常</button>
+          <button type="button" data-mode="weather" aria-pressed="false">天気</button>
+          <button type="button" data-mode="wind" aria-pressed="false">風速</button>
+        </div>
       </div>
       <div id="view-switch" role="group" aria-label="視点">
         <button type="button" data-view="solar" aria-pressed="false">太陽系</button>
@@ -86,7 +92,7 @@
 
     <div id="demo-caption" hidden></div>
     <div id="top-center">
-      <div id="view-hint">左ドラッグで回転と傾き、右ドラッグで移動、ホイールで拡大縮小、W で巡航、Q/E で旋回、矢印キーで次の都市へ</div>
+      <div id="view-hint">左ドラッグで回転、右ドラッグで移動、ホイールで拡大縮小、WASD で回転と傾き、Q/E で自動旋回、V で巡航モード、矢印キーで次の都市へ</div>
       <div id="demo-hint" role="status" hidden>地球のクリックかキー操作で終了</div>
       <div id="heading-tape" aria-hidden="true"></div>
     </div>
@@ -302,7 +308,7 @@
         </div>
         <h3 class="settings-subhead">操作</h3>
         <div class="field-grid">
-          <label for="cruise-mode" data-help="地域ビューの W/S の効き方。アナログ式は押している間に速さが変わり、段階式は 1 回押すごとに 1 段(2 倍)変わります。既定: アナログ式">巡航の操作</label>
+          <label for="cruise-mode" data-help="地域ビューの巡航モードの W/S の効き方。アナログ式は押している間に速さが変わり、段階式は 1 回押すごとに 1 段(2 倍)変わります。既定: アナログ式">巡航の操作</label>
           <select id="cruise-mode">
             <option value="analog">アナログ式</option>
             <option value="stepped">段階式</option>
@@ -310,7 +316,7 @@
           <button class="reset-button" data-reset="cruise_mode" type="button" aria-label="巡航の操作を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row" data-help="巡航で A/D で曲がるときに、曲がる向きへ画面を傾けます。既定: オン"><input id="cruise-bank-toggle" type="checkbox" />巡航で曲がるときに画面を傾ける</label>
+          <label class="check-row" data-help="巡航モードで A/D で曲がるときに、曲がる向きへ画面を傾けます。既定: オン"><input id="cruise-bank-toggle" type="checkbox" />巡航で曲がるときに画面を傾ける</label>
           <button class="reset-button" data-reset="cruise_bank" type="button" aria-label="巡航で曲がるときの傾きを既定に戻す" title="既定に戻す"></button>
         </div>
         <button class="reset-all" data-reset-section type="button">すべて既定に戻す</button>

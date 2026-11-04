@@ -150,8 +150,12 @@ export function approachDistance(distance: number, goal: number, dt: number): nu
 
 // 大円に沿って angle (弧度) 進んだ地点と、そこでの進む向き (度)。まっすぐ進むと、方角は少しずつ変わる。
 // angle が負なら後ろへ下がり、向きは前を向いたまま
+// 着いた地点から元の地点への向きで進む向きを求めるので、ごく小さな角度では桁落ちで向きが定まらず、
+// でたらめな方角になる (巡航の減速の最後に速さが 1e-17 ほど残ったときなど)。その程度 (1e-10 で地表の約 0.6mm) は動かない扱いにする
+const MIN_TRAVEL = 1e-10;
+
 function travel(lat: number, lon: number, bearing: number, angle: number): { lat: number; lon: number; bearing: number } {
-  if (angle === 0) return { lat, lon, bearing };
+  if (Math.abs(angle) < MIN_TRAVEL) return { lat, lon, bearing };
   const [p1, l1, b] = [lat * DEG, lon * DEG, bearing * DEG];
   const p2 = Math.asin(clamp(Math.sin(p1) * Math.cos(angle) + Math.cos(p1) * Math.sin(angle) * Math.cos(b), -1, 1));
   const l2 = l1 + Math.atan2(Math.sin(b) * Math.sin(angle) * Math.cos(p1), Math.cos(angle) - Math.sin(p1) * Math.sin(p2));
