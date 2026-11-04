@@ -230,7 +230,6 @@ export function renderNews(news: NewsReport): void {
   el('original-box').hidden = !outlook?.original || outlook.method === 'verbatim';
   el('original-text').textContent = outlook?.original ?? '';
 
-  el('hourly-title').textContent = news.at ? 'この時刻から24時間' : 'これから24時間';
   const parts = [news.at ? '過去の値: Open-Meteo' : '予報値: Open-Meteo'];
   if (outlook) {
     parts.push(METHOD_LABEL[outlook.method]);
