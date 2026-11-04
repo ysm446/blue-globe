@@ -28,8 +28,10 @@ import {
   clampRegionView,
   cruiseRegionView,
   DRAG_FOLLOW_SECONDS,
+  flightOf,
   followRegionDrag,
   interpolateRegionView,
+  liftRegionView,
   lonLatOf,
   panRegionDelta,
   REGION_DISTANCE,
@@ -141,6 +143,10 @@ const CRUISE_KEYS: Record<string, 'faster' | 'slower' | 'left' | 'right'> = {
   KeyA: 'left',
   KeyD: 'right',
 };
+// 巡航中の高度。R で上昇、F で下降し、押している間だけ動く。速さは高さに比例させ (毎秒この割合の対数)、
+// どの高さでも同じ感覚にする。押し始めと離したときは旋回と同じく 2 段でならす
+const CLIMB_KEYS: Record<string, 1 | -1> = { KeyR: 1, KeyF: -1 };
+const CLIMB_RATE = 0.6; // 1 秒で約 1.8 倍
 // 矢印キーは、その向きにある次の都市へ移る。ラベルの出ていない都市は、カメラの距離のこの倍 (弧度) まで
 const CITY_HOP_REACH = 2;
 const CITY_HOP_KEYS: Record<string, HopDirection> = {
@@ -531,6 +537,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let turnEase = 0; // 旋回の速さをならす 1 段目の値
   const throttleKeys = new Set<'faster' | 'slower'>();
   const turnKeys = new Set<'left' | 'right'>();
+  const climbKeys = new Set<1 | -1>();
+  let climbRate = 0;
+  let climbEase = 0;
   // 旋回の段 (-ORBIT_LEVELS〜ORBIT_LEVELS。正が右回り) と、なめらかにしたあとの値
   let orbitLevel = 0;
   let orbitThrottle = 0;
@@ -551,8 +560,29 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     stopForwardCruise();
   }
 
+  // 巡航を始めると、カメラは中心の地点に繋がったアームから外れて単体で飛ぶ (ドラッグはカメラの位置を軸に向きを変え、
+  // ホイールは高さを変える)。中心のまわりの旋回を始めるか巡航を止められると、そのときの視線の先を中心にしてアームに戻る。
+  // 姿勢そのものはどちらも RegionView で持つので、切り替えでカメラは動かない
+  let freeFlight = false;
+  let flightHeightGoal = 0;
+
+  function releaseCamera(): void {
+    if (freeFlight || !regionView) return;
+    freeFlight = true;
+    flightHeightGoal = flightOf(regionView).height;
+    regionPending = REGION_STILL;
+  }
+
+  function attachCamera(): void {
+    if (!freeFlight) return;
+    freeFlight = false;
+    if (regionView) regionDistanceGoal = clampRegionDistance(regionView.distance);
+    regionPending = REGION_STILL;
+  }
+
   // 巡航だけを止める
   function stopForwardCruise(): void {
+    attachCamera();
     cruiseLevel = 0;
     cruiseThrottle = 0;
     cruiseBraking = false;
@@ -560,6 +590,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     turnEase = 0;
     throttleKeys.clear();
     turnKeys.clear();
+    climbKeys.clear();
+    climbRate = 0;
+    climbEase = 0;
     showCruise();
   }
 
@@ -568,14 +601,16 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     let text = regionView ? viewHintText : GLOBE_HINT;
     const cruising = cruiseMode === 'stepped' ? cruiseLevel > 0 : cruiseThrottle > 0;
     if (cruising && orbitLevel === 0 && regionView) {
-      const speed = cruiseRate(cruiseThrottle) * regionView.distance * EARTH_RADIUS_KM;
+      const speed = cruiseRate(cruiseThrottle) * cruiseScale(regionView) * EARTH_RADIUS_KM;
       const shownSpeed = `${speed.toFixed(speed < 10 ? 1 : 0)} km/秒`;
       if (cruiseMode === 'stepped') {
         const level = Number.isInteger(cruiseLevel) ? String(cruiseLevel) : cruiseLevel.toFixed(1);
-        text = `巡航中 速さ ${level} / ${CRUISE_LEVELS}、${shownSpeed}(W/S で速さ、A/D で向き、Q/E で旋回)`;
+        text = `巡航中 速さ ${level} / ${CRUISE_LEVELS}、${shownSpeed}(W/S で速さ、A/D で向き、R/F で高度、Q/E で旋回)`;
       } else {
-        text = `巡航中 ${shownSpeed}(W で加速、S で減速、A/D で向き、Q/E で旋回)`;
+        text = `巡航中 ${shownSpeed}(W で加速、S で減速、A/D で向き、R/F で高度、Q/E で旋回)`;
       }
+    } else if (freeFlight && regionView) {
+      text = '巡航で停止中(左ドラッグで見回す、右ドラッグで移動、R/F で高度、W で巡航、Q/E で旋回)';
     } else if (orbitLevel !== 0) {
       const direction = orbitLevel > 0 ? '右回り' : '左回り';
       text = `旋回中 ${direction} 速さ ${Math.abs(orbitLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、W で巡航)`;
@@ -621,8 +656,17 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   window.addEventListener('keydown', (event) => {
     const action = CRUISE_KEYS[event.code];
     const orbitStep = ORBIT_KEYS[event.code];
-    if (!action && !orbitStep) return;
+    const climb = CLIMB_KEYS[event.code];
+    if (!action && !orbitStep && !climb) return;
     releaseButtonFocus(event);
+    // 高度は巡航の操作なので、押すとカメラ単体で飛ぶ (地球ビューでは使わない)
+    if (climb) {
+      if (!acceptsCruiseKey(event)) return;
+      event.preventDefault();
+      releaseCamera();
+      climbKeys.add(climb);
+      return;
+    }
     // 地球ビューでは A/D で地球を回し (D で東、地表は左へ流れる。1 回押すごとに 1 段)、W/S で押している間だけ南北へ動く
     if (action && acceptsGlobeKey(event)) {
       event.preventDefault();
@@ -638,12 +682,14 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (!acceptsCruiseKey(event)) return;
     event.preventDefault();
     if (action === 'left' || action === 'right') {
+      releaseCamera();
       turnKeys.add(action);
       return;
     }
     // 巡航は中心を動かし、旋回は中心を固定するので、片方を始めたらもう片方は止める (速さはなめらかに落ちる)
     if (action) {
       if (action === 'faster') {
+        releaseCamera();
         orbitLevel = 0;
         cruiseBraking = false;
       }
@@ -660,7 +706,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       return;
     }
     if (event.repeat) return; // 旋回は押し続けても 1 段ずつ変える
-    orbitLevel = THREE.MathUtils.clamp(orbitLevel + orbitStep, -ORBIT_LEVELS, ORBIT_LEVELS);
+    attachCamera();
+    orbitLevel =THREE.MathUtils.clamp(orbitLevel + orbitStep, -ORBIT_LEVELS, ORBIT_LEVELS);
     cruiseLevel = 0;
     if (cruiseThrottle > 0) cruiseBraking = true;
     throttleKeys.clear();
@@ -697,6 +744,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   });
 
   window.addEventListener('keyup', (event) => {
+    const climb = CLIMB_KEYS[event.code];
+    if (climb) climbKeys.delete(climb);
     const action = CRUISE_KEYS[event.code];
     if (action === 'left' || action === 'right') turnKeys.delete(action);
     else if (action) {
@@ -707,6 +756,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   // 窓を離れたら、押していたキーは離したことにする。巡航と地球の回転はその速さで続ける
   window.addEventListener('blur', () => {
     turnKeys.clear();
+    climbKeys.clear();
     throttleKeys.clear();
     slideKeys.clear();
   });
@@ -716,6 +766,13 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   function cruiseRate(throttle: number): number {
     if (throttle < 1) return CRUISE_RATE * throttle;
     return CRUISE_RATE * CRUISE_STEP_RATIO ** (throttle - 1);
+  }
+
+  // 巡航の速さに掛ける長さ。カメラの地表からの高さに比例させ、既定の姿勢 (傾き 50°) では中心までの距離と同じにする。
+  // 距離に比例させると、巡航中に水平近くを見たとき (距離が伸びる) に速くなってしまう
+  const DEFAULT_FLIGHT_HEIGHT = flightOf({ lat: 0, lon: 0, heading: 0, tilt: REGION_TILT, distance: REGION_DISTANCE }).height;
+  function cruiseScale(view: RegionView): number {
+    return (flightOf(view).height / DEFAULT_FLIGHT_HEIGHT) * REGION_DISTANCE;
   }
 
   // 旋回の段の値 (符号つき) から、方角の変わる速さ (度/秒) を求める。巡航と同じく 0〜1 段の間は比例させる。
@@ -753,7 +810,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     turnRate += (turnEase - turnRate) * ease;
     // ドラッグで向きを変えたり動かしたりしている間も、巡航は止めずに進む
     if (cruiseThrottle < 1e-4 && Math.abs(turnRate) < 1e-3) return;
-    regionView = cruiseRegionView(regionView, cruiseRate(cruiseThrottle) * regionView.distance * dt, turnRate * dt);
+    regionView = cruiseRegionView(regionView, cruiseRate(cruiseThrottle) * cruiseScale(regionView) * dt, turnRate * dt);
   }
 
   function updateRegion(dt: number): void {
@@ -777,6 +834,23 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
           return;
         }
       }
+    } else if (freeFlight) {
+      ({ view: regionView, pending: regionPending } = followRegionDrag(regionView, regionPending, dt, 'camera'));
+      const climbGoal = (climbKeys.has(1) ? 1 : 0) - (climbKeys.has(-1) ? 1 : 0);
+      const ease = 1 - Math.exp(-dt / CRUISE_TURN_EASE_SECONDS);
+      climbEase += (climbGoal - climbEase) * ease;
+      climbRate += (climbEase - climbRate) * ease;
+      if (Math.abs(climbRate) > 1e-4) {
+        // 届かない高さを目標にすると、逆へ動かしたときに間ができるので、目標は届く高さまでにする
+        const wanted = flightHeightGoal * Math.exp(climbRate * CLIMB_RATE * dt);
+        flightHeightGoal = flightOf(liftRegionView(regionView, wanted)).height;
+      }
+      const height = flightOf(regionView).height;
+      if (Math.abs(height - flightHeightGoal) > 1e-9) {
+        regionView = liftRegionView(regionView, approachDistance(height, flightHeightGoal, dt));
+      }
+      regionDistanceGoal = clampRegionDistance(regionView.distance);
+      updateCruise(dt);
     } else {
       ({ view: regionView, pending: regionPending } = followRegionDrag(regionView, regionPending, dt));
       regionView = clampRegionView({
@@ -816,7 +890,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
         tilt: -((event.clientY - regionDrag.y) / window.innerHeight) * TILT_DEGREES_PER_HEIGHT,
       };
     }
-    if (delta) regionPending = addRegionDrag(regionView, regionPending, delta);
+    if (delta) regionPending = addRegionDrag(regionView, regionPending, delta, freeFlight ? 'camera' : 'center');
     regionDrag.x = event.clientX;
     regionDrag.y = event.clientY;
   });
@@ -837,6 +911,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     }
     if (!regionView || regionFlight?.leaving) return;
     regionFlight = null;
+    if (freeFlight) return; // 巡航中の高度は R/F で変える。ホイールでは変えない
     regionDistanceGoal = clampRegionDistance(regionDistanceGoal * Math.exp(event.deltaY * WHEEL_ZOOM_RATE));
   });
 
@@ -874,9 +949,18 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     borders.group.scale.setScalar(lineRadius(BORDER_RADIUS));
   }
 
+  // 選んだ都市の地名は、その都市のラベルを隠して出しているので、ラベルと同じく押せるようにする。
+  // 地域ビューでは、もう一度選ぶと既定の傾きと距離に戻る (showPlace)
+  el('marker-label').addEventListener('click', () => {
+    if (selectedCity) onSelectCity(selectedCity);
+  });
+
   function placeMarker(name: string, lat: number, lon: number): void {
     const label = el('marker-label');
     label.textContent = name;
+    const selectable = selectedCity?.name === name;
+    label.classList.toggle('selectable', selectable);
+    label.title = selectable ? `${name}の天気を表示し、視点を戻す` : '';
     lonLatToVector3(lon, lat, EARTH_SURFACE_RADIUS, markerPos);
     marker.hidden = false;
     markerShown = true;
@@ -1326,7 +1410,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     earth,
     regionView: () => regionView,
     solar,
-    cruise: () => ({ mode: cruiseMode, level: cruiseLevel, throttle: cruiseThrottle, braking: cruiseBraking, turnRate }),
+    cruise: () => ({ mode: cruiseMode, level: cruiseLevel, throttle: cruiseThrottle, braking: cruiseBraking, turnRate, freeFlight }),
     setRegionView(next: Partial<RegionView>): void {
       if (!regionView) return;
       regionFlight = null;
@@ -1384,12 +1468,17 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       else if (focused) placeMarker(focused.name, focused.latitude, focused.longitude);
       else hideMarker();
     },
-    // 設定地点は変えずに、都市へカメラとマーカーを移す。向きと高さは今のまま
+    // 設定地点は変えずに、都市へカメラとマーカーを移す。向きと高さは今のまま。
+    // 地域ビューで選んでいる都市をもう一度選んだときは、方角だけ保って既定の傾きと距離に戻す (中心のまわりを回るアームの姿勢)
     showPlace(place: DemoPlace): void {
+      const again =
+        !!selectedCity && selectedCity.name === place.name && selectedCity.lat === place.lat && selectedCity.lon === place.lon;
       selectedCity = place;
       placeMarker(place.name, place.lat, place.lon);
       if (regionView) {
-        if (!regionFlight?.leaving) flyRegion({ ...regionView, lat: place.lat, lon: place.lon }, false);
+        if (regionFlight?.leaving) return;
+        const pose = again ? { tilt: REGION_TILT, distance: REGION_DISTANCE } : {};
+        flyRegion({ ...regionView, ...pose, lat: place.lat, lon: place.lon }, false);
         return;
       }
       flyTo(markerPos.clone().normalize().multiplyScalar(camera.position.length()));

@@ -94,9 +94,25 @@ export function panRegionDelta(previous: LonLat, current: LonLat): RegionDelta {
 
 // ドラッグで動かした分を未反映の分に足す。緯度と傾きは上限を越える分を捨てる。
 // 越えた分が溜まると、逆へ戻すときにしばらく動かない間ができる
-export function addRegionDrag(view: RegionView, pending: RegionDelta, delta: RegionDelta): RegionDelta {
+// pivot が 'camera' (巡航中) のときは、heading と tilt をカメラの位置を軸にした機首の方角と見下ろす角度の量として扱い、
+// 見下ろす角度の上限は、中心の地点が範囲に収まるところまでにする
+export type RegionPivot = 'center' | 'camera';
+
+export function addRegionDrag(
+  view: RegionView,
+  pending: RegionDelta,
+  delta: RegionDelta,
+  pivot: RegionPivot = 'center',
+): RegionDelta {
   const lat = clamp(view.lat + pending.lat + delta.lat, -MAX_LAT, MAX_LAT) - view.lat;
-  const tilt = clamp(view.tilt + pending.tilt + delta.tilt, 0, MAX_TILT) - view.tilt;
+  let tilt: number;
+  if (pivot === 'camera') {
+    const pitch = flightOf(view).pitch;
+    const top = flightOf(lookRegionView(view, 0, 90)).pitch;
+    tilt = clamp(pitch + pending.tilt + delta.tilt, 0, Math.max(pitch, top)) - pitch;
+  } else {
+    tilt = clamp(view.tilt + pending.tilt + delta.tilt, 0, MAX_TILT) - view.tilt;
+  }
   return { lat, lon: pending.lon + delta.lon, heading: pending.heading + delta.heading, tilt };
 }
 
@@ -105,17 +121,19 @@ export function followRegionDrag(
   view: RegionView,
   pending: RegionDelta,
   dt: number,
+  pivot: RegionPivot = 'center',
 ): { view: RegionView; pending: RegionDelta } {
   const remaining = Math.exp(-dt / DRAG_FOLLOW_SECONDS);
   const moved = (amount: number): number => amount * (1 - remaining);
+  const panned = { ...view, lat: view.lat + moved(pending.lat), lon: view.lon + moved(pending.lon) };
   return {
-    view: clampRegionView({
-      ...view,
-      lat: view.lat + moved(pending.lat),
-      lon: view.lon + moved(pending.lon),
-      heading: view.heading + moved(pending.heading),
-      tilt: view.tilt + moved(pending.tilt),
-    }),
+    view: pivot === 'camera'
+      ? lookRegionView(clampRegionView(panned), moved(pending.heading), moved(pending.tilt))
+      : clampRegionView({
+        ...panned,
+        heading: view.heading + moved(pending.heading),
+        tilt: view.tilt + moved(pending.tilt),
+      }),
     pending: {
       lat: pending.lat * remaining,
       lon: pending.lon * remaining,
@@ -145,14 +163,97 @@ function travel(lat: number, lon: number, bearing: number, angle: number): { lat
   return { lat: p2 / DEG, lon: wrapDegrees(l2 / DEG), bearing: wrapDegrees(back / DEG + (angle > 0 ? 180 : 0)) };
 }
 
+// 巡航中のカメラは、中心の地点に繋がったアームの先ではなく、単体で飛ぶ。そのときの姿勢を
+// カメラの真下の地点、地表からの高さ、機首の方角、見下ろす角度 (0 が真下、大きいほど水平に近い) で表す。
+// 見下ろした先の地表が中心の地点なので、RegionView とは互いに変換でき、同じ姿勢を表す
+export interface FlightView extends LonLat {
+  heading: number;
+  pitch: number;
+  height: number;
+}
+
+// 真下の地点から中心の地点までの、地球の中心から見た角度 (弧度)
+function reachOf(view: RegionView): number {
+  const tilt = view.tilt * DEG;
+  return Math.atan2(view.distance * Math.sin(tilt), 1 + view.distance * Math.cos(tilt));
+}
+
+export function flightOf(view: RegionView): FlightView {
+  const tilt = view.tilt * DEG;
+  const reach = reachOf(view);
+  const below = travel(view.lat, view.lon, view.heading + 180, reach);
+  return {
+    lat: below.lat,
+    lon: below.lon,
+    heading: wrapDegrees(below.bearing + 180),
+    // 地球の中心、カメラ、中心の地点の三角形の内角の和から、傾き = 見下ろす角度 + reach
+    pitch: view.tilt - reach / DEG,
+    height: Math.hypot(view.distance * Math.sin(tilt), 1 + view.distance * Math.cos(tilt)) - 1,
+  };
+}
+
+// 見下ろした先が地表に当たらないとき (水平より上を見ているときなど) は null
+export function regionOfFlight(flight: FlightView): RegionView | null {
+  const radius = 1 + flight.height;
+  const pitch = flight.pitch * DEG;
+  const side = radius * Math.sin(pitch);
+  if (flight.height <= 0 || pitch < 0 || side >= 1) return null;
+  const distance = radius * Math.cos(pitch) - Math.sqrt(1 - side * side);
+  const reach = Math.atan2(distance * Math.sin(pitch), radius - distance * Math.cos(pitch));
+  const center = travel(flight.lat, flight.lon, flight.heading, reach);
+  return { lat: center.lat, lon: center.lon, heading: center.bearing, tilt: flight.pitch + reach / DEG, distance };
+}
+
+function fitsRegion(view: RegionView | null): view is RegionView {
+  return (
+    !!view &&
+    view.tilt >= 0 &&
+    view.tilt <= MAX_TILT &&
+    view.distance >= MIN_DISTANCE &&
+    view.distance <= MAX_DISTANCE &&
+    Math.abs(view.lat) <= MAX_LAT
+  );
+}
+
+// カメラの姿勢を change(1) まで変える。中心の地点が範囲 (傾き、距離、緯度) を外れるときは、
+// change(t) の t を縮めて届くところまでに留める。どこへも動けなければ元のまま
+function reachFlight(view: RegionView, change: (t: number) => FlightView): RegionView {
+  const full = regionOfFlight(change(1));
+  if (fitsRegion(full)) return full;
+  let [low, high, best] = [0, 1, view];
+  for (let i = 0; i < 24; i++) {
+    const mid = (low + high) / 2;
+    const next = regionOfFlight(change(mid));
+    if (fitsRegion(next)) [low, best] = [mid, next];
+    else high = mid;
+  }
+  return best;
+}
+
+// カメラの位置を軸に、機首の方角を heading 度、見下ろす角度を pitch 度変える (巡航中のドラッグ)。
+// カメラの位置と高さは変えず、中心の地点のほうが動く
+export function lookRegionView(view: RegionView, heading: number, pitch: number): RegionView {
+  const turned = heading === 0 ? view : reachFlight(view, (t) => {
+    const flight = flightOf(view);
+    return { ...flight, heading: flight.heading + heading * t };
+  });
+  if (pitch === 0) return turned;
+  const flight = flightOf(turned);
+  return reachFlight(turned, (t) => ({ ...flight, pitch: flight.pitch + pitch * t }));
+}
+
+// カメラの真下の地点、方角、見下ろす角度を変えずに、地表からの高さを変える (巡航中のホイール)
+export function liftRegionView(view: RegionView, height: number): RegionView {
+  const flight = flightOf(view);
+  return reachFlight(view, (t) => ({ ...flight, height: flight.height + (height - flight.height) * t }));
+}
+
 // 巡航。turn 度だけカメラの真下の地点を軸に向きを変え、forward (弧度) だけ今の向きへまっすぐ進む。
 // 中心の地点ではなくカメラの位置で向きを変えるので、航空機のようにその場で機首を振る。高さと傾きは変えない
 export function cruiseRegionView(view: RegionView, forward: number, turn: number): RegionView {
   let { lat, lon, heading } = view;
   if (turn !== 0) {
-    const tilt = view.tilt * DEG;
-    // 真下の地点から中心の地点までの、地球の中心から見た角度
-    const reach = Math.atan2(view.distance * Math.sin(tilt), 1 + view.distance * Math.cos(tilt));
+    const reach = reachOf(view);
     const below = travel(lat, lon, heading + 180, reach);
     const ahead = travel(below.lat, below.lon, below.bearing + 180 + turn, reach);
     ({ lat, lon } = ahead);

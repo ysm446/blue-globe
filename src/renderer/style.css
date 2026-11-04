@@ -189,6 +189,16 @@ a:hover {
   white-space: nowrap;
 }
 
+/* ラベルで選んだ都市では、その都市のラベルの代わりにマーカーの地名を押せるようにする (押すと既定の視点に戻る) */
+.marker-label.selectable {
+  pointer-events: auto;
+  cursor: pointer;
+}
+
+.marker-label.selectable:hover {
+  background: rgba(40, 40, 40, 0.9);
+}
+
 /* ------------------------------------------------ 時計 */
 
 .city-label {

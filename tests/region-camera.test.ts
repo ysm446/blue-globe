@@ -7,8 +7,12 @@ import {
   clampRegionView,
   cruiseRegionView,
   DRAG_FOLLOW_SECONDS,
+  flightOf,
   followRegionDrag,
   interpolateRegionView,
+  liftRegionView,
+  lookRegionView,
+  regionOfFlight,
   lonLatOf,
   panRegionDelta,
   REGION_STILL,
@@ -198,4 +202,73 @@ test('巡航で向きを変えるときは、カメラの位置を軸にする',
 test('巡航でも緯度の上限を越えない', () => {
   const next = cruiseRegionView({ lat: 79.9, lon: 0, heading: 0, tilt: 50, distance: 0.24 }, 1 * DEG, 0);
   assert.ok(next.lat <= 80);
+});
+
+const length = (v: Vec3): number => Math.hypot(...v);
+
+test('アームの姿勢とカメラ単体の姿勢は互いに変換でき、同じカメラの位置になる', () => {
+  for (const view of [
+    { lat: 35, lon: 139, heading: 30, tilt: 50, distance: 0.24 },
+    { lat: -20, lon: -170, heading: 250, tilt: 72, distance: 1 },
+    { lat: 10, lon: 0, heading: 0, tilt: 0, distance: 0.1 },
+  ]) {
+    const flight = flightOf(view);
+    const back = regionOfFlight(flight);
+    assert.ok(back);
+    for (const key of ['lat', 'tilt', 'distance'] as const) assert.ok(Math.abs(back[key] - view[key]) < 1e-9, key);
+    assert.ok(Math.abs(wrapDegrees(back.lon - view.lon)) < 1e-9 && Math.abs(wrapDegrees(back.heading - view.heading)) < 1e-9);
+    const position = regionPose(view).position;
+    assert.ok(Math.abs(length(position) - 1 - flight.height) < 1e-9);
+    const below = lonLatOf(position);
+    assert.ok(Math.abs(below.lat - flight.lat) < 1e-9 && Math.abs(wrapDegrees(below.lon - flight.lon)) < 1e-9);
+    assert.ok(flight.pitch <= view.tilt);
+  }
+});
+
+test('見下ろした先が地表に当たらなければ、アームの姿勢にできない', () => {
+  assert.equal(regionOfFlight({ lat: 0, lon: 0, heading: 0, pitch: 89, height: 0.2 }), null);
+});
+
+test('巡航中のドラッグはカメラの位置を軸にし、高さを変えない', () => {
+  const view = { lat: 35, lon: 139, heading: 30, tilt: 50, distance: 0.24 };
+  const before = regionPose(view).position;
+  const looked = lookRegionView(view, 25, -15);
+  const after = regionPose(looked).position;
+  for (let i = 0; i < 3; i++) assert.ok(Math.abs(before[i] - after[i]) < 1e-9, `${i}`);
+  const [from, to] = [flightOf(view), flightOf(looked)];
+  assert.ok(Math.abs(to.pitch - (from.pitch - 15)) < 1e-9);
+  assert.ok(Math.abs(wrapDegrees(to.heading - from.heading - 25)) < 1e-9);
+});
+
+test('巡航中に水平近くを見上げても、中心の地点が範囲に収まるところで止まる', () => {
+  const view = { lat: 35, lon: 139, heading: 30, tilt: 50, distance: 0.24 };
+  const looked = lookRegionView(view, 0, 80);
+  assert.ok(looked.tilt <= 72 + 1e-9 && looked.distance <= 1 + 1e-9);
+  assert.ok(flightOf(looked).pitch > flightOf(view).pitch);
+  const before = regionPose(view).position;
+  const after = regionPose(looked).position;
+  for (let i = 0; i < 3; i++) assert.ok(Math.abs(before[i] - after[i]) < 1e-9, `${i}`);
+  // 届かない分は未反映の分に溜めない
+  const pending = addRegionDrag(view, REGION_STILL, { lat: 0, lon: 0, heading: 0, tilt: 80 }, 'camera');
+  assert.ok(Math.abs(flightOf(view).pitch + pending.tilt - flightOf(looked).pitch) < 1e-6);
+});
+
+test('巡航中のドラッグは、未反映の分をカメラの位置を軸に反映する', () => {
+  const view = { lat: 35, lon: 139, heading: 30, tilt: 50, distance: 0.24 };
+  const { view: next } = followRegionDrag(view, { lat: 0, lon: 0, heading: 10, tilt: 0 }, 0.1, 'camera');
+  const before = regionPose(view).position;
+  const after = regionPose(next).position;
+  for (let i = 0; i < 3; i++) assert.ok(Math.abs(before[i] - after[i]) < 1e-9, `${i}`);
+  assert.ok(wrapDegrees(flightOf(next).heading - flightOf(view).heading) > 0);
+});
+
+test('巡航中のホイールは、真下の地点と見下ろす角度を変えずに高さを変える', () => {
+  const view = { lat: 35, lon: 139, heading: 30, tilt: 50, distance: 0.24 };
+  const from = flightOf(view);
+  const lifted = flightOf(liftRegionView(view, from.height * 1.5));
+  assert.ok(Math.abs(lifted.height - from.height * 1.5) < 1e-9);
+  for (const key of ['lat', 'lon', 'heading', 'pitch'] as const) assert.ok(Math.abs(lifted[key] - from[key]) < 1e-9, key);
+  // 中心までの距離の上限を越える高さへは上がらない
+  const top = liftRegionView(view, 5);
+  assert.ok(top.distance <= 1 + 1e-9 && flightOf(top).height > from.height);
 });
