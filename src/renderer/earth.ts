@@ -210,7 +210,8 @@ void main() {
   vec3 halfway = normalize(uSunDir + view);
   float facingSun = max(max(dot(n, halfway), 0.0), 0.001);
   float tanSq = (1.0 - facingSun * facingSun) / (facingSun * facingSun);
-  float waterFresnel = 0.02 + 0.98 * pow(1.0 - max(dot(view, halfway), 0.0), 5.0);
+  // pow は底が負だと NaN になる。正面の画素では誤差で内積が 1 をわずかに超えるので、1 で抑える
+  float waterFresnel = 0.02 + 0.98 * pow(1.0 - clamp(dot(view, halfway), 0.0, 1.0), 5.0);
   float glintPeak = ${GLINT_STRENGTH.toFixed(1)} * waterFresnel
     / (3.14159265 * ${WAVE_SLOPE_VARIANCE.toFixed(3)} * 4.0 * max(dot(n, view), 0.05) * pow(facingSun, 4.0));
   // 太陽が低いと式の値が昼の数十倍になる。実際に光を弱める大気や波の陰は描かないので、なめらかに抑える。
@@ -253,8 +254,8 @@ void main() {
   // 地表は雲より暗いので、月明かりは地表の色の分だけ返す。明るい氷や雪は補助光と同じく抑える
   color += nightDay * moonlightAt(n, ndl) * nightFill;
 
-  // 地表から見える大気 (縁ほど青い)。昼側だけ
-  float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.2);
+  // 地表から見える大気 (縁ほど青い)。昼側だけ。真下の画素では内積が 1 を超えて NaN にならないよう抑える
+  float fresnel = pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 3.2);
   // 海の色はほとんどがこの青なので、地表の色だけを暗くしても海には影が見えない。立体の雲の影はこの青も暗くする
   float hazeShade = 1.0 - shadow * uBakedShadowMix * ${SHADOW_ON_HAZE.toFixed(1)};
   color += vec3(0.22, 0.48, 1.0) * fresnel * smoothstep(-0.15, 0.45, ndl) * 1.2 * uHaze * hazeShade;
@@ -320,7 +321,7 @@ void main() {
   color += moonlightAt(n, ndl) * mix(0.6, 1.0, transmit);
 
   // 縁の雲にも大気の青を重ねる
-  float fresnel = pow(1.0 - max(dot(n, view), 0.0), 3.2);
+  float fresnel = pow(1.0 - clamp(dot(n, view), 0.0, 1.0), 3.2);
   color += vec3(0.16, 0.36, 0.8) * fresnel * smoothstep(-0.15, 0.45, ndl) * 0.7 * uHaze;
 
   gl_FragColor = vec4(color, alpha);

@@ -298,7 +298,7 @@ void main() {
 
   // 地平線の近くは粗くなるので薄く消し、大気の青を重ねる
   vec3 surface = normalize(origin + ray * start);
-  float facing = max(dot(surface, -ray), 0.0);
+  float facing = clamp(dot(surface, -ray), 0.0, 1.0); // 1 を超えると下の pow が NaN になる
   float limb = smoothstep(0.0, 0.14, facing);
   float alpha = (1.0 - transmit) * limb;
   float haze = pow(1.0 - facing, 3.2) * smoothstep(-0.15, 0.45, dot(surface, uSunDir)) * 0.7 * uHaze;
