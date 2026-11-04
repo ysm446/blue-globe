@@ -1,13 +1,7 @@
-// 時計、現在の天気、天気ニュース、24 時間と週間の予報の表示
-import { el, formatDateTime, prefersReducedMotion } from './dom';
+// 時計、現在の天気、24 時間と週間の予報の表示
+import { el, prefersReducedMotion } from './dom';
 import { linePath, linePoints, REVEAL_FADE_MS, revealDelayMs, revealTotalMs } from './hourly-chart';
 import { svgElement, weatherIcon } from './icons';
-import { replayParagraphs, streamParagraphs } from './stream';
-
-const METHOD_LABEL: Record<NewsOutlook['method'], string> = {
-  rule: '気象庁の文を整形',
-  verbatim: '気象庁の原文',
-};
 
 // 予報の表は時刻や日付を横に並べる。行ごとに、各列のセルの中身を入れる
 function fillRow<T>(
@@ -201,10 +195,6 @@ function renderWeekly(news: NewsReport): void {
 }
 
 export function renderNews(news: NewsReport): void {
-  el('headline').textContent = news.headline;
-  el('current-icon').replaceChildren(
-    weatherIcon(news.current.icon, news.current.is_day, news.current.weather, 52),
-  );
   el('clock-icon').replaceChildren(
     weatherIcon(news.current.icon, news.current.is_day, news.current.weather, 84),
   );
@@ -221,34 +211,7 @@ export function renderNews(news: NewsReport): void {
   revealClockWeather(news.location);
   renderHourly(news);
   renderWeekly(news);
-
-  const { outlook } = news;
-  el('outlook-text').hidden = !outlook;
-  const note = el('outlook-note');
-  note.textContent = news.note ?? '';
-  note.hidden = !news.note;
-  el('original-box').hidden = !outlook?.original || outlook.method === 'verbatim';
-  el('original-text').textContent = outlook?.original ?? '';
-
-  const parts = [news.at ? '過去の値: Open-Meteo' : '予報値: Open-Meteo'];
-  if (outlook) {
-    parts.push(METHOD_LABEL[outlook.method]);
-    if (outlook.reported_at) parts.push(`${formatDateTime(new Date(outlook.reported_at), 'Asia/Tokyo')} 発表`);
-  }
-  el('outlook-source').textContent = parts.join('・');
-  el('news-body').hidden = false;
   el('forecasts').hidden = false;
-  streamParagraphs([
-    [el('current-text'), news.current_text],
-    [el('day-text'), news.day_text],
-    [el('outlook-text'), outlook?.text ?? ''],
-  ]);
-}
-
-// 天気ニュースを開いたときに、文を最初から流し直す
-export function replayNews(): void {
-  if (el('news-body').hidden) return;
-  replayParagraphs([el('current-text'), el('day-text'), el('outlook-text')]);
 }
 
 // 左上のパネルを読む順に見せる。値は 15 分ごとにほぼ必ず変わるので、場所が変わったときだけ流す
@@ -271,10 +234,9 @@ function revealClockWeather(location: WeatherLocation): void {
   );
 }
 
-// 地点を変えたとき、前の地点の文を新しい地点のマーカーと並べて見せない
+// 地点を変えたとき、前の地点の天気を新しい地点のマーカーと並べて見せない
 export function hideNews(): void {
   clockWeatherPlace = null;
-  el('news-body').hidden = true;
   el('forecasts').hidden = true;
   el('clock-weather').hidden = true;
   el('clock-details').hidden = true;

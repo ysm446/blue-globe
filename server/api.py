@@ -30,7 +30,6 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 
 PAST_LIMIT = timedelta(hours=25)  # 画面は 24 時間まで。操作の間に少し過ぎても受け付ける
-PAST_NOTE = "過去の時刻の値です。Open-Meteo の時間別データで、観測値そのものとは限りません"
 
 
 def _past_time(at: datetime | None) -> datetime | None:
@@ -63,7 +62,6 @@ class ModeUpdate(BaseModel):
 
 
 class PanelsUpdate(BaseModel):
-    news: bool
     hourly: bool
     weekly: bool
     details: bool
@@ -112,7 +110,6 @@ class GraphicsUpdate(BaseModel):
     cruise_mode: Literal["analog", "stepped"]
     cruise_bank: bool
     lens_flare: bool
-    show_news_panel: bool
     show_hourly_panel: bool
     show_weekly_panel: bool
     show_details_panel: bool
@@ -184,36 +181,6 @@ def get_locations(q: str) -> list[dict]:
         raise HTTPException(502, str(e)) from e
 
 
-def _outlook(location: dict, now: datetime) -> tuple[dict | None, str | None]:
-    """気象庁の文から見通しを作る。文がない地点や日は見通しなしで返す。"""
-    office = sources.office_for(location)
-    if not office:
-        return None, None
-    try:
-        overview = sources.fetch_overview(office)
-        text = overview["text"]
-    except (httpx.HTTPError, ValueError, KeyError):
-        return None, "気象庁の文を取得できませんでした"
-
-    for target in news.target_days(now):
-        segment = news.target_segment(text, target.day)
-        if segment:
-            break
-    else:
-        return None, None
-
-    outlook = news.compose_outlook(segment)
-    return (
-        {
-            "text": outlook.text,
-            "method": outlook.method,
-            "original": outlook.original,
-            "reported_at": overview.get("reportDatetime"),
-        },
-        None,
-    )
-
-
 def _fetch_forecast(latitude: float, longitude: float, at: datetime | None = None) -> dict:
     try:
         if at:
@@ -230,14 +197,10 @@ def get_news(at: datetime | None = None) -> dict:
     if not location:
         raise HTTPException(409, "地点が設定されていません")
     forecast = _fetch_forecast(location["latitude"], location["longitude"], target)
-    if target:  # 気象庁の文は今の発表しかない
-        return _report(location, forecast, None, PAST_NOTE, target)
-    now = datetime.fromisoformat(forecast["current"]["time"])
-    outlook, note = _outlook(location, now)
-    return _report(location, forecast, outlook, note)
+    return _report(location, forecast, target)
 
 
-# デモで選ばれた都市の天気。設定は変えない。見通しは作らない
+# デモで選ばれた都市の天気。設定は変えない
 @app.get("/news/place")
 def get_place_news(
     name: str,
@@ -255,12 +218,10 @@ def get_place_news(
         "longitude": longitude,
     }
     forecast = _fetch_forecast(latitude, longitude, target)
-    return _report(location, forecast, None, PAST_NOTE if target else None, target)
+    return _report(location, forecast, target)
 
 
-def _report(
-    location: dict, forecast: dict, outlook: dict | None, note: str | None, at: datetime | None = None
-) -> dict:
+def _report(location: dict, forecast: dict, at: datetime | None = None) -> dict:
     current = forecast["current"]
     real_now = datetime.fromisoformat(current["time"])
     # 週間予報はいつの時刻を見ていても今の予報を出す
@@ -275,11 +236,6 @@ def _report(
         "location": location,
         "utc_offset_seconds": forecast["utc_offset_seconds"],
         "at": at.isoformat() if at else None,
-        "headline": news.headline(location["name"], now),
-        "current_text": news.current_sentence(current, now if at else None),
-        "day_text": "" if at else news.day_sentence(daily, news.focus_index(now)),
-        "outlook": outlook,
-        "note": note,
         "current": {
             **news.weather_fields(current["weather_code"]),
             "is_day": bool(current["is_day"]),

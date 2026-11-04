@@ -67,7 +67,6 @@ interface GraphicsSettings {
   cruise_bank: boolean; // 巡航モードで A/D で曲がるときに、曲がる向きへ画面を傾ける
   lens_flare: boolean; // 太陽が見えるときの、レンズの光の筋と画面のかぶり
   // パネルを画面に出すか。開閉 (PanelSettings) とは別で、隠したパネルは見出しも出さない
-  show_news_panel: boolean;
   show_hourly_panel: boolean;
   show_weekly_panel: boolean;
   show_details_panel: boolean;
@@ -75,8 +74,7 @@ interface GraphicsSettings {
 }
 
 interface PanelSettings {
-  news: boolean; // true で開いている
-  hourly: boolean;
+  hourly: boolean; // true で開いている
   weekly: boolean;
   details: boolean;
   camera: boolean; // 右上のカメラのパネル。開いている間だけ計算する
@@ -91,22 +89,10 @@ interface AppSettings {
   audio_volume?: number; // スライダーの位置 (0〜1)
 }
 
-interface NewsOutlook {
-  text: string;
-  method: 'rule' | 'verbatim';
-  original: string | null;
-  reported_at: string | null;
-}
-
 interface NewsReport {
   location: WeatherLocation;
   utc_offset_seconds: number;
   at: string | null; // 過去の時刻を見ているときの時刻
-  headline: string;
-  current_text: string;
-  day_text: string;
-  outlook: NewsOutlook | null;
-  note: string | null;
   current: {
     weather: string;
     icon: string;

@@ -100,7 +100,6 @@ class SettingsApiTest(unittest.TestCase):
         "cruise_mode": "stepped",
         "cruise_bank": False,
         "lens_flare": False,
-        "show_news_panel": False,
         "show_hourly_panel": False,
         "show_weekly_panel": True,
         "show_details_panel": False,
@@ -185,7 +184,6 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["city_glow"], 1.0)
         self.assertTrue(graphics["moonlight"])
         self.assertEqual(graphics["glint_strength"], 1.3)
-        self.assertTrue(graphics["show_news_panel"])
         self.assertTrue(graphics["show_camera_panel"])
         self.assertEqual(graphics["focal_length"], 24)
         self.assertTrue(graphics["depth_of_field"])
@@ -202,22 +200,22 @@ class SettingsApiTest(unittest.TestCase):
         # カメラのパネルだけは既定で閉じている
         self.assertEqual(
             self.client.get("/settings").json()["panels"],
-            {"news": True, "hourly": True, "weekly": True, "details": True, "camera": False},
+            {"hourly": True, "weekly": True, "details": True, "camera": False},
         )
 
     def test_panels_are_saved(self):
-        panels = {"news": True, "hourly": False, "weekly": False, "details": False, "camera": True}
+        panels = {"hourly": False, "weekly": False, "details": False, "camera": True}
         self.assertEqual(self.client.put("/settings/panels", json=panels).status_code, 200)
         self.assertEqual(self.client.get("/settings").json()["panels"], panels)
 
     def test_invalid_panels_are_rejected(self):
-        self.assertEqual(self.client.put("/settings/panels", json={"news": True}).status_code, 422)
+        self.assertEqual(self.client.put("/settings/panels", json={"hourly": True}).status_code, 422)
 
     def test_old_settings_file_gets_new_panels_defaults(self):
         config.save_settings({"location": None, "panels": {"weekly": False}})
         self.assertEqual(
             self.client.get("/settings").json()["panels"],
-            {"news": True, "hourly": True, "weekly": False, "details": True, "camera": False},
+            {"hourly": True, "weekly": False, "details": True, "camera": False},
         )
 
     def test_other_settings_keep_graphics(self):
@@ -253,16 +251,6 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(self.client.put("/settings", json={"location": None}).status_code, 200)
         self.assertEqual(self.client.get("/settings").json()["mode"], "wind")
 
-    def test_several_sentences_show_the_original_outlook(self):
-        location = {"name": "東京", "admin1": "東京都", "country_code": "JP", "latitude": 35.7, "longitude": 139.7}
-        text = "2日は、晴れの見込みです。夜は雨が降るでしょう。"
-        overview = {"text": text, "reportDatetime": "2026-11-02T05:00:00+09:00"}
-        with mock.patch.object(api.sources, "fetch_overview", return_value=overview):
-            outlook, note = api._outlook(location, datetime(2026, 11, 2, 9, 0))
-        self.assertIsNone(note)
-        self.assertEqual(outlook["method"], "verbatim")
-        self.assertEqual(outlook["original"], text)
-        self.assertNotIn("model", outlook)
 
 
 if __name__ == "__main__":
@@ -315,7 +303,6 @@ class PlaceNewsTest(unittest.TestCase):
         self.assertEqual(report["location"]["name"], "ドバイ")
         self.assertEqual(report["utc_offset_seconds"], 14400)
         self.assertEqual(report["current"]["sunrise"], "06:20")
-        self.assertIsNone(report["outlook"])
         self.assertEqual(self.client.get("/settings").json(), before)
 
     PAST_HOURLY = {
@@ -357,12 +344,6 @@ class PlaceNewsTest(unittest.TestCase):
         self.assertEqual(report["current"]["temperature"], 30.0)  # 11-02 00:00 から 30 時間目
         self.assertEqual(report["current"]["humidity"], 55)
         self.assertEqual(report["hourly"][0]["time"], "9時")
-        self.assertIn("11月3日 午前6時", report["headline"])
-        self.assertTrue(report["current_text"].startswith("6時の気温は30.0℃で"))
-        self.assertTrue(report["current_text"].endswith("でした。"))
-        self.assertEqual(report["day_text"], "")
-        self.assertIsNone(report["outlook"])
-        self.assertIn("過去の時刻", report["note"])
         self.assertIsNotNone(report["at"])
 
     def test_past_time_keeps_todays_weekly_forecast(self):

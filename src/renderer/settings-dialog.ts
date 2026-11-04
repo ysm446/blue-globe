@@ -256,7 +256,6 @@ export function initSettingsDialog(
     cruise_bank: el<HTMLInputElement>('cruise-bank-toggle'),
     lens_flare: el<HTMLInputElement>('lens-flare-toggle'),
     depth_of_field: el<HTMLInputElement>('depth-of-field-toggle'),
-    show_news_panel: el<HTMLInputElement>('news-panel-toggle'),
     show_hourly_panel: el<HTMLInputElement>('hourly-panel-toggle'),
     show_weekly_panel: el<HTMLInputElement>('weekly-panel-toggle'),
     show_details_panel: el<HTMLInputElement>('details-panel-toggle'),

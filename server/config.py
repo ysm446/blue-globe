@@ -48,14 +48,13 @@ DEFAULT_SETTINGS = {
         "cruise_bank": True,  # 巡航で曲がるときに画面を傾ける
         "lens_flare": True,  # 太陽が見えるときの、レンズの光の筋と画面のかぶり
         # パネルを画面に出すか。開閉 (panels) とは別で、隠したパネルは見出しも出さない
-        "show_news_panel": True,
         "show_hourly_panel": True,
         "show_weekly_panel": True,
         "show_details_panel": True,
         "show_camera_panel": True,
     },
     # True で開いている。カメラのパネルは計器のようなものなので、既定では閉じておく
-    "panels": {"news": True, "hourly": True, "weekly": True, "details": True, "camera": False},
+    "panels": {"hourly": True, "weekly": True, "details": True, "camera": False},
     "audio_file": None,  # 設定画面で選んだ音源のパス
     "audio_volume": 0.5,  # スライダーの位置 (0〜1)
 }

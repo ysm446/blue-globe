@@ -112,7 +112,7 @@ a:hover {
 #demo-hint,
 #fps-counter,
 #top-right button,
-#news,
+#weather-status,
 #camera-panel,
 .forecast-panel,
 #layer-info,
@@ -131,7 +131,7 @@ a:hover {
 #return-home,
 #top-right button,
 #demo-hint,
-#news,
+#weather-status,
 #camera-panel,
 .forecast-panel,
 #layer-info,
@@ -874,7 +874,7 @@ body.demo-idle * {
   display: contents;
 }
 
-/* 右上の列。天気ニュースの高さは中身で変わるので、カメラのパネルと一緒に積む */
+/* 右上の列。天気の読み込み中やエラーの知らせと、カメラのパネルを積む */
 #right-stack {
   position: fixed;
   top: 60px;
@@ -891,17 +891,24 @@ body.demo-idle * {
   pointer-events: auto;
 }
 
-#news {
-  flex: 0 1 auto;
-  min-height: 0; /* 列に収まらないときは、天気ニュースの中をスクロールする */
-  display: flex;
-  flex-direction: column;
-  padding: 14px 20px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(178, 178, 178, 0.28) transparent;
+/* 知らせがあるときだけ出す */
+#weather-status {
+  flex: none;
+  align-self: flex-end;
+  max-width: 360px;
+  padding: 10px 16px;
+  color: var(--text-2);
+  line-height: 1.6;
   background: var(--panel);
   border-radius: 8px;
+}
+
+#weather-status:empty {
+  display: none;
+}
+
+#weather-status.error {
+  color: var(--warn);
 }
 
 #forecasts {
@@ -965,13 +972,6 @@ body.demo-idle * {
   background: var(--panel);
   border-radius: 8px;
   pointer-events: auto;
-}
-
-/* 閉じたパネルは見出しの幅まで縮める。天気ニュースは右端、予報は左端に寄せたまま */
-#news:has(> #fold-news:not([open])) {
-  align-self: flex-end;
-  width: max-content;
-  max-width: 360px;
 }
 
 /* 数字の桁で幅が揺れないよう、開いているときは幅を決めておく */
@@ -1059,9 +1059,7 @@ body.demo #camera-panel {
   display: none;
 }
 
-/* 設定で隠したパネル (main.ts の PANEL_VISIBILITY)。天気ニュースは、読み込み中やエラーの知らせがあるときだけ枠を残す */
-body.hide-news-panel #fold-news,
-body.hide-news-panel #news:not(:has(> .news-status:not(:empty))),
+/* 設定で隠したパネル (main.ts の PANEL_VISIBILITY) */
 body.hide-hourly-panel .forecast-panel:has(> #fold-hourly),
 body.hide-weekly-panel .forecast-panel:has(> #fold-weekly),
 body.hide-details-panel #detail-panel,
@@ -1075,40 +1073,6 @@ body.hide-camera-panel #camera-panel {
 
 .panel-fold:not([open]) > summary {
   gap: 16px;
-}
-
-.news-status {
-  color: var(--text-2);
-  line-height: 1.6;
-}
-
-.news-status:not(:empty) {
-  margin-bottom: 8px;
-}
-
-.news-status:empty {
-  display: none;
-}
-
-.news-status.error {
-  color: var(--warn);
-}
-
-#news-body {
-  flex: 1;
-}
-
-.news-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin: 0 0 6px;
-}
-
-#current-icon {
-  flex: none;
-  height: 52px;
 }
 
 .weather-icon {
@@ -1155,30 +1119,6 @@ body.hide-camera-panel #camera-panel {
 .icon-fog {
   stroke: var(--icon-fog);
   stroke-width: 2;
-}
-
-#headline {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 300;
-  line-height: 1.4;
-}
-
-.news-text {
-  margin: 0 0 10px;
-  font-size: 16px;
-  line-height: 1.7;
-}
-
-.stream-char {
-  opacity: 0;
-  animation: stream-char-in 200ms ease-out forwards; /* stream.ts の CHAR_FADE_MS と合わせる */
-}
-
-@keyframes stream-char-in {
-  to {
-    opacity: 1;
-  }
 }
 
 .forecast-table {
@@ -1271,43 +1211,6 @@ body.hide-camera-panel #camera-panel {
 
 #weekly-day td.today {
   color: var(--text);
-}
-
-.news-note {
-  margin: 14px 0 0;
-  color: var(--warn);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-#original-box {
-  margin-top: 14px;
-  color: var(--text-2);
-  font-size: 13px;
-  line-height: 1.6;
-}
-
-#original-box summary {
-  cursor: pointer;
-}
-
-#original-box p {
-  margin: 6px 0 0;
-}
-
-.news-footer {
-  margin-top: 16px;
-  color: var(--text-3);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.news-footer p {
-  margin: 0;
-}
-
-.news-footer a {
-  color: var(--text-3);
 }
 
 /* ------------------------------------------------ 地図の凡例 */
@@ -1758,12 +1661,11 @@ label[data-help] {
 /* 左下に置くと左上のパネルに重なる高さでは、右の列にまとめる。
    境目は詳細のパネルの開閉で変わるので、メディアクエリでは書けない (main.ts の syncPanelColumn) */
 /* 右の列にまとめるので、閉じたパネルも右端に寄せる */
-body.panels-right #news:has(> #fold-news:not([open])),
 body.panels-right .forecast-panel:has(> .panel-fold:not([open])) {
   align-self: flex-end;
 }
 
-/* 天気ニュースとカメラのパネルも、予報と同じ列に並べる */
+/* 天気の知らせとカメラのパネルも、予報と同じ列に並べる */
 body.panels-right #right-stack {
   display: contents;
 }
@@ -1782,7 +1684,6 @@ body.panels-right #panels {
   scrollbar-color: rgba(178, 178, 178, 0.28) transparent;
 }
 
-body.panels-right #news,
 body.panels-right #forecasts {
   position: static;
   flex: none;
@@ -1807,7 +1708,7 @@ body.panels-right #forecasts {
     display: contents;
   }
 
-  #news:has(> #fold-news:not([open])),
+  #weather-status,
   #camera-panel {
     align-self: flex-start;
   }
@@ -1826,7 +1727,6 @@ body.panels-right #forecasts {
     scrollbar-color: rgba(178, 178, 178, 0.28) transparent;
   }
 
-  #news,
   #forecasts {
     position: static;
     flex: none;
