@@ -324,11 +324,20 @@ export function initSettingsDialog(
     return graphics;
   }
 
+  // チェックを外すと効かなくなるスライダーは、押せないようにする
+  const dependentSliders: Array<[HTMLInputElement, HTMLInputElement]> = [[toggles.bloom, sliders.region_bloom.input]];
+
+  function syncDependentSliders(): void {
+    for (const [toggle, slider] of dependentSliders) slider.disabled = !toggle.checked;
+  }
+  for (const [toggle] of dependentSliders) toggle.addEventListener('change', syncDependentSliders);
+
   function showGraphics(graphics: GraphicsSettings): void {
     for (const key of keysOf(selects)) selects[key].value = String(graphics[key]);
     for (const key of keysOf(toggles)) toggles[key].checked = graphics[key];
     for (const key of keysOf(sliders)) sliders[key].write(graphics[key]);
     for (const key of keysOf(choices)) choices[key].value = graphics[key];
+    syncDependentSliders();
     showFov();
   }
 

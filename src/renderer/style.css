@@ -1544,6 +1544,16 @@ body.demo #camera-panel {
   text-align: right;
 }
 
+/* 別の項目がオフで効かないスライダーは、ラベルごと薄くする */
+.range-row:has(input:disabled),
+.field-grid label:has(+ .range-row input:disabled) {
+  opacity: 0.4;
+}
+
+.range-row input:disabled {
+  cursor: default;
+}
+
 .check-row {
   display: flex;
   align-items: center;
