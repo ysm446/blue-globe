@@ -371,9 +371,29 @@ button.city-label:active {
   pointer-events: auto;
 }
 
+/* スライダーの下の日の出と日の入り。--at は範囲の中の位置 (0 が左端) で、つまみの中心が動く範囲に合わせる */
+#sun-marks {
+  position: relative;
+  height: 6px;
+  margin-top: -6px;
+}
+
+#sun-marks svg {
+  position: absolute;
+  top: 0;
+  left: calc(5.5px + (100% - 11px) * var(--at));
+  width: 7px;
+  height: 6px;
+  fill: var(--text);
+  transform: translateX(-50%);
+  pointer-events: auto; /* カーソルを合わせると時刻が出る */
+}
+
 /* デモは今の様子を見せる */
 body.demo #time-control,
-body.solar #time-control {
+body.solar #time-control,
+body.demo #sun-marks,
+body.solar #sun-marks {
   display: none;
 }
 

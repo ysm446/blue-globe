@@ -181,11 +181,17 @@ async function init(): Promise<void> {
     }
   }
 
+  // 時計に出す場所。時刻のスライダーの日の出と日の入りも、同じ場所と時差 (null はパソコンの時刻) で出す
+  function setClockPlace(location: WeatherLocation | null, offsetSeconds: number | null = null): void {
+    showClockPlace(location);
+    timeControl.setSunPlace(location && { lat: location.latitude, lon: location.longitude }, offsetSeconds);
+  }
+
   function showCity(news: NewsReport): void {
     showingCity = true;
     setClockOffset(news.utc_offset_seconds);
     renderNews(news);
-    showClockPlace(news.location);
+    setClockPlace(news.location, news.utc_offset_seconds);
   }
 
   function showHome(): void {
@@ -197,10 +203,10 @@ async function init(): Promise<void> {
     setClockOffset(null);
     if (homeNews) {
       renderNews(homeNews);
-      showClockPlace(homeNews.location);
+      setClockPlace(homeNews.location);
     } else {
       hideNews(); // 地点が未設定のときは、都市の文を残さない
-      showClockPlace(null);
+      setClockPlace(null);
     }
   }
 
@@ -248,7 +254,7 @@ async function init(): Promise<void> {
     (settings) => {
       showHome();
       hasLocation = settings.location !== null;
-      showClockPlace(settings.location);
+      setClockPlace(settings.location);
       hideNews();
       if (settings.location) {
         if (view === 'solar') showView('globe'); // 新しい地点の上へ戻る
@@ -286,7 +292,7 @@ async function init(): Promise<void> {
   try {
     const settings = await window.weatherApi.getSettings();
     hasLocation = settings.location !== null;
-    showClockPlace(settings.location);
+    setClockPlace(settings.location);
     if (settings.graphics) {
       globe.applyGraphics(settings.graphics);
       applyUiFont(settings.graphics.ui_font);

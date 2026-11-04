@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import { moonlightStrength, siderealDegrees, starIntensity, sublunarPoint, subsolarPoint } from '../src/renderer/astro.ts';
+import { moonlightStrength, siderealDegrees, starIntensity, sublunarPoint, subsolarPoint, sunEvents } from '../src/renderer/astro.ts';
 import { DEG, separationDegrees, type LonLat, type Vec3 } from '../src/renderer/math.ts';
 
 // 地点から見た太陽の高度 (度)。大気差は含まない
@@ -111,4 +111,21 @@ test('実際の満月と新月の日時で月明かりが合う', () => {
   };
   assert.ok(at('2026-01-03T10:03Z') > 0.97); // 満月
   assert.ok(at('2026-01-18T19:52Z') < 0.001); // 新月
+});
+
+test('24 時間の中の日の出と日の入りを、早い順に Open-Meteo の時刻どおりに求める', () => {
+  const tokyo = { lon: 139.7, lat: 35.66 };
+  const events = sunEvents(tokyo, new Date('2026-10-31T12:00Z'), new Date('2026-11-01T12:00Z'));
+  assert.deepEqual(events.map((event) => event.kind), ['sunrise', 'sunset']);
+  const expected = [Date.parse('2026-10-31T21:02Z'), Date.parse('2026-11-01T07:46Z')];
+  events.forEach((event, i) => {
+    // Open-Meteo の時刻は分単位に丸めてある
+    assert.ok(Math.abs(event.at.getTime() - expected[i]) < 90_000, event.at.toISOString());
+  });
+});
+
+test('白夜と極夜では日の出も日の入りもない', () => {
+  const svalbard = { lon: 15.6, lat: 78.2 };
+  assert.deepEqual(sunEvents(svalbard, new Date('2026-06-21T00:00Z'), new Date('2026-06-22T00:00Z')), []);
+  assert.deepEqual(sunEvents(svalbard, new Date('2026-12-21T00:00Z'), new Date('2026-12-22T00:00Z')), []);
 });

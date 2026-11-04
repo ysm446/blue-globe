@@ -1,9 +1,12 @@
 // 太陽・月・星の方向を日時から求める。結果は地球に固定した経度・緯度で表し、
 // その地点の真上に天体がある、という形で扱う。天文年鑑の低精度式で、表示には十分な精度。
-import { clamp, DEG, dot, wrapDegrees, type LonLat, type Vec3 } from './math.ts';
+import { clamp, DEG, dot, separationDegrees, wrapDegrees, type LonLat, type Vec3 } from './math.ts';
 
 const J2000_MS = Date.UTC(2000, 0, 1, 12);
 const DAY_MS = 86_400_000;
+const SUNRISE_ELEVATION = -0.833; // 日の出・日の入りの太陽の中心の高度。大気差と視半径の分だけ地平線の下
+const SUN_EVENT_STEP_MS = 10 * 60_000; // 太陽高度を調べる間隔。この間に 2 回またぐことはない
+const SUN_EVENT_REFINE_STEPS = 12; // 間隔を半分にしていく回数 (10 分 → 約 0.15 秒)
 
 function daysSinceJ2000(date: Date): number {
   return (date.getTime() - J2000_MS) / DAY_MS;
@@ -28,6 +31,37 @@ export function subsolarPoint(date: Date): LonLat {
   const dec = Math.asin(Math.sin(obliquity) * Math.sin(eclipticLon)) / DEG;
   const ra = Math.atan2(Math.cos(obliquity) * Math.sin(eclipticLon), Math.cos(eclipticLon)) / DEG;
   return equatorialToLonLat(ra, dec, date);
+}
+
+export interface SunEvent {
+  kind: 'sunrise' | 'sunset';
+  at: Date;
+}
+
+// place で from から to までの間に太陽が昇る時刻と沈む時刻を、早い順に返す。白夜や極夜では空
+export function sunEvents(place: LonLat, from: Date, to: Date): SunEvent[] {
+  const aboveHorizon = (ms: number): boolean =>
+    90 - separationDegrees(place, subsolarPoint(new Date(ms))) > SUNRISE_ELEVATION;
+  const events: SunEvent[] = [];
+  const end = to.getTime();
+  let start = from.getTime();
+  let wasUp = aboveHorizon(start);
+  while (start < end) {
+    const next = Math.min(start + SUN_EVENT_STEP_MS, end);
+    const isUp = aboveHorizon(next);
+    if (isUp !== wasUp) {
+      let [before, after] = [start, next];
+      for (let i = 0; i < SUN_EVENT_REFINE_STEPS; i++) {
+        const middle = (before + after) / 2;
+        if (aboveHorizon(middle) === wasUp) before = middle;
+        else after = middle;
+      }
+      events.push({ kind: isUp ? 'sunrise' : 'sunset', at: new Date((before + after) / 2) });
+    }
+    start = next;
+    wasUp = isUp;
+  }
+  return events;
 }
 
 // 地球を照らす月明かりの強さ。満月を 1 とする。sun と moon は地球から見た太陽と月の方向 (単位ベクトル)。
