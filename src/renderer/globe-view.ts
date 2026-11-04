@@ -35,6 +35,7 @@ import {
   lonLatOf,
   panRegionDelta,
   REGION_DISTANCE,
+  REGION_MAX_TILT,
   REGION_STILL,
   REGION_TILT,
   regionPose,
@@ -417,11 +418,14 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   window.setInterval(updateSky, SKY_UPDATE_MS);
 
   // 地点へのカメラ移動。移動中は OrbitControls を止め、操作されたら打ち切る
-  let flight: { from: THREE.Vector3; to: THREE.Vector3; elapsed: number } | null = null;
+  // north と east は、飛んでいる間に W/A/S/D と Q/E で動かした緯度と経度 (度)。補間した位置に足すので、
+  // 押していたキーの動きは飛んでいる間から始まり、着いたあともそのまま続く
+  let flight: { from: THREE.Vector3; to: THREE.Vector3; elapsed: number; north: number; east: number } | null = null;
 
   function flyTo(to: THREE.Vector3): void {
-    flight = { from: camera.position.clone(), to, elapsed: 0 };
-    // 回り続けていると、着いた場所からすぐ離れてしまう。着いてから減速が始まると少しずれるので、すぐ止める
+    flight = { from: camera.position.clone(), to, elapsed: 0, north: 0, east: 0 };
+    // 回り続けていると、着いた場所からすぐ離れてしまう。着いてから減速が始まると少しずれるので、すぐ止める。
+    // 飛んでいる間に Q/E を押し直したときは、その回転を飛ぶ動きに足す
     globeSpinLevel = 0;
     globeSpinThrottle = 0;
     controls.autoRotate = false;
@@ -442,7 +446,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   // 地域ビュー。null の間は地球ビューで、OrbitControls がカメラを動かす
   let regionView: RegionView | null = null;
-  // spin は飛んでいる間に中心のまわりの旋回で回した方角 (度)。補間した方角に足す
+  // spin と tiltShift は、飛んでいる間に旋回 (Q/E の自動の旋回と A/D) と傾き (W/S) で変えた方角と傾き (度)。
+  // 補間した姿勢に足すので、押していたキーの動きは飛んでいる間から始まり、着いたあともそのまま続く
   let regionFlight: {
     from: RegionView;
     to: RegionView;
@@ -450,6 +455,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     seconds: number;
     leaving: boolean;
     spin: number;
+    tiltShift: number;
   } | null = null;
   let demoMotion = false;
   let regionPending: RegionDelta = REGION_STILL; // ドラッグで動かしたうち、まだカメラに反映していない分
@@ -482,7 +488,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (!regionView) return;
     if (leaving) stopCruise();
     else stopForwardCruise();
-    regionFlight = { from: regionView, to, elapsed: 0, seconds, leaving, spin: 0 };
+    regionFlight = { from: regionView, to, elapsed: 0, seconds, leaving, spin: 0, tiltShift: 0 };
     regionPending = REGION_STILL;
     regionDrag = null;
   }
@@ -727,7 +733,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   // 地球ビュー (太陽系の場面でなく、地点へ飛んでいる途中でもない) で受け付ける
   function acceptsGlobeKey(event: KeyboardEvent): boolean {
-    return !regionView && !solar.active && !flight && acceptsKey(event);
+    return !regionView && !solar.active && acceptsKey(event);
   }
 
   // クリックしたボタンにフォーカスが残っていると、キーを押したときにフォーカスの枠が出る。
@@ -762,6 +768,16 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       if (event.repeat) return; // 押し続けても 1 段ずつ変える
       globeSpinLevel = THREE.MathUtils.clamp(globeSpinLevel + turn, -ORBIT_LEVELS, ORBIT_LEVELS);
       showCruise();
+      return;
+    }
+    // 地域ビューの中で都市や地点へ移っている間は、旋回モードの W/A/S/D と Q/E だけ受け付け、動きに足していく
+    if (regionView && regionFlight && !regionFlight.leaving && !freeFlight && acceptsKey(event)) {
+      event.preventDefault();
+      if (action) armKeys.add(action);
+      else if (turn && !event.repeat) {
+        orbitLevel = THREE.MathUtils.clamp(orbitLevel + turn, -ORBIT_LEVELS, ORBIT_LEVELS);
+        showCruise();
+      }
       return;
     }
     if (!acceptsCruiseKey(event)) return;
@@ -900,15 +916,17 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   }
 
   // 旋回モードの W/A/S/D。押している間だけアームを回す。D は右回り (カメラが右へ回り込み、方角は減る)、W は真下を見る向きへ (カメラが上へ回り込む)、S は水平へ近づける
-  function updateArmKeys(view: RegionView, dt: number): RegionView {
+  // このフレームに変える方角と傾き (度)
+  function armMotion(dt: number): { heading: number; tilt: number } {
     const yaw = easeHeld(armYawMotion, (armKeys.has('right') ? 1 : 0) - (armKeys.has('left') ? 1 : 0), dt);
     const tilt = easeHeld(armTiltMotion, (armKeys.has('slower') ? 1 : 0) - (armKeys.has('faster') ? 1 : 0), dt);
-    if (yaw === 0 && tilt === 0) return view;
-    return clampRegionView({
-      ...view,
-      heading: view.heading - yaw * ARM_YAW_DEGREES_PER_SECOND * dt,
-      tilt: view.tilt + tilt * ARM_TILT_DEGREES_PER_SECOND * dt,
-    });
+    return { heading: -yaw * ARM_YAW_DEGREES_PER_SECOND * dt, tilt: tilt * ARM_TILT_DEGREES_PER_SECOND * dt };
+  }
+
+  function updateArmKeys(view: RegionView, dt: number): RegionView {
+    const arm = armMotion(dt);
+    if (arm.heading === 0 && arm.tilt === 0) return view;
+    return clampRegionView({ ...view, heading: view.heading + arm.heading, tilt: view.tilt + arm.tilt });
   }
 
   function updateRegion(dt: number): void {
@@ -916,9 +934,20 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (regionFlight) {
       regionFlight.elapsed = Math.min(regionFlight.seconds, regionFlight.elapsed + dt);
       const t = regionFlight.elapsed / regionFlight.seconds;
-      if (!regionFlight.leaving) regionFlight.spin += orbitTurn(dt);
+      if (!regionFlight.leaving) {
+        const arm = armMotion(dt);
+        regionFlight.spin += orbitTurn(dt) + arm.heading;
+        // 着いたときの傾きが範囲に収まる分だけ溜める (越えた分を溜めると、逆へ戻すときに間ができる)
+        const { tilt } = regionFlight.to;
+        regionFlight.tiltShift = THREE.MathUtils.clamp(tilt + regionFlight.tiltShift + arm.tilt, 0, REGION_MAX_TILT) - tilt;
+      }
       const view = interpolateRegionView(regionFlight.from, regionFlight.to, easeInOut(t));
-      regionView = { ...view, heading: wrapDegrees(view.heading + regionFlight.spin) };
+      // 地球ビューへ離れるときは距離が地域ビューの範囲を越えるので、clampRegionView は使わない
+      regionView = {
+        ...view,
+        heading: wrapDegrees(view.heading + regionFlight.spin),
+        tilt: THREE.MathUtils.clamp(view.tilt + regionFlight.tiltShift, 0, REGION_MAX_TILT),
+      };
       regionDistanceGoal = clampRegionDistance(regionView.distance);
       if (regionFlight.elapsed >= regionFlight.seconds) {
         const { leaving } = regionFlight;
@@ -1174,6 +1203,17 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   // 回転は OrbitControls の自動回転を借りる (ドラッグしている間は回らない)。
   // 東向きは地表が左へ流れる向きで、自動回転の正の向き (地表が東へ動く) とは逆
   function updateGlobeMotion(dt: number): void {
+    const motion = globeKeyMotion(dt);
+    if (demoMotion) return;
+    // 度/秒を OrbitControls の単位 (2 で 30 秒に 1 周) にする
+    controls.autoRotate = globeSpinThrottle !== 0;
+    controls.autoRotateSpeed = -motion.spin / 6;
+    shiftGlobeCamera(motion.north, motion.east);
+  }
+
+  // W/A/S/D と Q/E のなめらかにした値を進め、このフレームに動かす北向きと東向きの角度 (度) と、回転の速さ (度/秒。東向きが正) を返す。
+  // 速さはどれもカメラの高さに比例させる
+  function globeKeyMotion(dt: number): { north: number; east: number; spin: number } {
     globeSpinThrottle += (globeSpinLevel - globeSpinThrottle) * (1 - Math.exp(-dt / ORBIT_SECONDS));
     if (Math.abs(globeSpinThrottle) < 1e-3) globeSpinThrottle = 0;
     const slideGoal = (slideKeys.has('faster') ? 1 : 0) - (slideKeys.has('slower') ? 1 : 0);
@@ -1182,19 +1222,17 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const eastGoal = (slideKeys.has('right') ? 1 : 0) - (slideKeys.has('left') ? 1 : 0);
     globeSlideEast += (eastGoal - globeSlideEast) * (1 - Math.exp(-dt / TURN_SECONDS));
     if (Math.abs(globeSlideEast) < 1e-3) globeSlideEast = 0;
-    if (demoMotion) return;
     const scale = Math.max(GLOBE_SPIN_MIN_SCALE, apparentAltitude() / GLOBE_SPIN_REFERENCE_ALTITUDE);
-    // 度/秒を OrbitControls の単位 (2 で 30 秒に 1 周) にする
-    const degreesPerSecond = -orbitDegreesPerSecond(globeSpinThrottle) * scale;
-    controls.autoRotate = globeSpinThrottle !== 0;
-    controls.autoRotateSpeed = -degreesPerSecond / 6;
-    // 東西は地球を回す向き (経度) に動かす。南北と同じ速さの角度にする
-    if (globeSlide !== 0 || globeSlideEast !== 0) {
-      const { lat, lon } = lonLatOf(camera.position.toArray());
-      const step = GLOBE_SLIDE_DEGREES_PER_SECOND * scale * dt;
-      const next = THREE.MathUtils.clamp(lat + globeSlide * step, -GLOBE_MAX_LATITUDE, GLOBE_MAX_LATITUDE);
-      lonLatToVector3(lon + globeSlideEast * step, next, camera.position.length(), camera.position);
-    }
+    const step = GLOBE_SLIDE_DEGREES_PER_SECOND * scale * dt;
+    return { north: globeSlide * step, east: globeSlideEast * step, spin: -orbitDegreesPerSecond(globeSpinThrottle) * scale };
+  }
+
+  // 東西は地球を回す向き (経度) に動かす。南北と同じ速さの角度にする
+  function shiftGlobeCamera(north: number, east: number): void {
+    if (north === 0 && east === 0) return;
+    const { lat, lon } = lonLatOf(camera.position.toArray());
+    const next = THREE.MathUtils.clamp(lat + north, -GLOBE_MAX_LATITUDE, GLOBE_MAX_LATITUDE);
+    lonLatToVector3(lon + east, next, camera.position.length(), camera.position);
   }
 
   // OrbitControls は中心からの距離をそのまま使うので、カメラの位置の長さを変えれば済む
@@ -1233,6 +1271,12 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       .normalize()
       .applyQuaternion(partial)
       .multiplyScalar(fromLen + (toLen - fromLen) * eased);
+    if (!demoMotion) {
+      const motion = globeKeyMotion(dt);
+      flight.north += motion.north;
+      flight.east += motion.east + motion.spin * dt;
+      shiftGlobeCamera(flight.north, flight.east);
+    }
     camera.lookAt(0, 0, 0);
     if (flight.elapsed >= FLY_SECONDS) flight = null;
   }

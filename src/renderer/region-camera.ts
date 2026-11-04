@@ -20,7 +20,8 @@ export const REGION_TILT = 50;
 export const REGION_DISTANCE = 0.24;
 const MIN_DISTANCE = 0.1;
 const MAX_DISTANCE = 1;
-const MAX_TILT = 72;
+export const REGION_MAX_TILT = 72;
+const MAX_TILT = REGION_MAX_TILT;
 const MAX_LAT = 80; // 極の近くでは経度の移動が大きくなりすぎる
 const MAX_PAN_STEP = 10; // 地平線の近くをつかむと、1 回の移動で遠くまで飛ぶのを防ぐ
 // ドラッグにカメラが追いつく時定数。急に動かしてもカメラはなめらかに遅れて付いてくる。
