@@ -142,6 +142,7 @@ const DEMO_DISTANCE = 0.22;
 const DEMO_DAYSIDE_OFFSET = 30; // 太陽の真下より東から始め、回転で真下を通る
 const REGION_RELEASE_BLEND = 0.01; // 地球ビューへ戻って、高解像度の画像が見えなくなったら解放する
 const WHEEL_ZOOM_RATE = 0.0012;
+const GLOBE_WHEEL_ZOOM_RATE = -Math.log(0.95) / 100; // 地球ビュー。OrbitControls と同じく、ホイール 1 段 (100) で 0.95 倍
 const ROTATE_DEGREES_PER_HEIGHT = 180; // 右ドラッグで画面の高さぶん動かしたときの回転
 const TILT_DEGREES_PER_HEIGHT = 90;
 const VELOCITY_SMOOTHING = 0.5;
@@ -188,6 +189,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE; // 右ドラッグも左と同じく地球を回す
   controls.minDistance = MIN_DIST;
   controls.maxDistance = MAX_DIST;
+  controls.enableZoom = false; // ホイールは目標の距離だけを変え、そこへなめらかに近づける (globeZoomGoal)
   renderer.domElement.classList.add('globe-canvas');
 
   // 風速モードの地球。写実的な地球の読み込みが終わるまでの代わりにも使う
@@ -389,6 +391,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let demoMotion = false;
   let regionVelocity: RegionVelocity = REGION_STILL;
   let regionDistanceGoal = REGION_DISTANCE;
+  let globeZoomGoal: number | null = null; // 地球ビューでホイールで決めた、地球の中心からの距離。近づき終えたら null
   let regionBlend = 0;
   let regionDrag: { button: number; grabbed: LonLat | null; x: number; y: number; time: number } | null = null;
   const pointerRay = new THREE.Raycaster();
@@ -830,6 +833,13 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   renderer.domElement.addEventListener('pointercancel', endRegionDrag);
   renderer.domElement.addEventListener('wheel', (event) => {
     flight = null;
+    if (!regionView && !solar.active && controls.enabled) {
+      event.preventDefault(); // OrbitControls のズームと同じく、Ctrl+ホイールで画面ごと拡大されないようにする
+      // 近づいている途中なら、その目標からさらに変える
+      const from = globeZoomGoal ?? camera.position.length();
+      globeZoomGoal = THREE.MathUtils.clamp(from * Math.exp(event.deltaY * GLOBE_WHEEL_ZOOM_RATE), MIN_DIST, MAX_DIST);
+      return;
+    }
     if (!regionView || regionFlight?.leaving) return;
     regionFlight = null;
     regionDistanceGoal = clampRegionDistance(regionDistanceGoal * Math.exp(event.deltaY * WHEEL_ZOOM_RATE));
@@ -1008,9 +1018,19 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     }
   }
 
+  // OrbitControls は中心からの距離をそのまま使うので、カメラの位置の長さを変えれば済む
+  function updateGlobeZoom(dt: number): void {
+    if (globeZoomGoal === null) return;
+    const distance = approachDistance(camera.position.length(), globeZoomGoal, dt);
+    const arrived = Math.abs(distance / globeZoomGoal - 1) < 1e-4;
+    camera.position.setLength(arrived ? globeZoomGoal : distance);
+    if (arrived) globeZoomGoal = null;
+  }
+
   function updateFlight(dt: number): void {
     showCruise();
     if (!flight) {
+      updateGlobeZoom(dt);
       updateGlobeMotion(dt);
       // 寄るほどゆっくり回し、触ったときに地表が指に付いてくる感覚に近づける
       controls.rotateSpeed = THREE.MathUtils.clamp(apparentAltitude() * 0.32, 0.05, 0.6);
@@ -1200,6 +1220,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const measureGpu = !fpsCounter.hidden;
     if (measureGpu) gpuTimer.begin();
 
+    // 地球ビューのホイールの目標は、ほかの視点へ移ったり飛び始めたりしたら捨てる (戻ったときに引っぱらない)
+    if (solar.active || regionView || flight) globeZoomGoal = null;
     if (solar.active) {
       solar.update(dt, camera);
       solar.applyToEarth(camera, sky.siderealRotation);
