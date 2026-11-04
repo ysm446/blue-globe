@@ -743,7 +743,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const ease = 1 - Math.exp(-dt / CRUISE_TURN_EASE_SECONDS);
     turnEase += (turnGoal - turnEase) * ease;
     turnRate += (turnEase - turnRate) * ease;
-    if (regionDrag || (cruiseThrottle < 1e-4 && Math.abs(turnRate) < 1e-3)) return;
+    // ドラッグで向きを変えたり動かしたりしている間も、巡航は止めずに進む
+    if (cruiseThrottle < 1e-4 && Math.abs(turnRate) < 1e-3) return;
     regionView = cruiseRegionView(regionView, cruiseRate(cruiseThrottle) * regionView.distance * dt, turnRate * dt);
   }
 
