@@ -8,7 +8,8 @@ export interface RegionView extends LonLat {
   distance: number; // 中心の地点からカメラまでの距離 (地球の半径が 1)
 }
 
-export interface RegionVelocity {
+// ドラッグで動かしたうち、まだカメラに反映していない分 (度)
+export interface RegionDelta {
   lat: number;
   lon: number;
   heading: number;
@@ -22,10 +23,12 @@ const MAX_DISTANCE = 1;
 const MAX_TILT = 72;
 const MAX_LAT = 80; // 極の近くでは経度の移動が大きくなりすぎる
 const MAX_PAN_STEP = 10; // 地平線の近くをつかむと、1 回の移動で遠くまで飛ぶのを防ぐ
-const INERTIA_SECONDS = 0.25;
+// ドラッグにカメラが追いつく時定数。急に動かしてもカメラはなめらかに遅れて付いてくる。
+// 指を離したあとも残りを反映するので、これが慣性になる。地球ビューの OrbitControls の減衰も同じ値にする
+export const DRAG_FOLLOW_SECONDS = 0.35;
 const ZOOM_SECONDS = 0.25; // ホイールで変えた距離へ近づくときの時定数。地球ビューでも使う
 
-export const REGION_STILL: RegionVelocity = { lat: 0, lon: 0, heading: 0, tilt: 0 };
+export const REGION_STILL: RegionDelta = { lat: 0, lon: 0, heading: 0, tilt: 0 };
 
 export function lonLatOf(position: Vec3): LonLat {
   const [x, y, z] = position;
@@ -78,36 +81,46 @@ export function interpolateRegionView(from: RegionView, to: RegionView, t: numbe
   };
 }
 
-// つかんだ地点が指の下へ来るように中心を動かす。current は今の指の下の地点
-export function panRegionView(view: RegionView, grabbed: LonLat, current: LonLat): RegionView {
-  return clampRegionView({
-    ...view,
-    lat: view.lat + clamp(grabbed.lat - current.lat, -MAX_PAN_STEP, MAX_PAN_STEP),
-    lon: view.lon + clamp(wrapDegrees(grabbed.lon - current.lon), -MAX_PAN_STEP, MAX_PAN_STEP),
-  });
+// 移動のドラッグで中心を動かす量。previous は前の指の下の地点、current は今の指の下の地点 (どちらも同じカメラで求める)。
+// 指の下の地面が指に付いてくる向きに動かす
+export function panRegionDelta(previous: LonLat, current: LonLat): RegionDelta {
+  return {
+    lat: clamp(previous.lat - current.lat, -MAX_PAN_STEP, MAX_PAN_STEP),
+    lon: clamp(wrapDegrees(previous.lon - current.lon), -MAX_PAN_STEP, MAX_PAN_STEP),
+    heading: 0,
+    tilt: 0,
+  };
 }
 
-// 指を離したあとの慣性。FPS によらず同じ距離で止まるよう、減衰を時間で積分する
-export function coastRegionView(
+// ドラッグで動かした分を未反映の分に足す。緯度と傾きは上限を越える分を捨てる。
+// 越えた分が溜まると、逆へ戻すときにしばらく動かない間ができる
+export function addRegionDrag(view: RegionView, pending: RegionDelta, delta: RegionDelta): RegionDelta {
+  const lat = clamp(view.lat + pending.lat + delta.lat, -MAX_LAT, MAX_LAT) - view.lat;
+  const tilt = clamp(view.tilt + pending.tilt + delta.tilt, 0, MAX_TILT) - view.tilt;
+  return { lat, lon: pending.lon + delta.lon, heading: pending.heading + delta.heading, tilt };
+}
+
+// 未反映の分を、時定数 DRAG_FOLLOW_SECONDS でなめらかに反映する。FPS によらず同じ動きになるよう時間で減らす
+export function followRegionDrag(
   view: RegionView,
-  velocity: RegionVelocity,
+  pending: RegionDelta,
   dt: number,
-): { view: RegionView; velocity: RegionVelocity } {
-  const remaining = Math.exp(-dt / INERTIA_SECONDS);
-  const moved = (speed: number): number => speed * INERTIA_SECONDS * (1 - remaining);
+): { view: RegionView; pending: RegionDelta } {
+  const remaining = Math.exp(-dt / DRAG_FOLLOW_SECONDS);
+  const moved = (amount: number): number => amount * (1 - remaining);
   return {
     view: clampRegionView({
       ...view,
-      lat: view.lat + moved(velocity.lat),
-      lon: view.lon + moved(velocity.lon),
-      heading: view.heading + moved(velocity.heading),
-      tilt: view.tilt + moved(velocity.tilt),
+      lat: view.lat + moved(pending.lat),
+      lon: view.lon + moved(pending.lon),
+      heading: view.heading + moved(pending.heading),
+      tilt: view.tilt + moved(pending.tilt),
     }),
-    velocity: {
-      lat: velocity.lat * remaining,
-      lon: velocity.lon * remaining,
-      heading: velocity.heading * remaining,
-      tilt: velocity.tilt * remaining,
+    pending: {
+      lat: pending.lat * remaining,
+      lon: pending.lon * remaining,
+      heading: pending.heading * remaining,
+      tilt: pending.tilt * remaining,
     },
   };
 }

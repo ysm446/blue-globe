@@ -21,19 +21,21 @@ import { easeInOut, wrapDegrees, type LonLat } from './math';
 import { SpeedOverlay } from './overlay';
 import { ParticleSystem } from './particles';
 import {
+  addRegionDrag,
   approachDistance,
   clampRegionDistance,
   clampRegionView,
-  coastRegionView,
   cruiseRegionView,
+  DRAG_FOLLOW_SECONDS,
+  followRegionDrag,
   interpolateRegionView,
   lonLatOf,
-  panRegionView,
+  panRegionDelta,
   REGION_DISTANCE,
   REGION_STILL,
   REGION_TILT,
   regionPose,
-  type RegionVelocity,
+  type RegionDelta,
   type RegionView,
 } from './region-camera';
 import { RegionDetail, type BaseTextures } from './region-detail';
@@ -67,7 +69,9 @@ const SKY_UPDATE_MS = 60_000; // 太陽も星も 1 分で 0.25° しか動かな
 const REFERENCE_HZ = 120; // 粒子の移動量と軌跡の長さ、カメラの慣性はこの更新回数を基準に合わせてある
 const MAX_PARTICLE_STEPS = 6; // 1 フレームで進める粒子の更新回数の上限
 const FRAME_TOLERANCE_MS = 1; // 垂直同期のゆらぎで 1 回分飛ばさないよう、少し早めに通す
-const DAMPING_AT_REFERENCE = 0.035; // 指を離したあと約 0.25 秒の時定数で止まる
+// OrbitControls の減衰。ドラッグにカメラが遅れて付いてくる速さと、指を離したあとに止まるまでの速さを兼ねる。
+// 地域ビューと同じ時定数にする
+const DAMPING_AT_REFERENCE = 1 - Math.exp(-1 / (DRAG_FOLLOW_SECONDS * REFERENCE_HZ));
 
 const MIN_DIST = 1.2;
 const MAX_DIST = 8;
@@ -148,9 +152,6 @@ const REGION_ROTATE_BUTTON = 0;
 const REGION_PAN_BUTTON = 2;
 const ROTATE_DEGREES_PER_HEIGHT = 180; // 回転のドラッグで画面の高さぶん動かしたときの回転
 const TILT_DEGREES_PER_HEIGHT = 90;
-const VELOCITY_SMOOTHING = 0.5;
-const VELOCITY_MIN_INTERVAL_MS = 16; // 間隔の詰まったイベントで速さを過大に見積もらない
-const FLING_MAX_IDLE_MS = 80; // 止まってから指を離したら慣性を付けない
 
 export type GlobeController = ReturnType<typeof initGlobe>;
 
@@ -392,11 +393,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     spin: number;
   } | null = null;
   let demoMotion = false;
-  let regionVelocity: RegionVelocity = REGION_STILL;
+  let regionPending: RegionDelta = REGION_STILL; // ドラッグで動かしたうち、まだカメラに反映していない分
   let regionDistanceGoal = REGION_DISTANCE;
   let globeZoomGoal: number | null = null; // 地球ビューでホイールで決めた、地球の中心からの距離。近づき終えたら null
   let regionBlend = 0;
-  let regionDrag: { button: number; grabbed: LonLat | null; x: number; y: number; time: number } | null = null;
+  let regionDrag: { button: number; x: number; y: number } | null = null;
   const pointerRay = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
   const earthSphere = new THREE.Sphere(new THREE.Vector3(), EARTH_SURFACE_RADIUS);
@@ -410,7 +411,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     camera.updateMatrixWorld();
   }
 
-  function groundUnderPointer(event: PointerEvent): LonLat | null {
+  function groundUnderPointer(event: { clientX: number; clientY: number }): LonLat | null {
     pointerNdc.set((event.clientX / window.innerWidth) * 2 - 1, 1 - (event.clientY / window.innerHeight) * 2);
     pointerRay.setFromCamera(pointerNdc, camera);
     const hit = pointerRay.ray.intersectSphere(earthSphere, pointerHit);
@@ -423,7 +424,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     if (leaving) stopCruise();
     else stopForwardCruise();
     regionFlight = { from: regionView, to, elapsed: 0, seconds, leaving, spin: 0 };
-    regionVelocity = REGION_STILL;
+    regionPending = REGION_STILL;
     regionDrag = null;
   }
 
@@ -768,9 +769,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
         }
       }
     } else {
-      if (!regionDrag) {
-        ({ view: regionView, velocity: regionVelocity } = coastRegionView(regionView, regionVelocity, dt));
-      }
+      ({ view: regionView, pending: regionPending } = followRegionDrag(regionView, regionPending, dt));
       regionView = clampRegionView({
         ...regionView,
         heading: regionView.heading + (demoMotion ? DEMO_TURN_DEGREES_PER_SECOND * dt : 0),
@@ -787,49 +786,33 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     flight = null;
     if (!regionView || regionFlight?.leaving) return;
     regionFlight = null;
-    regionVelocity = REGION_STILL;
-    regionDrag = {
-      button: event.button,
-      grabbed: event.button === REGION_PAN_BUTTON ? groundUnderPointer(event) : null,
-      x: event.clientX,
-      y: event.clientY,
-      time: event.timeStamp,
-    };
+    regionPending = REGION_STILL; // 押したら、残っている動きを止める
+    regionDrag = { button: event.button, x: event.clientX, y: event.clientY };
     renderer.domElement.setPointerCapture(event.pointerId);
   });
+  // ドラッグの量は未反映の分に足すだけで、カメラは毎フレーム followRegionDrag で遅れて付いてくる
   renderer.domElement.addEventListener('pointermove', (event) => {
     if (!regionView || !regionDrag) return;
-    const before = regionView;
+    let delta: RegionDelta | null = null;
     if (regionDrag.button === REGION_PAN_BUTTON) {
+      // 前の指の位置と今の指の位置を、どちらも今のカメラで地面に当てて差を取る (空の上では動かさない)
+      const previous = groundUnderPointer({ clientX: regionDrag.x, clientY: regionDrag.y });
       const current = groundUnderPointer(event);
-      if (current && !regionDrag.grabbed) regionDrag.grabbed = current; // 空からドラッグして地面に入ったとき
-      if (current && regionDrag.grabbed) regionView = panRegionView(regionView, regionDrag.grabbed, current);
+      if (previous && current) delta = panRegionDelta(previous, current);
     } else if (regionDrag.button === REGION_ROTATE_BUTTON) {
-      regionView = clampRegionView({
-        ...regionView,
-        heading: regionView.heading + ((event.clientX - regionDrag.x) / window.innerHeight) * ROTATE_DEGREES_PER_HEIGHT,
-        tilt: regionView.tilt - ((event.clientY - regionDrag.y) / window.innerHeight) * TILT_DEGREES_PER_HEIGHT,
-      });
+      delta = {
+        lat: 0,
+        lon: 0,
+        heading: ((event.clientX - regionDrag.x) / window.innerHeight) * ROTATE_DEGREES_PER_HEIGHT,
+        tilt: -((event.clientY - regionDrag.y) / window.innerHeight) * TILT_DEGREES_PER_HEIGHT,
+      };
     }
-    applyRegionPose(regionView);
-    // 指を離したあとの慣性のために、動く速さをならして覚えておく
-    const seconds = Math.max(event.timeStamp - regionDrag.time, VELOCITY_MIN_INTERVAL_MS) / 1000;
-    const after = regionView;
-    const speed = (delta: number): number => (delta / seconds) * VELOCITY_SMOOTHING;
-    const carried = (old: number, delta: number): number => old * (1 - VELOCITY_SMOOTHING) + speed(delta);
-    regionVelocity = {
-      lat: carried(regionVelocity.lat, after.lat - before.lat),
-      lon: carried(regionVelocity.lon, wrapDegrees(after.lon - before.lon)),
-      heading: carried(regionVelocity.heading, wrapDegrees(after.heading - before.heading)),
-      tilt: carried(regionVelocity.tilt, after.tilt - before.tilt),
-    };
+    if (delta) regionPending = addRegionDrag(regionView, regionPending, delta);
     regionDrag.x = event.clientX;
     regionDrag.y = event.clientY;
-    regionDrag.time = event.timeStamp;
   });
-  const endRegionDrag = (event: PointerEvent): void => {
-    if (!regionDrag) return;
-    if (event.timeStamp - regionDrag.time > FLING_MAX_IDLE_MS) regionVelocity = REGION_STILL;
+  // 離したあとも未反映の分は反映し続けるので、それが慣性になる。止めてから離せば残りはほとんどない
+  const endRegionDrag = (): void => {
     regionDrag = null;
   };
   renderer.domElement.addEventListener('pointerup', endRegionDrag);
@@ -949,7 +932,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     regionView = null;
     regionFlight = null;
     regionDrag = null;
-    regionVelocity = REGION_STILL;
+    regionPending = REGION_STILL;
     controls.enabled = false;
     controls.autoRotate = false;
     solar.enter(camera, sky.siderealRotation);
