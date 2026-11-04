@@ -39,8 +39,7 @@ export class HeadingTape {
     for (let degrees = STRIP_START; degrees <= STRIP_END; degrees += TICK_DEGREES) {
       const tick = document.createElement('div');
       const major = degrees % LABEL_DEGREES === 0;
-      tick.className = major ? 'tape-tick major' : 'tape-tick';
-      tick.style.setProperty('--at', String(degrees - STRIP_START));
+      tick.className = major ? 'tape-tick major' : 'tape-tick';      tick.style.setProperty('--at', String(degrees - STRIP_START));
       if (major) tick.dataset.label = LABELS[(((degrees / LABEL_DEGREES) % 8) + 8) % 8];
       this.strip.append(tick);
     }

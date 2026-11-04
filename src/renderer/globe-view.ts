@@ -1082,16 +1082,14 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     headingTape.setVisible(tapeIdle < TAPE_LINGER_SECONDS);
     if (!headingTape.visible) return; // 消えていく間は最後の表示のまま
 
-    // 方角と距離は、画面の中心の地点 (カメラのパネルの「中心」) から見たもの。
+    // 方角は、画面の中心の地点 (カメラのパネルの「中心」) から見たもの。
     // カメラの真下の地点は、高いところから斜めに見ていると中心から 10° 近く離れる
     const here = { lat: view.lat, lon: view.lon };
     const markers: TapeMarker[] = [];
     if (focused) {
       const home = { lat: focused.latitude, lon: focused.longitude };
       const km = (separationDegrees(here, home) * Math.PI * EARTH_RADIUS_KM) / 180;
-      if (km >= TAPE_HOME_MIN_KM) {
-        markers.push({ bearing: bearingDegrees(here, home), icon: PIN_ICON, label: `${focused.name} ${Math.round(km).toLocaleString('ja-JP')} km` });
-      }
+      if (km >= TAPE_HOME_MIN_KM) markers.push({ bearing: bearingDegrees(here, home), icon: PIN_ICON, label: focused.name });
     }
     // 太陽が地平線の下にあるときは薄くする
     const sun = sunLonLat();
