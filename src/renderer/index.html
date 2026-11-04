@@ -87,7 +87,6 @@
     <div id="demo-caption" hidden></div>
     <div id="top-center">
       <div id="view-hint">左ドラッグで回転と傾き、右ドラッグで移動、ホイールで拡大縮小、W で巡航、Q/E で旋回、矢印キーで次の都市へ</div>
-      <div id="view-status" role="status" hidden></div>
       <div id="demo-hint" role="status" hidden>地球のクリックかキー操作で終了</div>
       <div id="heading-tape" aria-hidden="true"></div>
     </div>
@@ -174,10 +173,15 @@
     </div>
     </div>
 
-    <div id="layer-info" hidden>
-      <div class="legend-bar" id="legend-bar"></div>
-      <div class="legend-scale"><span>0</span><span>風速 m/s</span><span id="legend-max"></span></div>
-      <div id="layer-source"></div>
+    <!-- 下の中央。地域ビューの高解像度の画像の読み込み状況と、風速の凡例、データを取得できないときの知らせ。
+         データの出典と時刻は設定画面の「出典」に出す -->
+    <div id="bottom-center">
+      <div id="view-status" role="status" hidden></div>
+      <div id="layer-info" hidden>
+        <div class="legend-bar" id="legend-bar"></div>
+        <div class="legend-scale"><span>0</span><span>風速 m/s</span><span id="legend-max"></span></div>
+        <div id="layer-source"></div>
+      </div>
     </div>
 
     <div id="screenshot-toast" role="status" hidden>
@@ -457,6 +461,12 @@
       </section>
 
       <section id="panel-credit" class="settings-credit" role="tabpanel" aria-labelledby="tab-credit" hidden>
+        <h3 class="settings-subhead">表示中のデータ</h3>
+        <p>
+        雲: <span id="credit-clouds">天気モードにすると取得します</span><br />
+        風: <span id="credit-wind">風速モードにすると取得します</span>
+        </p>
+        <h3 class="settings-subhead">出典</h3>
         <p>
         地名検索: 国土地理院、Open-Meteo<br />
         雲: NOAA GMGSI(衛星の全球合成画像)と NOAA GFS をもとに加工したもので、元データそのものではありません。近づいたときの立体の雲は、高さと細かい形を見た目のために作っています<br />

@@ -1241,11 +1241,25 @@ body.demo #camera-panel {
 
 /* ------------------------------------------------ 地図の凡例 */
 
-#layer-info {
+/* 下の中央に、高解像度の画像の読み込み状況と、凡例や知らせを縦に並べる */
+#bottom-center {
   position: fixed;
   left: 50%;
   bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
   transform: translateX(-50%);
+  pointer-events: none;
+}
+
+#bottom-center #view-status {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+#layer-info {
   width: 280px;
   padding: 10px 12px;
   color: var(--text-2);

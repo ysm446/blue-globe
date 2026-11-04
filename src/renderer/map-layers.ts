@@ -94,16 +94,23 @@ export function initMapLayers(globe: Pick<GlobeController, 'setClouds' | 'setWin
   let mode: MapMode = 'normal';
   let viewAt: Date | null = null;
 
+  // 出典と時刻は設定画面の「出典」に出す。画面の下には、風速の凡例と、取得中や取得できないときの知らせだけを出す
   function renderLayerInfo(): void {
+    for (const [target, id] of [['weather', 'credit-clouds'], ['wind', 'credit-wind']] as const) {
+      const caption = layers[target].caption;
+      if (caption) el(id).textContent = caption.text;
+    }
     const info = el('layer-info');
-    info.hidden = mode === 'normal';
-    if (mode === 'normal') return;
-    // 雲は見ればわかるので凡例を出さず、出典だけにする
+    const caption = mode === 'normal' ? null : layers[mode].caption;
+    const notice = mode !== 'normal' && (!caption || caption.warn);
+    // 雲は見ればわかるので凡例を出さない。知らせもなければ箱ごと出さない
+    info.hidden = mode === 'normal' || (mode === 'weather' && !notice);
+    if (info.hidden) return;
     info.classList.toggle('source-only', mode === 'weather');
     el('legend-bar').style.background = WIND_LEGEND;
     el('legend-max').textContent = String(RAMP_MAX_SPEED);
-    const caption = layers[mode].caption;
     const source = el('layer-source');
+    source.hidden = !notice;
     source.textContent = caption?.text ?? 'データを取得しています…';
     source.className = caption?.warn ? 'warn' : '';
   }
