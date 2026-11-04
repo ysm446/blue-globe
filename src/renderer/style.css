@@ -987,6 +987,16 @@ body.demo #camera-panel {
   display: none;
 }
 
+/* 設定で隠したパネル (main.ts の PANEL_VISIBILITY)。天気ニュースは、読み込み中やエラーの知らせがあるときだけ枠を残す */
+body.hide-news-panel #fold-news,
+body.hide-news-panel #news:not(:has(> .news-status:not(:empty))),
+body.hide-hourly-panel .forecast-panel:has(> #fold-hourly),
+body.hide-weekly-panel .forecast-panel:has(> #fold-weekly),
+body.hide-details-panel #detail-panel,
+body.hide-camera-panel #camera-panel {
+  display: none;
+}
+
 .forecast-panel:has(> .panel-fold:not([open])) {
   align-self: flex-start;
 }
@@ -1754,7 +1764,7 @@ body.panels-right #forecasts {
   }
 
   /* 詳細を開くと下端は約 387px */
-  body:has(#fold-details[open]) #panels {
+  body:not(.hide-details-panel):has(#fold-details[open]) #panels {
     max-height: max(30vh, min(58vh, calc(100vh - 411px)));
   }
 

@@ -4,7 +4,7 @@ import { el, errorMessage, setStatus } from './dom';
 import { initGlobe } from './globe-view';
 import { initMapLayers } from './map-layers';
 import { initMusicPlayer } from './music-player';
-import { hideNews, initNewsView, renderHourly, renderNews, setClockOffset, setClockTime, showClockPlace } from './news-view';
+import { hideNews, initNewsView, renderHourly, renderNews, replayNews, setClockOffset, setClockTime, showClockPlace } from './news-view';
 import { initSettingsDialog } from './settings-dialog';
 import { initTimeControl } from './time-control';
 import { applyUiFont } from './ui-font';
@@ -51,8 +51,17 @@ const PANELS_RIGHT_MIN_WIDTH = 901; // これより狭い画面ではパネル�
 const PANELS_RIGHT_HEIGHT = 810;
 const PANELS_RIGHT_HEIGHT_DETAILS_CLOSED = 710;
 
-// パネルの開閉。閉じた状態は次に起動したときも残す
-function initPanelFolds(): (panels: PanelSettings) => void {
+// 設定でパネルを隠すときの body のクラス (style.css と合わせる) と、その設定の項目
+const PANEL_VISIBILITY: Record<keyof PanelSettings, [className: string, setting: keyof GraphicsSettings]> = {
+  news: ['hide-news-panel', 'show_news_panel'],
+  hourly: ['hide-hourly-panel', 'show_hourly_panel'],
+  weekly: ['hide-weekly-panel', 'show_weekly_panel'],
+  details: ['hide-details-panel', 'show_details_panel'],
+  camera: ['hide-camera-panel', 'show_camera_panel'],
+};
+
+// パネルの開閉と、設定での表示・非表示。閉じた状態は次に起動したときも残す
+function initPanelFolds() {
   const folds: Record<keyof PanelSettings, HTMLDetailsElement> = {
     news: el<HTMLDetailsElement>('fold-news'),
     hourly: el<HTMLDetailsElement>('fold-hourly'),
@@ -67,8 +76,10 @@ function initPanelFolds(): (panels: PanelSettings) => void {
     details: folds.details.open,
     camera: folds.camera.open,
   });
+  const isShown = (key: keyof PanelSettings): boolean =>
+    !document.body.classList.contains(PANEL_VISIBILITY[key][0]);
   function syncPanelColumn(): void {
-    const limit = folds.details.open ? PANELS_RIGHT_HEIGHT : PANELS_RIGHT_HEIGHT_DETAILS_CLOSED;
+    const limit = folds.details.open && isShown('details') ? PANELS_RIGHT_HEIGHT : PANELS_RIGHT_HEIGHT_DETAILS_CLOSED;
     document.body.classList.toggle('panels-right', window.innerWidth >= PANELS_RIGHT_MIN_WIDTH && window.innerHeight <= limit);
   }
   window.addEventListener('resize', syncPanelColumn);
@@ -87,20 +98,35 @@ function initPanelFolds(): (panels: PanelSettings) => void {
         .catch((err) => console.error('panels save failed', err));
     });
   }
-  return (panels) => {
-    saved = JSON.stringify(panels);
-    folds.news.open = panels.news;
-    folds.hourly.open = panels.hourly;
-    folds.weekly.open = panels.weekly;
-    folds.details.open = panels.details;
-    folds.camera.open = panels.camera;
+  // 天気ニュースは開くたびに文を流し直す
+  folds.news.addEventListener('toggle', () => {
+    if (folds.news.open && isShown('news')) replayNews();
+  });
+  return {
+    applyPanels(panels: PanelSettings): void {
+      saved = JSON.stringify(panels);
+      folds.news.open = panels.news;
+      folds.hourly.open = panels.hourly;
+      folds.weekly.open = panels.weekly;
+      folds.details.open = panels.details;
+      folds.camera.open = panels.camera;
+    },
+    showPanels(graphics: GraphicsSettings): void {
+      const newsWasHidden = !isShown('news');
+      for (const [className, setting] of Object.values(PANEL_VISIBILITY)) {
+        document.body.classList.toggle(className, !graphics[setting]);
+      }
+      syncPanelColumn();
+      // 隠していた天気ニュースを出し直したときも、開いたときと同じく流し直す
+      if (newsWasHidden && isShown('news') && folds.news.open) replayNews();
+    },
   };
 }
 
 async function init(): Promise<void> {
   initNewsView();
   initScreenshotToast();
-  const applyPanels = initPanelFolds();
+  const { applyPanels, showPanels } = initPanelFolds();
   const globe = initGlobe(selectCity);
   window.__weatherNewsDebug.renderHourly = renderHourly;
   const mapLayers = initMapLayers(globe);
@@ -265,6 +291,7 @@ async function init(): Promise<void> {
     (graphics) => {
       globe.applyGraphics(graphics);
       applyUiFont(graphics.ui_font);
+      showPanels(graphics);
     },
     (settings) => music.apply(settings),
   );
@@ -296,6 +323,7 @@ async function init(): Promise<void> {
     if (settings.graphics) {
       globe.applyGraphics(settings.graphics);
       applyUiFont(settings.graphics.ui_font);
+      showPanels(settings.graphics);
     }
     if (settings.panels) applyPanels(settings.panels);
     music.apply(settings);

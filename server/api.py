@@ -112,6 +112,11 @@ class GraphicsUpdate(BaseModel):
     cruise_mode: Literal["analog", "stepped"]
     cruise_bank: bool
     lens_flare: bool
+    show_news_panel: bool
+    show_hourly_panel: bool
+    show_weekly_panel: bool
+    show_details_panel: bool
+    show_camera_panel: bool
 
 
 @app.get("/health")

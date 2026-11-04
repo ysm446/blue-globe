@@ -100,6 +100,11 @@ class SettingsApiTest(unittest.TestCase):
         "cruise_mode": "stepped",
         "cruise_bank": False,
         "lens_flare": False,
+        "show_news_panel": False,
+        "show_hourly_panel": False,
+        "show_weekly_panel": True,
+        "show_details_panel": False,
+        "show_camera_panel": False,
     }
 
     def test_graphics_defaults(self):
@@ -180,6 +185,8 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["city_glow"], 1.0)
         self.assertTrue(graphics["moonlight"])
         self.assertEqual(graphics["glint_strength"], 1.3)
+        self.assertTrue(graphics["show_news_panel"])
+        self.assertTrue(graphics["show_camera_panel"])
         self.assertEqual(graphics["focal_length"], 24)
         self.assertTrue(graphics["depth_of_field"])
         self.assertEqual(graphics["f_number"], 4.0)

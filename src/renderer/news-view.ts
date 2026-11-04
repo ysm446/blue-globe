@@ -2,7 +2,7 @@
 import { el, formatDateTime, prefersReducedMotion } from './dom';
 import { linePath, linePoints, REVEAL_FADE_MS, revealDelayMs, revealTotalMs } from './hourly-chart';
 import { svgElement, weatherIcon } from './icons';
-import { streamParagraphs } from './stream';
+import { replayParagraphs, streamParagraphs } from './stream';
 
 const METHOD_LABEL: Record<NewsOutlook['method'], string> = {
   rule: '気象庁の文を整形',
@@ -243,6 +243,12 @@ export function renderNews(news: NewsReport): void {
     [el('day-text'), news.day_text],
     [el('outlook-text'), outlook?.text ?? ''],
   ]);
+}
+
+// 天気ニュースを開いたときに、文を最初から流し直す
+export function replayNews(): void {
+  if (el('news-body').hidden) return;
+  replayParagraphs([el('current-text'), el('day-text'), el('outlook-text')]);
 }
 
 // 左上のパネルを読む順に見せる。値は 15 分ごとにほぼ必ず変わるので、場所が変わったときだけ流す

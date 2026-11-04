@@ -66,6 +66,12 @@ interface GraphicsSettings {
   cruise_mode: CruiseMode; // 地域ビューの巡航の操作
   cruise_bank: boolean; // 巡航で A/D で曲がるときに、曲がる向きへ画面を傾ける
   lens_flare: boolean; // 太陽が見えるときの、レンズの光の筋と画面のかぶり
+  // パネルを画面に出すか。開閉 (PanelSettings) とは別で、隠したパネルは見出しも出さない
+  show_news_panel: boolean;
+  show_hourly_panel: boolean;
+  show_weekly_panel: boolean;
+  show_details_panel: boolean;
+  show_camera_panel: boolean;
 }
 
 interface PanelSettings {

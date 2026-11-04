@@ -1,5 +1,5 @@
 // 文章を 1 文字ずつ順に見せる表示。文字の場所は最初から確保するので、途中で行が動かない。
-// 内容が変わった段落だけを、上から順に流す
+// 内容が変わった段落だけを、上から順に流す。パネルを開き直したときは全部を流し直す
 import { prefersReducedMotion } from './dom.ts';
 
 const CHAR_MS = 26;
@@ -51,11 +51,12 @@ function startParagraph(element: HTMLElement, text: string, step: StreamStep): v
   );
 }
 
-export function streamParagraphs(paragraphs: Array<[HTMLElement, string]>): void {
+// replay では、内容が同じ段落も最初から流し直す
+export function streamParagraphs(paragraphs: Array<[HTMLElement, string]>, replay = false): void {
   const reduceMotion = prefersReducedMotion();
   const plan = planStream(
     paragraphs.map(([, text]) => text),
-    paragraphs.map(([element]) => shownText.get(element) ?? ''),
+    replay ? [] : paragraphs.map(([element]) => shownText.get(element) ?? ''),
   );
   paragraphs.forEach(([element, text], index) => {
     const changed = shownText.get(element) !== text;
@@ -63,4 +64,12 @@ export function streamParagraphs(paragraphs: Array<[HTMLElement, string]>): void
     if (plan[index].animate && !reduceMotion) startParagraph(element, text, plan[index]);
     else if (changed) setPlainText(element, text);
   });
+}
+
+// 今出している文を、最初から流し直す
+export function replayParagraphs(elements: HTMLElement[]): void {
+  streamParagraphs(
+    elements.map((element) => [element, shownText.get(element) ?? '']),
+    true,
+  );
 }
