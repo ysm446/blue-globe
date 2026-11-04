@@ -196,12 +196,30 @@ function resetHeld(...motions: HeldMotion[]): void {
   for (const motion of motions) motion.ease = motion.rate = 0;
 }
 
+// 設定画面の「情報」の実行環境。Electron と Chromium の版は User-Agent から、GPU の名前は WebGL の拡張から読む
+// (Chromium では ANGLE を通した名前になる。読めなければ出さない)
+function showRuntime(renderer: THREE.WebGLRenderer): void {
+  const version = (name: string): string | null => navigator.userAgent.match(new RegExp(`${name}/([\\d.]+)`))?.[1] ?? null;
+  const gl = renderer.getContext();
+  const info = gl.getExtension('WEBGL_debug_renderer_info');
+  const gpu = info ? String(gl.getParameter(info.UNMASKED_RENDERER_WEBGL)) : null;
+  const parts = [
+    version('Electron') && `Electron ${version('Electron')}`,
+    version('Chrome') && `Chromium ${version('Chrome')}`,
+    `Three.js r${THREE.REVISION}`,
+    renderer.capabilities.isWebGL2 ? 'WebGL2' : 'WebGL',
+    gpu && `GPU: ${gpu}`,
+  ].filter(Boolean);
+  el('credit-runtime').textContent = parts.join('、');
+}
+
 export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   const container = el('app');
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.setSize(window.innerWidth, window.innerHeight);
   container.appendChild(renderer.domElement);
+  showRuntime(renderer);
 
   const scene = new THREE.Scene();
 

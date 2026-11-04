@@ -180,7 +180,7 @@
     </div>
 
     <!-- 下の中央。地域ビューの高解像度の画像の読み込み状況と、風速の凡例、データを取得できないときの知らせ。
-         データの出典と時刻は設定画面の「出典」に出す -->
+         データの出典と時刻は設定画面の「情報」に出す -->
     <div id="bottom-center">
       <div id="view-status" role="status" hidden></div>
       <div id="layer-info" hidden>
@@ -218,7 +218,7 @@
         <button id="tab-clouds" type="button" role="tab" aria-controls="panel-clouds">雲</button>
         <button id="tab-camera" type="button" role="tab" aria-controls="panel-camera">カメラ</button>
         <button id="tab-music" type="button" role="tab" aria-controls="panel-music">音楽</button>
-        <button id="tab-credit" type="button" role="tab" aria-controls="panel-credit">出典</button>
+        <button id="tab-credit" type="button" role="tab" aria-controls="panel-credit">情報</button>
       </div>
 
       <div class="settings-panels">
@@ -501,6 +501,14 @@
         地域ビューの地表と街明かり: NASA GIBS の固定の合成画像(街明かりは 2016 年)<br />
         We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS),
         part of NASA's Earth Science Data and Information System (ESDIS).
+        </p>
+        <h3 class="settings-subhead">使っている技術</h3>
+        <p>
+        アプリ: Electron、TypeScript(Vite と esbuild でビルド)<br />
+        3D の描画: Three.js(WebGL2)。地球の地表と大気、立体の雲、星空、露出の調整、被写界深度は自作のシェーダー(GLSL)で描き、光のにじみは Three.js の UnrealBloomPass を使っています<br />
+        風: NOAA GFS の GRIB2 を、変数と高さを絞って取得し、自作のデコーダで展開しています。粒子の動きは GPU で計算します<br />
+        天気とニュース文: Python(FastAPI、uvicorn、httpx)。雲の衛星画像の加工に NumPy と h5py<br />
+        実行環境: <span id="credit-runtime">—</span>
         </p>
       </section>
       </div>

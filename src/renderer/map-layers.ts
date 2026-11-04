@@ -94,7 +94,7 @@ export function initMapLayers(globe: Pick<GlobeController, 'setClouds' | 'setWin
   let mode: MapMode = 'normal';
   let viewAt: Date | null = null;
 
-  // 出典と時刻は設定画面の「出典」に出す。画面の下には、風速の凡例と、取得中や取得できないときの知らせだけを出す
+  // 出典と時刻は設定画面の「情報」に出す。画面の下には、風速の凡例と、取得中や取得できないときの知らせだけを出す
   function renderLayerInfo(): void {
     for (const [target, id] of [['weather', 'credit-clouds'], ['wind', 'credit-wind']] as const) {
       const caption = layers[target].caption;
