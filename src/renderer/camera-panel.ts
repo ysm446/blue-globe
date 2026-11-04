@@ -1,5 +1,6 @@
 // 右上のカメラのパネル。開いて画面に出ている間だけ計算する
 import * as THREE from 'three';
+import { F_NUMBERS, nearestFNumber } from './camera-lens';
 import {
   EARTH_RADIUS_KM,
   formatAltitude,
@@ -20,6 +21,50 @@ const SPEED_SECONDS = 0.3; // 速さはフレームごとにばらつくので�
 export interface CameraPanelState {
   focalLength: number;
   exposure: number | null; // 画面の明るさの倍率。露出の処理を通さないときは null
+}
+
+type LensSettings = Pick<GraphicsSettings, 'depth_of_field' | 'f_number'>;
+
+// パネルの被写界深度のチェックと F 値のスライダー。設定の depth_of_field と f_number をそのまま動かす (設定画面と同じ値)。
+// onChange はスライダーを動かしている間も呼び、離したときやチェックを切り替えたときは commit を true にする (そこで保存する)
+export function initLensControls(onChange: (lens: Partial<LensSettings>, commit: boolean) => void) {
+  const toggle = el<HTMLInputElement>('camera-dof');
+  const toggleRow = el('camera-dof-row');
+  const slider = el<HTMLInputElement>('camera-f-number');
+  const output = el('camera-f-number-value');
+  const read = (): number => F_NUMBERS[Number(slider.value)];
+  const show = (): void => {
+    output.textContent = `F${read()}`;
+    slider.style.setProperty('--fill', `${(Number(slider.value) / (F_NUMBERS.length - 1)) * 100}%`);
+  };
+  slider.max = String(F_NUMBERS.length - 1);
+  slider.addEventListener('input', () => {
+    show();
+    onChange({ f_number: read() }, false);
+  });
+  slider.addEventListener('change', () => onChange({ f_number: read() }, true));
+
+  // マウスで切り替えたらフォーカスを外す。残っていると入力欄の操作中と見なされ、W/A/S/D などが効かない
+  let byPointer = false;
+  toggleRow.addEventListener('pointerdown', () => {
+    byPointer = true;
+  });
+  toggle.addEventListener('change', () => {
+    slider.disabled = !toggle.checked;
+    if (byPointer) toggle.blur();
+    byPointer = false;
+    onChange({ depth_of_field: toggle.checked }, true);
+  });
+
+  return {
+    // 設定が変わったら合わせる。被写界深度がオフのときは F 値が効かないので押せなくする
+    sync(graphics: GraphicsSettings): void {
+      toggle.checked = graphics.depth_of_field;
+      slider.value = String(nearestFNumber(graphics.f_number));
+      slider.disabled = !graphics.depth_of_field;
+      show();
+    },
+  };
 }
 
 export class CameraPanel {

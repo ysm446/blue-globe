@@ -143,6 +143,14 @@
           <div><dt>レンズ</dt><dd id="camera-lens"></dd></div>
           <div><dt>露出</dt><dd id="camera-exposure"></dd></div>
         </dl>
+        <label id="camera-dof-row" title="画面の中心にピントを合わせ、奥や手前へ離れるほどぼかします(通常・天気モード)"><input id="camera-dof" type="checkbox" />被写界深度</label>
+        <div id="camera-f-number-row" title="レンズの絞り。小さいほどぼけが強くなります。被写界深度がオンのときに効きます">
+          <label for="camera-f-number">F 値</label>
+          <div class="range-row">
+            <input id="camera-f-number" type="range" min="0" max="24" step="1" />
+            <output id="camera-f-number-value" for="camera-f-number"></output>
+          </div>
+        </div>
       </details>
     </section>
     </div>

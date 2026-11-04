@@ -1,5 +1,6 @@
 import type { DemoPlace } from './demo';
 import { initDemo } from './demo-controller';
+import { initLensControls } from './camera-panel';
 import { el, errorMessage, setStatus } from './dom';
 import { initGlobe } from './globe-view';
 import { initMapLayers } from './map-layers';
@@ -276,6 +277,28 @@ async function init(): Promise<void> {
     },
   );
 
+  // 今の画質の設定。カメラのパネルの被写界深度と F 値は、これを書き換えて保存する
+  let graphics: GraphicsSettings | null = null;
+  function applyGraphics(next: GraphicsSettings): void {
+    graphics = next;
+    globe.applyGraphics(next);
+    applyUiFont(next.ui_font);
+    showPanels(next);
+    lensControls.sync(next);
+  }
+  // 保存は順番に行い、最後の操作が必ず残るようにする
+  let graphicsSave: Promise<unknown> = Promise.resolve();
+  const lensControls = initLensControls((lens, commit) => {
+    if (!graphics) return;
+    graphics = { ...graphics, ...lens };
+    globe.applyGraphics(graphics);
+    if (!commit) return;
+    const saved = graphics;
+    graphicsSave = graphicsSave
+      .then(() => window.weatherApi.setGraphics(saved))
+      .catch((err) => console.error('lens settings save failed', err));
+  });
+
   const settingsDialog = initSettingsDialog(
     (settings) => {
       showHome();
@@ -288,11 +311,7 @@ async function init(): Promise<void> {
       }
       void refreshNews();
     },
-    (graphics) => {
-      globe.applyGraphics(graphics);
-      applyUiFont(graphics.ui_font);
-      showPanels(graphics);
-    },
+    applyGraphics,
     (settings) => music.apply(settings),
   );
   const music = initMusicPlayer(() => void settingsDialog.open('tab-music'));
@@ -320,11 +339,7 @@ async function init(): Promise<void> {
     const settings = await window.weatherApi.getSettings();
     hasLocation = settings.location !== null;
     setClockPlace(settings.location);
-    if (settings.graphics) {
-      globe.applyGraphics(settings.graphics);
-      applyUiFont(settings.graphics.ui_font);
-      showPanels(settings.graphics);
-    }
+    if (settings.graphics) applyGraphics(settings.graphics);
     if (settings.panels) applyPanels(settings.panels);
     music.apply(settings);
     applyMode(settings.mode ?? 'normal');

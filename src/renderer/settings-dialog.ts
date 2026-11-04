@@ -1,5 +1,5 @@
 // 設定画面
-import { focalLengthForFov, verticalFov } from './camera-lens';
+import { F_NUMBERS, focalLengthForFov, nearestFNumber, verticalFov } from './camera-lens';
 import { el, errorMessage, setStatus } from './dom';
 import { audioFileName } from './music-player';
 import { isFontInstalled, UI_FONTS } from './ui-font';
@@ -29,16 +29,6 @@ function graphicsSlider(
     show();
   };
   return { input, read, show, write };
-}
-
-const F_NUMBERS = [1.4, 1.6, 1.8, 2, 2.2, 2.5, 2.8, 3.2, 3.5, 4, 4.5, 5, 5.6, 6.3, 7.1, 8, 9, 10, 11, 13, 14, 16, 18, 20, 22];
-
-function nearestFNumber(value: number): number {
-  let best = 0;
-  F_NUMBERS.forEach((stop, i) => {
-    if (Math.abs(Math.log(stop / value)) < Math.abs(Math.log(F_NUMBERS[best] / value))) best = i;
-  });
-  return best;
 }
 
 function formatGlobeSize(meters: number): string {
@@ -286,7 +276,6 @@ export function initSettingsDialog(
     glint_strength: percentSlider('glint-strength'),
     focal_length: graphicsSlider('focal-length', (position) => position, (value) => value, (value) => `${Number.isInteger(value) ? value : value.toFixed(1)}mm`),
     exposure_compensation: graphicsSlider('exposure-compensation', (position) => position, (value) => value, (value) => `${value > 0 ? '+' : ''}${value} EV`),
-    // レンズに刻まれた 1/3 段の値を並べる
     f_number: graphicsSlider('f-number', (position) => F_NUMBERS[position], nearestFNumber, (value) => `F${value}`),
     // 対数にして、10 目盛りで 10 倍にする
     globe_size: graphicsSlider('globe-size', (position) => 10 ** (position / 10), (value) => Math.round(10 * Math.log10(value)), formatGlobeSize),

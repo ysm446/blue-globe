@@ -1013,6 +1013,47 @@ body.demo-idle * {
   white-space: nowrap;
 }
 
+#camera-dof-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+#camera-dof-row input {
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+#camera-f-number-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+  font-size: 13px;
+}
+
+#camera-f-number-row label {
+  color: var(--text-2);
+  white-space: nowrap;
+}
+
+#camera-f-number-row .range-row {
+  flex: 1;
+}
+
+/* 被写界深度がオフで効かないときは、ラベルごと薄くする */
+#camera-f-number-row:has(input:disabled) {
+  opacity: 0.4;
+}
+
+#camera-f-number-row .range-row:has(input:disabled) {
+  opacity: 1;
+}
+
 /* デモの間は、他の案内と同じく出さない */
 body.demo #camera-panel {
   display: none;

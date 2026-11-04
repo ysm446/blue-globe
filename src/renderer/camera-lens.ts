@@ -28,6 +28,18 @@ export function apparentScale(fov: number): number {
   return Math.tan((fov / 2) * DEG) / Math.tan((BASE_FOV / 2) * DEG);
 }
 
+// F 値のスライダーの目盛り。レンズに刻まれた 1/3 段の値を並べる (設定画面とカメラのパネルで使う)
+export const F_NUMBERS = [1.4, 1.6, 1.8, 2, 2.2, 2.5, 2.8, 3.2, 3.5, 4, 4.5, 5, 5.6, 6.3, 7.1, 8, 9, 10, 11, 13, 14, 16, 18, 20, 22];
+
+// いちばん近い目盛りの位置
+export function nearestFNumber(value: number): number {
+  let best = 0;
+  F_NUMBERS.forEach((stop, i) => {
+    if (Math.abs(Math.log(stop / value)) < Math.abs(Math.log(F_NUMBERS[best] / value))) best = i;
+  });
+  return best;
+}
+
 // 被写界深度の計算。地球を地球儀の大きさの模型に見立て、その模型をこのレンズで撮ったときのぼけを求める。
 // 実寸の地球はどこもほぼ無限遠になり、まったくぼけないため。GLSL 側 (depth-of-field.ts) と同じ式
 
