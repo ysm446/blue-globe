@@ -167,8 +167,8 @@ export function initSettingsDialog(
   function showCurrentLocation(): void {
     const { location } = settings;
     el('current-location').textContent = location
-      ? `現在の地点: ${[location.admin1, location.name].filter(Boolean).join(' ')}`
-      : '天気を表示する地点を検索して選んでください。';
+      ? `設定中の場所: ${[location.admin1, location.name].filter(Boolean).join(' ')}`
+      : '天気を表示する場所を検索して選んでください。';
   }
 
   async function save(next: AppSettings): Promise<boolean> {

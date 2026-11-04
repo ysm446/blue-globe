@@ -204,7 +204,7 @@ async function init(): Promise<void> {
     }
   }
 
-  // ラベルで選んだ都市の天気。設定地点は変えず、「地点へ戻る」で元に戻す
+  // ラベルで選んだ都市の天気。設定地点は変えず、「ホームへ戻る」で元に戻す
   let selectedCity: DemoPlace | null = null;
   let cityRequest = 0;
   async function loadCity(place: DemoPlace): Promise<void> {
@@ -298,7 +298,7 @@ async function init(): Promise<void> {
       globe.startFromOverview(settings.location);
       void refreshNews();
     } else {
-      setStatus(status, '天気を表示する地点を設定してください。');
+      setStatus(status, '天気を表示する場所を設定してください。');
       await settingsDialog.open();
     }
   } catch (err) {
