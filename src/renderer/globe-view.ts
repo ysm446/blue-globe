@@ -112,7 +112,10 @@ const GLOBE_SPIN_MIN_SCALE = 0.1;
 const GLOBE_SLIDE_DEGREES_PER_SECOND = 6; // W/S の速さ (既定の高さ)
 const GLOBE_MAX_LATITUDE = 85; // W/S で極に近づきすぎると、北が上の画面が不安定になる
 const GLOBE_HINT = '左ドラッグで回転、ホイールで拡大縮小、A/D で回転、W/S で南北、矢印キーで次の都市へ';
-const TURN_SECONDS = 0.35; // 旋回を始めるときと止めるときの時定数
+const TURN_SECONDS = 0.35; // 地球ビューの W/S の動きを始めるときと止めるときの時定数
+// 巡航の旋回の速さを 2 段でならす、各段の時定数。1 段だけだと押した瞬間に最も強く曲がり始めるので、
+// 2 段重ねて、押した直後はゆっくり、だんだん強く曲がるようにする
+const CRUISE_TURN_EASE_SECONDS = 0.3;
 const BANK_DEGREES = 6; // 旋回中に画面を傾ける角度
 // 中心の地点のまわりを回る旋回。Q と E で速さの段を変え、手を離しても回り続ける。巡航とは同時にしない
 const ORBIT_LEVELS = 5;
@@ -502,6 +505,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let cruiseThrottle = 0;
   let cruiseBraking = false;
   let turnRate = 0;
+  let turnEase = 0; // 旋回の速さをならす 1 段目の値
   const throttleKeys = new Set<'faster' | 'slower'>();
   const turnKeys = new Set<'left' | 'right'>();
   // 旋回の段 (-ORBIT_LEVELS〜ORBIT_LEVELS。正が右回り) と、なめらかにしたあとの値
@@ -530,6 +534,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     cruiseThrottle = 0;
     cruiseBraking = false;
     turnRate = 0;
+    turnEase = 0;
     throttleKeys.clear();
     turnKeys.clear();
     showCruise();
@@ -715,7 +720,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     }
     showCruise();
     const turnGoal = ((turnKeys.has('right') ? 1 : 0) - (turnKeys.has('left') ? 1 : 0)) * TURN_DEGREES_PER_SECOND;
-    turnRate += (turnGoal - turnRate) * (1 - Math.exp(-dt / TURN_SECONDS));
+    const ease = 1 - Math.exp(-dt / CRUISE_TURN_EASE_SECONDS);
+    turnEase += (turnGoal - turnEase) * ease;
+    turnRate += (turnEase - turnRate) * ease;
     if (regionDrag || (cruiseThrottle < 1e-4 && Math.abs(turnRate) < 1e-3)) return;
     regionView = cruiseRegionView(regionView, cruiseRate(cruiseThrottle) * regionView.distance * dt, turnRate * dt);
   }
