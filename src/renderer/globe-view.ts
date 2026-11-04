@@ -105,9 +105,9 @@ const CRUISE_LEVELS = 5; // 速さの上限 (段)
 // 1 段ごとに 2 倍にし、遅い段で景色を眺められ、速い段で遠くへ移れるようにする
 const CRUISE_RATE = 0.02;
 const CRUISE_STEP_RATIO = 2;
-// アナログ式で、押している間に段の値が変わる速さ (段/秒)。止めたいときにすぐ止まれるよう、減速を速くする
+// アナログ式で、押している間に段の値が変わる速さ (段/秒)。減速を加速の倍にしていたときは、止まり方が急すぎた
 const CRUISE_ACCELERATION = 1;
-const CRUISE_DECELERATION = 2;
+const CRUISE_DECELERATION = 1;
 const CRUISE_SECONDS = 0.8; // 段階式で、選んだ段の速さへ近づくときの時定数
 const TURN_DEGREES_PER_SECOND = 20;
 // 地球ビューの回転と移動。A/D は 1 回押すごとに 1 段 (地域ビューの Q/E と同じ段と速さ)、手を離しても回り続ける。
@@ -125,9 +125,6 @@ const CRUISE_TURN_EASE_SECONDS = 0.3;
 const TAPE_LINGER_SECONDS = 1.5;
 const TAPE_MOVING_DEGREES_PER_SECOND = 0.5; // 方角がこれより速く変わっていれば動いているとみなす
 const TAPE_MOVING_ARC_PER_SECOND = 0.01; // 中心がこれより速く (度/秒) 動いていれば動いているとみなす
-const TAPE_HOME_MIN_KM = 1; // ホームの真上では方角が決まらないので、印を出さない
-const PIN_ICON =
-  '<svg viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M12 2a8 8 0 0 0-8 8c0 5.4 6.2 11.2 7.3 11.8a1.3 1.3 0 0 0 1.4 0C13.8 21.2 20 15.4 20 10a8 8 0 0 0-8-8Zm0 11a3 3 0 1 1 0-6 3 3 0 0 1 0 6Z" /></svg>';
 const SUN_ICON =
   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5" fill="currentColor" />' +
   '<path d="M12 1.5v2.5M12 20v2.5M1.5 12H4M20 12h2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8" /></svg>';
@@ -1085,15 +1082,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     // 方角は、画面の中心の地点 (カメラのパネルの「中心」) から見たもの。
     // カメラの真下の地点は、高いところから斜めに見ていると中心から 10° 近く離れる
     const here = { lat: view.lat, lon: view.lon };
-    const markers: TapeMarker[] = [];
-    if (focused) {
-      const home = { lat: focused.latitude, lon: focused.longitude };
-      const km = (separationDegrees(here, home) * Math.PI * EARTH_RADIUS_KM) / 180;
-      if (km >= TAPE_HOME_MIN_KM) markers.push({ bearing: bearingDegrees(here, home), icon: PIN_ICON, label: focused.name });
-    }
-    // 太陽が地平線の下にあるときは薄くする
+    // 印は太陽だけ。地平線の下にあるときは薄くする
     const sun = sunLonLat();
-    markers.push({ bearing: bearingDegrees(here, sun), icon: SUN_ICON, className: 'sun', dim: separationDegrees(here, sun) > 90 });
+    const markers: TapeMarker[] = [
+      { bearing: bearingDegrees(here, sun), icon: SUN_ICON, className: 'sun', dim: separationDegrees(here, sun) > 90 },
+    ];
     headingTape.update(view.heading, markers);
   }
 
