@@ -22,6 +22,8 @@ const FINAL_SHADER = {
     uGlare: { value: 0 },
     uGlareTint: { value: new THREE.Vector3(1, 1, 1) },
     uVeil: { value: 0 },
+    uSunBlur: { value: 0 },
+    uRayScale: { value: 1 },
     uAspect: { value: 1 },
   },
   vertexShader: FULLSCREEN_VS,
@@ -33,6 +35,8 @@ const FINAL_SHADER = {
     uniform float uGlare;
     uniform vec3 uGlareTint;
     uniform float uVeil;
+    uniform float uSunBlur; // 被写界深度による太陽のぼけの半径 (画面の高さが 1)
+    uniform float uRayScale; // F 値による光の筋の強さの倍率
     uniform float uAspect;
     varying vec2 vUv;
     ${PIXEL_JITTER_GLSL}
@@ -48,11 +52,15 @@ const FINAL_SHADER = {
       vec2 d = (vUv - uSunUv) * vec2(uAspect, 1.0);
       float r = length(d);
       float angle = atan(d.y, d.x);
-      float halo = 0.0004 / (r * r + 0.0004) * 1.5 + 0.02 / (r * r + 0.02) * 0.25 * uVeil;
+      // 太陽がぼけると、小さな光の輪はぼけの大きさに広がり、そのぶん淡くなる
+      float core = 0.0004 + uSunBlur * uSunBlur;
+      float halo = core / (r * r + core) * 1.5 * sqrt(0.0004 / core) + 0.02 / (r * r + 0.02) * 0.25 * uVeil;
       // 筋の太さと長さを揃えないよう、別の周期で強さを変える
       float rays = pow(abs(cos(angle * 3.0 + 0.4)), 300.0) * (0.7 + 0.3 * sin(angle * 5.0))
         + pow(abs(cos(angle * 5.0 + 1.3)), 500.0) * 0.5 * (0.6 + 0.4 * cos(angle * 3.0 + 2.0));
-      rays *= 0.008 / (r + 0.01) * smoothstep(0.3, 0.0, r);
+      // 光の筋は絞りの縁で光が回り込んでできるので、太陽にピントが合っているときだけ出る。
+      // ぼけの半径が約 2 画素 (1080 画素の画面) を超えると弱まり、約 10 画素で消える
+      rays *= 0.008 / (r + 0.01) * smoothstep(0.3, 0.0, r) * uRayScale * (1.0 - smoothstep(0.002, 0.01, uSunBlur));
       float veil = 0.025 * uVeil;
       return uGlareTint * (halo + rays + veil) * uGlare;
     }
@@ -106,6 +114,16 @@ export class HdrPipeline {
     this.finalPass.uniforms.uGlare.value = strength;
     this.finalPass.uniforms.uGlareTint.value.copy(tint);
     this.finalPass.uniforms.uVeil.value = veil;
+  }
+
+  // 被写界深度で太陽がどれだけぼけるかを、太陽の光に反映する。direction はカメラから太陽への向き (長さ 1)。
+  // 被写界深度がオフのときは、ぼけず、光の筋も既定の強さ (F 値によらない) にする
+  setSunFocus(direction: THREE.Vector3): void {
+    const enabled = this.depthOfField.enabled;
+    const uniforms = this.finalPass.uniforms;
+    uniforms.uSunBlur.value = enabled ? this.depthOfField.blurRadiusToward(direction) : 0;
+    // 絞るほど光の筋は強く出る。既定の F4 で 1 にし、1 段で約 1.09 倍 (F1.4 で約 0.77、F16 で約 1.4、F22 で約 1.5)
+    uniforms.uRayScale.value = enabled ? (this.depthOfField.lensFNumber / 4) ** 0.25 : 1;
   }
 
   // exposure は画面全体の明るさの倍率、sunVisibility は太陽の見えている割合 (0〜1)

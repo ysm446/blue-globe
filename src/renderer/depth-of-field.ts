@@ -6,7 +6,7 @@
 // 小さなぼけは元の解像度で直接ぼかし、ピント面から離れるにつれて途切れずにぼけが増えるようにする
 import * as THREE from 'three';
 import { FullScreenQuad, Pass } from 'three/addons/postprocessing/Pass.js';
-import { focalLengthForFov, sensorHeight, sphereRayDistance } from './camera-lens';
+import { circleOfConfusion, focalLengthForFov, sensorHeight, sphereRayDistance } from './camera-lens';
 import { FULLSCREEN_VS } from './glsl';
 
 const MAX_COC = 0.025; // ぼけの半径の上限 (画面の高さが 1)。大きくすると円盤の点の間が空いて粗く見える
@@ -287,6 +287,28 @@ export class DepthOfFieldPass extends Pass {
   setLens(fNumber: number, globeSize: number): void {
     this.fNumber = fNumber;
     this.globeSize = globeSize;
+  }
+
+  get lensFNumber(): number {
+    return this.fNumber;
+  }
+
+  // direction (長さ 1) の向きにある物のぼけの半径 (画面の高さが 1)。シェーダーの cocAt と同じ式で、同じ上限で切る。
+  // 太陽の光の筋を、太陽のぼけに合わせて弱めるために使う
+  blurRadiusToward(direction: THREE.Vector3): number {
+    const camera = this.camera;
+    const focalLength = focalLengthForFov(camera.fov, camera.aspect);
+    const sceneScale = this.globeSize / 2;
+    const origin = camera.position.toArray();
+    camera.getWorldDirection(this.forward);
+    const focus = sphereRayDistance(origin, this.forward.toArray(), this.lens.uSphereRadius.value) * sceneScale;
+    // ピント面は平面なので、正面の奥行きで比べる
+    const depth =
+      sphereRayDistance(origin, direction.toArray(), this.lens.uSphereRadius.value) *
+      Math.max(direction.dot(this.forward), 0) *
+      sceneScale;
+    const coc = circleOfConfusion(focalLength, this.fNumber, focus, depth); // 直径 (mm)
+    return Math.min(Math.abs(coc) / 2 / sensorHeight(camera.aspect), MAX_COC);
   }
 
   setSize(width: number, height: number): void {

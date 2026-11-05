@@ -1383,6 +1383,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     glareTint.set(1, 0.75, 0.5).multiply(sunTint);
     const glare = lensFlare && !solar.active ? Math.sqrt(visibility) : 0;
     hdr.setSunGlare((sunNdc.x + 1) / 2, (sunNdc.y + 1) / 2, glare, glareTint, 0.15 + 0.85 * redden);
+    hdr.setSunFocus(toSun);
   }
 
   let fpsLimit = 0;
@@ -1530,11 +1531,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     // 風速モードは元の見た目のまま、HDR の処理を通さず画面へ直接描く
     if (mode !== 'wind' && earthReady) {
       earth.updateClouds(dt);
+      // 太陽系の場面は地球の球で奥行きを求められないので、ぼかさない。太陽の光のぼけにも使うので、露出より先に決める
+      hdr.setDepthOfField(solar.active ? null : depthOfField);
       updateExposure(dt);
       earth.renderCloudBlend(renderer);
       earth.renderVolumeClouds(renderer, camera);
-      // 太陽系の場面は地球の球で奥行きを求められないので、ぼかさない
-      hdr.setDepthOfField(solar.active ? null : depthOfField);
       hdr.render();
     } else {
       renderer.render(scene, camera);
