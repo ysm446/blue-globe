@@ -35,6 +35,9 @@ const FAR_SHADOW_START = 0.003; // 太陽の方向へ歩いて確かめる距離
 const FAR_SHADOW_FULL = 0.0055;
 const NO_CLOUD_DEPTH = -2; // 雲がない画素の深さ。どの点よりも地球の側にして、影を落とさない
 const SHAPE_NOISE_MEAN = 0.478; // 大きなかたまりのノイズの平均。起伏の強さを変えても雲の量が変わらないよう、平均の周りで伸び縮みさせる
+// 雲マップの量がこれ以下の雲は層雲として平らに描き、STRATUS_END までに積雲の描き方へ移る
+const STRATUS_FULL = 0.15;
+const STRATUS_END = 0.45;
 const SHARPEST_SOFTNESS = 0.06;
 const SOFTEST_SOFTNESS = 0.3;
 
@@ -159,15 +162,25 @@ float densityAt(vec3 p, bool withDetail) {
   float shape = textureLod(uNoise, p / ${SHAPE_PERIOD.toFixed(3)}, shapeLod).r;
   // 雲頂の高さをノイズで変え、厚い雲の上面にも起伏を作る。粒が規則的に並ばないよう、長い周期のノイズも混ぜる
   float swell = textureLod(uNoise, p / ${SWELL_PERIOD.toFixed(3)}, shapeLod).r;
-  columnTop = mix(0.3, 1.0, smoothstep(0.2, 0.9, cover)) * mix(0.5, 1.0, smoothstep(0.2, 0.85, shape * 0.5 + swell * 0.5));
+  // 雲の量が少ない雲は、まばらな積雲ではなく薄く広がった層雲とみなす。1 で層雲として扱う
+  float stratus = 1.0 - smoothstep(${STRATUS_FULL.toFixed(2)}, ${STRATUS_END.toFixed(2)}, cover);
+  // 層雲の厚さはノイズで揺らさない。揺らすと、薄いところだけ消えて粒に見える
+  float swellTop = mix(0.5, 1.0, smoothstep(0.2, 0.85, shape * 0.5 + swell * 0.5));
+  columnTop = mix(0.3, 1.0, smoothstep(0.2, 0.9, cover)) * mix(swellTop, 0.75, stratus);
   float profile = smoothstep(0.0, 0.1, h) * (1.0 - smoothstep(columnTop * 0.6, columnTop, h));
   if (profile <= 0.0) return 0.0;
+  float thickness = sqrt(cover) * profile * 1.6;
+  // 積雲: ノイズを引いて 0 で切り、かたまりに分ける
   float bumps = 1.0 - ${SHAPE_NOISE_MEAN.toFixed(3)} + (${SHAPE_NOISE_MEAN.toFixed(3)} - shape) * uPuffiness;
   float erosion = bumps * mix(0.5, 0.25, cover);
-  float body = clamp((sqrt(cover) * profile * 1.6 - erosion) / uSoftness, 0.0, 1.0);
+  float puffy = clamp((thickness - erosion) / uSoftness, 0.0, 1.0);
+  // 層雲: ノイズを掛けて濃さにむらを付けるだけにし、切れ目を作らない
+  float sheet = clamp(thickness * (1.0 + (shape - ${SHAPE_NOISE_MEAN.toFixed(3)}) * uPuffiness * 0.8), 0.0, 1.0);
+  float body = mix(puffy, sheet, stratus);
   if (withDetail && body > 0.0) {
     float detail = textureLod(uNoise, p / ${DETAIL_PERIOD.toFixed(3)}, detailLod).g;
-    body = max(body - (1.0 - detail) * 0.35 * (1.0 - body), 0.0);
+    float cut = (1.0 - detail) * 0.35;
+    body = mix(max(body - cut * (1.0 - body), 0.0), body * (1.0 - cut * 0.6), stratus);
   }
   return body * mix(0.3, 1.0, smoothstep(0.0, 0.6, cover)); // 薄い雲は地面が透ける
 }
