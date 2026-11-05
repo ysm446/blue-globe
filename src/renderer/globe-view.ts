@@ -120,6 +120,7 @@ const GLOBE_SPIN_MIN_SCALE = 0.1;
 const GLOBE_SLIDE_DEGREES_PER_SECOND = 6; // W/S の速さ (既定の高さ)
 const GLOBE_MAX_LATITUDE = 85; // W/S で極に近づきすぎると、北が上の画面が不安定になる
 const GLOBE_HINT = '左ドラッグで回転、ホイールで拡大縮小、WASD で移動、Q/E で自動回転、矢印キーで次の都市へ';
+const SOLAR_HINT = '左ドラッグで回転、ホイールで拡大縮小、WASD で移動、Q/E で自動回転';
 const TURN_SECONDS = 0.35; // 地球ビューの W/S の動きを始めるときと止めるときの時定数
 // 巡航の旋回の速さを 2 段でならす、各段の時定数。1 段だけだと押した瞬間に最も強く曲がり始めるので、
 // 2 段重ねて、押した直後はゆっくり、だんだん強く曲がるようにする
@@ -688,7 +689,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
 
   // 巡航の速さは押している間に変わり続けるので、毎フレーム呼ぶ。文が変わったときだけ書き換える
   function showCruise(): void {
-    let text = regionView ? viewHintText : GLOBE_HINT;
+    let text = regionView ? viewHintText : solar.active ? SOLAR_HINT : GLOBE_HINT;
     const cruising = cruiseMode === 'stepped' ? cruiseLevel > 0 : cruiseThrottle > 0;
     if (cruising && freeFlight && regionView) {
       const speed = cruiseRate(cruiseThrottle) * cruiseScale(regionView) * EARTH_RADIUS_KM;
@@ -705,7 +706,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       const direction = orbitLevel > 0 ? '右回り' : '左回り';
       text = `旋回中 ${direction} 速さ ${Math.abs(orbitLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、WASD で回転と傾き、V で巡航モード)`;
     } else if (!regionView && globeSpinLevel !== 0) {
-      const direction = globeSpinLevel > 0 ? '東へ' : '西へ';
+      // 太陽系では、E でカメラが右へ (黄道の北から見て左回りに) 回り込む
+      const direction = solar.active ? (globeSpinLevel > 0 ? '右へ' : '左へ') : globeSpinLevel > 0 ? '東へ' : '西へ';
       text = `回転中 ${direction} 速さ ${Math.abs(globeSpinLevel)} / ${ORBIT_LEVELS}(Q/E で速さと向き、WASD で移動)`;
     }
     if (viewHint.textContent !== text) viewHint.textContent = text;
@@ -731,9 +733,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     return !!regionView && !regionFlight && acceptsKey(event);
   }
 
-  // 地球ビュー (太陽系の場面でなく、地点へ飛んでいる途中でもない) で受け付ける
+  // 地球ビュー (地点へ飛んでいる途中でもない) と、引き終えた太陽系の視点で受け付ける
   function acceptsGlobeKey(event: KeyboardEvent): boolean {
-    return !regionView && !solar.active && acceptsKey(event);
+    return !regionView && (!solar.active || solar.orbiting) && acceptsKey(event);
   }
 
   // クリックしたボタンにフォーカスが残っていると、キーを押したときにフォーカスの枠が出る。
@@ -1166,6 +1168,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       done?.();
       return;
     }
+    stopCruise(); // 太陽系で回していた自動の回転は、地球ビューへ持ち込まない
     const home = markerShown ? markerPos.clone().normalize() : camera.position.clone().normalize();
     solar.leave(home, viewDistance(mode), sky.siderealRotation, () => {
       // 戻り終えた姿勢は地球の中心を向いているので、そのまま地球ビューの操作へ引き渡す
@@ -1203,7 +1206,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   // 回転は OrbitControls の自動回転を借りる (ドラッグしている間は回らない)。
   // 東向きは地表が左へ流れる向きで、自動回転の正の向き (地表が東へ動く) とは逆
   function updateGlobeMotion(dt: number): void {
-    const motion = globeKeyMotion(dt);
+    const motion = globeKeyMotion(dt, globeKeyScale());
     if (demoMotion) return;
     // 度/秒を OrbitControls の単位 (2 で 30 秒に 1 周) にする
     controls.autoRotate = globeSpinThrottle !== 0;
@@ -1211,9 +1214,14 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     shiftGlobeCamera(motion.north, motion.east);
   }
 
+  // 地球ビューの W/A/S/D と Q/E の速さに掛ける値。寄るほど地表が速く流れるので、カメラの高さに比例させる
+  function globeKeyScale(): number {
+    return Math.max(GLOBE_SPIN_MIN_SCALE, apparentAltitude() / GLOBE_SPIN_REFERENCE_ALTITUDE);
+  }
+
   // W/A/S/D と Q/E のなめらかにした値を進め、このフレームに動かす北向きと東向きの角度 (度) と、回転の速さ (度/秒。東向きが正) を返す。
-  // 速さはどれもカメラの高さに比例させる
-  function globeKeyMotion(dt: number): { north: number; east: number; spin: number } {
+  // 速さはどれも scale を掛ける (地球ビューではカメラの高さに比例させる)
+  function globeKeyMotion(dt: number, scale: number): { north: number; east: number; spin: number } {
     globeSpinThrottle += (globeSpinLevel - globeSpinThrottle) * (1 - Math.exp(-dt / ORBIT_SECONDS));
     if (Math.abs(globeSpinThrottle) < 1e-3) globeSpinThrottle = 0;
     const slideGoal = (slideKeys.has('faster') ? 1 : 0) - (slideKeys.has('slower') ? 1 : 0);
@@ -1222,7 +1230,6 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     const eastGoal = (slideKeys.has('right') ? 1 : 0) - (slideKeys.has('left') ? 1 : 0);
     globeSlideEast += (eastGoal - globeSlideEast) * (1 - Math.exp(-dt / TURN_SECONDS));
     if (Math.abs(globeSlideEast) < 1e-3) globeSlideEast = 0;
-    const scale = Math.max(GLOBE_SPIN_MIN_SCALE, apparentAltitude() / GLOBE_SPIN_REFERENCE_ALTITUDE);
     const step = GLOBE_SLIDE_DEGREES_PER_SECOND * scale * dt;
     return { north: globeSlide * step, east: globeSlideEast * step, spin: -orbitDegreesPerSecond(globeSpinThrottle) * scale };
   }
@@ -1272,7 +1279,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       .applyQuaternion(partial)
       .multiplyScalar(fromLen + (toLen - fromLen) * eased);
     if (!demoMotion) {
-      const motion = globeKeyMotion(dt);
+      const motion = globeKeyMotion(dt, globeKeyScale());
       flight.north += motion.north;
       flight.east += motion.east + motion.spin * dt;
       shiftGlobeCamera(flight.north, flight.east);
@@ -1483,6 +1490,12 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     // 地球ビューのホイールの目標は、ほかの視点へ移ったり飛び始めたりしたら捨てる (戻ったときに引っぱらない)
     if (solar.active || regionView || flight) globeZoomGoal = null;
     if (solar.active) {
+      // 太陽系でも地球ビューと同じ W/A/S/D と Q/E で動かす。太陽からの距離はとても大きいので、速さは高さによらず段どおりにする
+      if (solar.orbiting && !demoMotion) {
+        const motion = globeKeyMotion(dt, 1);
+        solar.steer(motion.north, motion.east, motion.spin);
+      }
+      showCruise();
       solar.update(dt, camera);
       solar.applyToEarth(camera, sky.siderealRotation);
       hdr.setBackdrop(solar.scene, solar.camera, solar.showsEarthScene);

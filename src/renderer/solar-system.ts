@@ -28,6 +28,7 @@ const FADE_NEAR = 0.002; // 地球からこの距離 (AU) を過ぎると点と�
 const FADE_FAR = 0.05; // ここで出そろう。地球のすぐそばでは地球ビューの見た目のまま引き始める
 const EARTH_DOT_PIXELS = 6; // 地球がこれより小さく写ると、地球の場面の代わりに点で描く
 const EARTH_LABEL_PIXELS = 40;
+const MAX_ECLIPTIC_LATITUDE = 85; // W/S で黄道の極に近づきすぎると、黄道の北が上の画面が不安定になる
 
 // 見分けやすさを優先した表示の色
 const PLANET_COLORS = ['#b8b1a8', '#f2e3b3', '#e0754a', '#e3c89c', '#e8d08a', '#9fe0e6', '#7f9cff'];
@@ -124,6 +125,7 @@ export class SolarSystem {
     this.controls.enabled = false;
     this.controls.enableDamping = true;
     this.controls.enablePan = false;
+    this.controls.mouseButtons.RIGHT = THREE.MOUSE.ROTATE; // 地球ビューと同じく、右ドラッグも左と同じく回す
     this.controls.minDistance = MIN_DISTANCE;
     this.controls.maxDistance = MAX_DISTANCE;
     this.pixelRatio = { value: pixelRatio };
@@ -169,6 +171,34 @@ export class SolarSystem {
   // 引いている途中か、太陽系を見ている間
   get entered(): boolean {
     return this.state === 'entering' || this.state === 'on';
+  }
+
+  // 引き終えて、太陽系を見回せる間。地球ビューと同じ W/A/S/D と Q/E を受け付ける
+  get orbiting(): boolean {
+    return this.state === 'on' && !this.flight;
+  }
+
+  // 地球ビューの W/A/S/D と Q/E と同じ動き。north と east は、太陽のまわりで黄道の緯度と経度の向きに動かす角度 (度)、
+  // spin は自動の回転の速さ (度/秒。正は黄道の北から見て左回りで、惑星の公転と同じ向き)。
+  // 回転は OrbitControls の自動回転を借りる (ドラッグしている間は回らない)。見回せる間だけ効く
+  steer(north: number, east: number, spin: number): void {
+    if (!this.orbiting) return;
+    // 度/秒を OrbitControls の単位 (2 で 30 秒に 1 周) にする。正の向きは黄道の北から見て右回りなので、符号を逆にする
+    this.controls.autoRotate = spin !== 0;
+    this.controls.autoRotateSpeed = -spin / 6;
+    if (north === 0 && east === 0) return;
+    const up = toVector(ECLIPTIC_NORTH);
+    const offset = this.scratch.copy(this.camera.position).sub(this.controls.target);
+    const length = offset.length();
+    const latitude = Math.asin(THREE.MathUtils.clamp(offset.dot(up) / length, -1, 1));
+    const horizontal = offset.addScaledVector(up, -offset.dot(up)).normalize().applyAxisAngle(up, east * THREE.MathUtils.DEG2RAD);
+    const limit = MAX_ECLIPTIC_LATITUDE * THREE.MathUtils.DEG2RAD;
+    const next = THREE.MathUtils.clamp(latitude + north * THREE.MathUtils.DEG2RAD, -limit, limit);
+    this.camera.position
+      .copy(horizontal.multiplyScalar(Math.cos(next)))
+      .addScaledVector(up, Math.sin(next))
+      .multiplyScalar(length)
+      .add(this.controls.target);
   }
 
   setPixelRatio(pixelRatio: number): void {
