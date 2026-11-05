@@ -22,7 +22,7 @@ def _watch_parent() -> None:
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
-    if os.environ.get("TINY_EARTH_WATCH_STDIN"):
+    if os.environ.get("BLUE_GLOBE_WATCH_STDIN"):
         threading.Thread(target=_watch_parent, daemon=True).start()
     yield
 
