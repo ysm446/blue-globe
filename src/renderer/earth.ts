@@ -547,8 +547,9 @@ export class RealisticEarth {
       : 0;
   }
 
-  // blend は 0 が地球ビュー、1 が地域ビュー。cameraAltitude は地表からのカメラの高さ
-  setRegionBlend(blend: number, cameraAltitude: number): void {
+  // blend は 0 が地球ビュー、1 が地域ビュー。cameraAltitude は地表からのカメラの高さ。
+  // detail は地球ビューで寄ったときの高解像度の画像の見え具合 (0〜1)。海の色と夜の陸の暗さも高解像度の画像に合わせる
+  setRegionBlend(blend: number, cameraAltitude: number, detail = 0): void {
     this.volumeMix = this.volumeEnabled
       ? 1 - THREE.MathUtils.smoothstep(cameraAltitude, VOLUME_FULL_ALTITUDE, VOLUME_START_ALTITUDE)
       : 0;
@@ -562,7 +563,7 @@ export class RealisticEarth {
       1 - THREE.MathUtils.smoothstep(cameraAltitude, REGION_ATMOSPHERE_FULL_ALTITUDE, REGION_ATMOSPHERE_START_ALTITUDE);
     this.haze.value = THREE.MathUtils.lerp(1, REGION_HAZE, low);
     this.atmosphereThinness.value = THREE.MathUtils.lerp(1, REGION_ATMOSPHERE_THINNESS, low);
-    this.material.uniforms.uRegion.value = blend;
+    this.material.uniforms.uRegion.value = Math.max(blend, detail);
   }
 
   setVolumeCloudsEnabled(enabled: boolean): void {

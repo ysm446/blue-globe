@@ -170,6 +170,12 @@ const DEMO_TILT = 62;
 const DEMO_DISTANCE = 0.22;
 const DEMO_DAYSIDE_OFFSET = 30; // 太陽の真下より東から始め、回転で真下を通る
 const REGION_RELEASE_BLEND = 0.01; // 地球ビューへ戻って、高解像度の画像が見えなくなったら解放する
+// 地球ビューで寄ったときも高解像度の画像を使う。カメラの高さ (レンズの分を換算、地球の半径が 1) で決める。
+// 高さ 0.3 で画面の 1 画素が地表で約 1km、同梱の画像 (約 4.9km/画素) は 5 倍ほど粗い。高解像度の範囲 (約 31.5°) で画面の横幅をほぼ覆える
+const EARTH_DETAIL_START = 0.5; // これより下で出し始める
+const EARTH_DETAIL_FULL = 0.3; // これより下で高解像度だけにする
+const EARTH_DETAIL_RELEASE = 0.65; // これより上へ引いたら解放する。出し始める高さと差を付け、境目で確保と解放を繰り返さない
+const EARTH_DETAIL_SETTLE_SPEED = 12; // 度/秒。真下の地点がこれより速く動いている間は範囲を動かさない (大きく回す間にタイルを読みすぎない)
 const WHEEL_ZOOM_RATE = 0.0012;
 const GLOBE_WHEEL_ZOOM_RATE = -Math.log(0.95) / 100; // 地球ビュー。OrbitControls と同じく、ホイール 1 段 (100) で 0.95 倍
 // 地域ビューのドラッグのボタン (PointerEvent.button。0 が左、2 が右)。左で回転と傾き、右で移動
@@ -549,8 +555,54 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       }
       return;
     }
+    if (!regionView && earthDetailUsable()) {
+      const altitude = apparentAltitude();
+      if (altitude < EARTH_DETAIL_START) startRegionDetail();
+      if (regionDetail && altitude > EARTH_DETAIL_RELEASE && regionBlend < REGION_RELEASE_BLEND) stopRegionDetail();
+      if (regionDetail) {
+        updateEarthDetail(dt);
+        return;
+      }
+    }
+    earthDetailFrom = null;
     viewStatus.hidden = true;
     if (!regionView && regionDetail && regionBlend < REGION_RELEASE_BLEND) stopRegionDetail();
+  }
+
+  // 地球ビューで高解像度の画像を使える状態か。風速モードは地表を描かず、太陽系の視点は地球が遠い
+  function earthDetailUsable(): boolean {
+    return regionDetailEnabled && mode !== 'wind' && !solar.active;
+  }
+
+  // 地球ビューでの高解像度の画像の見え具合 (0〜1)。持っていないときは 0
+  function earthDetailAmount(): number {
+    if (!regionDetail || regionView || !earthDetailUsable()) return 0;
+    return 1 - THREE.MathUtils.smoothstep(apparentAltitude(), EARTH_DETAIL_FULL, EARTH_DETAIL_START);
+  }
+
+  // 地球ビューでは、画面の中心 (カメラの真下) のまわりを読む
+  let earthDetailFrom: THREE.Vector3 | null = null; // 前のフレームのカメラの向き (長さ 1)
+  const earthDetailUp = new THREE.Vector3();
+  function updateEarthDetail(dt: number): void {
+    if (!regionDetail) return;
+    earthDetailUp.copy(camera.position).normalize();
+    const speed = earthDetailFrom && dt > 0 ? earthDetailUp.angleTo(earthDetailFrom) * THREE.MathUtils.RAD2DEG / dt : 0;
+    const placed = earthDetailFrom !== null;
+    earthDetailFrom = (earthDetailFrom ?? new THREE.Vector3()).copy(earthDetailUp);
+    if (!placed || speed < EARTH_DETAIL_SETTLE_SPEED) {
+      const { lat, lon } = lonLatOf(earthDetailUp.toArray());
+      regionDetail.setView(lat, lon);
+    }
+    regionDetail.update(dt);
+    const { shown, total, failed } = regionDetail.progress;
+    // 引いていて見えないうちは知らせない
+    viewStatus.hidden = shown === total || earthDetailAmount() <= 0;
+    viewStatus.classList.toggle('warn', failed > 0);
+    if (!viewStatus.hidden) {
+      viewStatus.textContent = failed > 0
+        ? '一部の高解像度の画像を取得できず、粗い画像で表示しています'
+        : `高解像度の画像を読み込んでいます(${shown}/${total})`;
+    }
   }
 
   function beginRegion(): RegionView {
@@ -1064,7 +1116,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   function updateRegionBlend(dt: number): void {
     const goal = regionView && !regionFlight?.leaving ? 1 : 0;
     regionBlend += (goal - regionBlend) * (1 - Math.exp(-dt / REGION_BLEND_SECONDS));
-    earth.setRegionBlend(regionBlend, apparentAltitude());
+    earth.setRegionBlend(regionBlend, apparentAltitude(), earthDetailAmount());
     if (regionView) {
       lonLatToVector3(regionView.lon, regionView.lat, EARTH_SURFACE_RADIUS, shadowFocus);
       earth.setVolumeShadowFocus(shadowFocus, regionView.distance * lensScale);
@@ -1427,6 +1479,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     });
     regionBloom = graphics.region_bloom;
     regionDetailEnabled = graphics.region_detail;
+    // オンにしたときの地球ビューの分は、次のフレームで高さを見て読み込む
     if (!regionDetailEnabled) stopRegionDetail();
     else if (regionView && !regionFlight?.leaving) startRegionDetail();
     showMapLines = graphics.show_map_lines;
