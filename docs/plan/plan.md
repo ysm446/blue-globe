@@ -1,7 +1,7 @@
 # plan — 実装方針と優先順位
 
 作成日時: 2026-07-24 22:14
-更新日時: 2026-11-06 21:04
+更新日時: 2026-11-06 23:06
 
 ## 構成
 
@@ -424,7 +424,7 @@ Unreal Engine のビューポートのブックマークと同じ操作。Ctrl+1
 
 ## 今後の候補(優先順)
 
-- (検討中、2026-11-06)Claude Code や Codex、ローカル LLM(Gemma 4 26B を想定)からカメラを動かせる MCP サーバーと、台本を受け取って進めるツアーガイド。計画は [docs/design/mcp-tour-guide.md](../design/mcp-tour-guide.md)。
+- (最初の版を作った、2026-11-06)Claude Code や Codex、ローカル LLM(Gemma 4 26B を想定)からカメラを動かせる MCP サーバーと、台本を受け取って進めるツアーガイド。計画と実装は [docs/design/mcp-tour-guide.md](../design/mcp-tour-guide.md)。
 
 1. 地域ビューの風速モードへの対応を検討する。
 2. 国内の週間予報と今日の天気を、気象庁の予報に揃える(`forecast/{office}.json`)。Open-Meteo との食い違いがなくなる。

@@ -9,6 +9,7 @@ import { fetchGfsCloud, fetchGfsWind } from './nomads';
 import { backendRequest, startBackend, stopBackend } from './backend';
 import { startVramMonitor, stopVramMonitor } from './vram-monitor';
 import { createTerrainSource } from './terrain-tiles';
+import { setMcpServerEnabled } from './mcp-server';
 
 const GFS_MAX_AGE_MS = 3 * 3600_000; // GFS 1.0° は 3 時間刻み
 const GFS_FETCH_TIMEOUT_MS = 30_000;
@@ -272,9 +273,11 @@ ipcMain.handle('settings:set', (_event, settings: unknown) =>
 ipcMain.handle('mode:set', (_event, mode: string) =>
   backendRequest('/settings/mode', jsonPut({ mode })),
 );
-ipcMain.handle('graphics:set', (_event, graphics: unknown) =>
-  backendRequest('/settings/graphics', jsonPut(graphics)),
-);
+ipcMain.handle('graphics:set', async (_event, graphics: unknown) => {
+  const saved = await backendRequest('/settings/graphics', jsonPut(graphics));
+  setMcpServerEnabled(Boolean((graphics as { mcp_server?: boolean }).mcp_server));
+  return saved;
+});
 ipcMain.handle('graphics:defaults', () => backendRequest('/settings/graphics/defaults'));
 ipcMain.handle('panels:set', (_event, panels: unknown) =>
   backendRequest('/settings/panels', jsonPut(panels)),
@@ -410,7 +413,12 @@ app.whenReady().then(() => {
     return file ? audioResponse(file, request.headers.get('range')) : new Response(null, { status: 404 });
   });
   // 失敗は最初の API 呼び出しで画面に表示する
-  startBackend(app.getAppPath(), dataDir()).catch((err) => console.error(err));
+  startBackend(app.getAppPath(), dataDir())
+    .then(async () => {
+      const settings = (await backendRequest('/settings')) as { graphics?: { mcp_server?: boolean } };
+      setMcpServerEnabled(Boolean(settings.graphics?.mcp_server));
+    })
+    .catch((err) => console.error(err));
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -426,6 +434,7 @@ app.on('before-quit', (event) => {
   if (stopped) return;
   event.preventDefault();
   stopVramMonitor();
+  setMcpServerEnabled(false);
   void stopBackend().finally(() => {
     stopped = true;
     app.quit();

@@ -52,6 +52,7 @@ DEFAULT_SETTINGS = {
         "cruise_bank": True,  # 巡航で曲がるときに画面を傾ける
         "lens_flare": True,  # 太陽が見えるときの、レンズの光の筋と画面のかぶり
         "wireframe": False,  # 動作確認用。地表のメッシュの上に黒い線を重ねる
+        "mcp_server": False,  # Claude Code などからカメラやハイライトを動かす MCP サーバー (127.0.0.1 だけ)
         # パネルを画面に出すか。開閉 (panels) とは別で、隠したパネルは見出しも出さない
         "show_hourly_panel": True,
         "show_weekly_panel": True,

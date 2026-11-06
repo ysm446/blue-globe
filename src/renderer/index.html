@@ -349,6 +349,11 @@
           </div>
           <button class="reset-button" data-reset="terrain_shading" type="button" aria-label="太陽の向きで付ける地形の陰を既定に戻す" title="既定に戻す"></button>
         </div>
+        <h3 class="settings-subhead">外部との連携</h3>
+        <div class="check-line">
+          <label class="check-row" data-help="Claude Code などの MCP クライアントから、カメラ、ハイライト、字幕、ツアーを動かせるようにします。http://127.0.0.1:47815/mcp で待ち受け、この PC の中からだけつながります(同じ PC のほかのアプリからも呼べます)。既定: オフ"><input id="mcp-server-toggle" type="checkbox" />MCP サーバー(Claude Code などから操作)</label>
+          <button class="reset-button" data-reset="mcp_server" type="button" aria-label="MCP サーバーを既定に戻す" title="既定に戻す"></button>
+        </div>
         <h3 class="settings-subhead">デバッグ</h3>
         <div class="check-line">
           <label class="check-row" data-help="動作確認用。地表のメッシュ(三角形の分割)の上に黒い線を重ねます。雲がある所では、線は雲の下に隠れます。既定: オフ"><input id="wireframe-toggle" type="checkbox" />ワイヤーフレーム(地表のメッシュを線で表示)</label>

@@ -74,6 +74,7 @@ interface GraphicsSettings {
   cruise_bank: boolean; // 巡航モードで A/D で曲がるときに、曲がる向きへ画面を傾ける
   lens_flare: boolean; // 太陽が見えるときの、レンズの光の筋と画面のかぶり
   wireframe: boolean; // 動作確認用。地表のメッシュの上に黒い線を重ねる
+  mcp_server: boolean; // Claude Code などからカメラやハイライトを動かす MCP サーバー (127.0.0.1 だけで待ち受け)
   // パネルを画面に出すか。開閉 (PanelSettings) とは別で、隠したパネルは見出しも出さない
   show_hourly_panel: boolean;
   show_weekly_panel: boolean;
@@ -156,6 +157,9 @@ interface Window {
     setCameraBookmark(slot: number, bookmark: CameraBookmark): Promise<AppSettings>;
     getGraphicsDefaults(): Promise<GraphicsSettings>;
     getTexture(name: EarthTextureName): Promise<Uint8Array>;
+    // MCP サーバーから届くツールの処理と、その結果の返し方
+    onMcpCall(callback: (id: string, tool: string, args: Record<string, unknown>) => void): void;
+    mcpReply(id: string, ok: boolean, value: unknown): void;
     // 地形の傾きの画像。1 画素 2 バイト (東向き、北向き) で 256×256。取得できないときは null
     getTerrainSlope(col: number, row: number): Promise<Uint8Array | null>;
     getEarthTile(layer: EarthTileSource, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null

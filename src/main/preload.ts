@@ -25,6 +25,10 @@ contextBridge.exposeInMainWorld('weatherApi', {
     ipcRenderer.on('screenshot:done', (_event, filePath: string | null) => callback(filePath));
   },
   watchVram: (enabled: boolean) => ipcRenderer.invoke('vram:watch', enabled),
+  onMcpCall: (callback: (id: string, tool: string, args: Record<string, unknown>) => void) => {
+    ipcRenderer.on('mcp:call', (_event, id: string, tool: string, args: Record<string, unknown>) => callback(id, tool, args));
+  },
+  mcpReply: (id: string, ok: boolean, value: unknown) => ipcRenderer.send('mcp:reply', id, ok, value),
   onVram: (callback: (bytes: number | null) => void) => {
     ipcRenderer.on('vram:usage', (_event, bytes: number | null) => callback(bytes));
   },

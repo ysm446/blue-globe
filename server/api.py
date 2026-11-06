@@ -128,6 +128,7 @@ class GraphicsUpdate(BaseModel):
     cruise_bank: bool
     lens_flare: bool
     wireframe: bool
+    mcp_server: bool
     show_hourly_panel: bool
     show_weekly_panel: bool
     show_details_panel: bool

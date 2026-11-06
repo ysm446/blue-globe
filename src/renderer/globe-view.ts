@@ -316,7 +316,12 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   // orbit を渡すと、着いてから中心のまわりを回る (旋回の段)
   function frameHighlights(options: { heading?: number; tilt?: number; seconds?: number; orbit?: number } = {}): RegionView | null {
     const points = highlights.framePoints();
-    if (!regionView || points.length === 0) return null;
+    if (points.length === 0 || mode === 'wind' || solar.active) return null;
+    if (!regionView) {
+      beginRegion();
+      onViewChange('region');
+    }
+    if (!regionView) return null;
     const to = frameRegionView(points, {
       heading: options.heading ?? regionView.heading,
       tilt: options.tilt ?? regionView.tilt,
@@ -1935,7 +1940,70 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     },
   };
 
+  const EARTH_RADIUS_KM = 6371;
+
+  // MCP サーバー (メインプロセス) から呼ぶ操作。外の LLM がカメラ、ハイライト、字幕、ツアーを動かす
+  const remote = {
+    // 今の視点、表示モード、カメラ、時刻、太陽の高さ
+    getView(): Record<string, unknown> {
+      const view = solar.active ? 'solar' : regionView ? 'region' : 'globe';
+      const center = regionView ?? lonLatOf(camera.position.toArray());
+      const sun = sunLonLat();
+      const date = skyDate();
+      return {
+        view,
+        mode,
+        center: { lat: center.lat, lon: center.lon },
+        heading: regionView?.heading ?? null,
+        tilt: regionView?.tilt ?? null,
+        altitudeKm: Math.round(apparentAltitude() * EARTH_RADIUS_KM),
+        time: date.toISOString(),
+        timeIsLive: !tourTime && !viewTime,
+        // 中心で見た太陽の高さ (度)。正なら昼
+        sunElevation: Math.round((90 - separationDegrees(center, sun)) * 10) / 10,
+        tour: tour.position,
+        flying: regionFlight !== null || flight !== null,
+      };
+    },
+    // 地点へ飛ぶ (地域ビュー)。altitudeKm はカメラの高さのおおよそ。orbit は着いてから回る速さ (旋回の段 -5〜5)
+    flyTo(options: { lat: number; lon: number; altitudeKm?: number; heading?: number; tilt?: number; orbit?: number }): RegionView | string {
+      if (mode === 'wind') return '風速モードでは地域ビューへ移れません';
+      if (solar.active) return '太陽系の視点では使えません。先に地球か地域の視点にしてください';
+      const from = regionView ?? beginRegion();
+      onViewChange('region');
+      const tilt = THREE.MathUtils.clamp(options.tilt ?? REGION_TILT, 0, REGION_MAX_TILT);
+      const altitude = (options.altitudeKm ?? 1000) / EARTH_RADIUS_KM;
+      const distance = clampRegionDistance(altitude / Math.max(Math.cos((tilt * Math.PI) / 180), 0.3));
+      const to = clampRegionView({ lat: options.lat, lon: options.lon, heading: options.heading ?? from.heading, tilt, distance });
+      stopCruise();
+      const separation = separationDegrees(from, to);
+      flyRegion(to, false, FRAME_SECONDS * (1 + separation / 180));
+      if (regionFlight) regionFlight.lift = bookmarkLift(separation);
+      orbitAfterFlight = THREE.MathUtils.clamp(options.orbit ?? 0, -ORBIT_LEVELS, ORBIT_LEVELS);
+      return to;
+    },
+    highlight: (spec: HighlightSpec, append: boolean) => highlights.show(spec, append),
+    clearHighlights: () => highlights.clear(),
+    frameHighlights,
+    caption: (text: string, seconds?: number) => tourCaption.show(text, seconds),
+    clearCaption: () => tourCaption.clear(),
+    playTour: (scenes: TourScene[]) => tour.start(scenes),
+    stopTour: () => tour.stop(),
+    setTourTime,
+    setMapLines(visible: boolean): void {
+      showMapLines = visible;
+    },
+    setView(next: GlobeView): void {
+      if (next === 'solar') enterSolar();
+      else if (solar.active) exitSolar(next === 'region' ? enterRegion : undefined);
+      else if (next === 'region') enterRegion();
+      else leaveRegion(EARTH_VIEW_DIST);
+      onViewChange(next);
+    },
+  };
+
   return {
+    remote,
     applyGraphics,
     changeMode,
     setCameraBookmarks(marks: Record<string, CameraBookmark>): void {

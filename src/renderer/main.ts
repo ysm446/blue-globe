@@ -1,4 +1,5 @@
 import type { DemoPlace } from './demo';
+import { initMcpBridge } from './mcp-bridge';
 import { initDemo } from './demo-controller';
 import { initLensControls } from './camera-panel';
 import { el, errorMessage, setStatus } from './dom';
@@ -171,6 +172,12 @@ async function init(): Promise<void> {
     });
   }
   applyMode('normal');
+  // MCP サーバーからの操作。表示モードはボタンと同じく切り替えて保存する
+  initMcpBridge(globe.remote, (next) => {
+    if (next === mode) return;
+    applyMode(next);
+    window.weatherApi.setMode(next).catch((err) => console.error('mode save failed', err));
+  });
 
   const status = el('weather-status');
   const refreshBtn = el<HTMLButtonElement>('refresh');
