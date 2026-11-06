@@ -82,6 +82,68 @@ export function interpolateRegionView(from: RegionView, to: RegionView, t: numbe
   };
 }
 
+// 見せたいものが画面に収まるカメラ (ツアーのハイライトに合わせて寄せる・引く)。
+// points は見せたい地点 (経度、緯度)。中心は点の重心 (球面上の平均) にし、方角と傾きは渡したものを使う。
+// 全部の点が地球の手前にあり、画面の余白 (画面の半分に対する割合) の内側に入る一番近い距離を二分探索で求める。
+// 下には字幕と操作のボタンがあるので、余白は上下左右で別に決める。
+// 収まらないときは一番遠い距離にする
+export interface FrameOptions {
+  heading: number;
+  tilt: number;
+  fovY: number; // 縦の画角 (度)
+  aspect: number; // 横 / 縦
+  margin?: { top: number; bottom: number; side: number };
+}
+
+// パネルや字幕に隠れない余白。下は字幕 (画面の下から約 190 画素) と操作のボタンの分を広く取る
+const FRAME_MARGIN = { top: 0.16, bottom: 0.38, side: 0.16 };
+
+export function frameRegionView(points: LonLat[], options: FrameOptions): RegionView {
+  const vectors = points.map(({ lat, lon }) => {
+    const phi = (lon + 180) * DEG;
+    const theta = (90 - lat) * DEG;
+    return [-Math.cos(phi) * Math.sin(theta), Math.cos(theta), Math.sin(phi) * Math.sin(theta)] as Vec3;
+  });
+  const sum = [0, 0, 0];
+  for (const v of vectors) for (let i = 0; i < 3; i++) sum[i] += v[i];
+  const center = lonLatOf(Math.hypot(...sum) > 1e-9 ? ([sum[0], sum[1], sum[2]] as Vec3) : vectors[0]);
+  const margin = options.margin ?? FRAME_MARGIN;
+  const half = Math.tan((options.fovY * DEG) / 2);
+  const top = half * (1 - margin.top);
+  const bottom = -half * (1 - margin.bottom);
+  const halfX = half * options.aspect * (1 - margin.side);
+  const viewAt = (distance: number): RegionView =>
+    clampRegionView({ lat: center.lat, lon: center.lon, heading: options.heading, tilt: options.tilt, distance });
+  const fits = (view: RegionView): boolean => {
+    const { position, target, up } = regionPose(view);
+    const forward = [0, 1, 2].map((i) => target[i] - position[i]);
+    const length = Math.hypot(...forward);
+    const f = forward.map((c) => c / length);
+    // right = forward × up
+    const right = [f[1] * up[2] - f[2] * up[1], f[2] * up[0] - f[0] * up[2], f[0] * up[1] - f[1] * up[0]];
+    return vectors.every((p) => {
+      const toCamera = [0, 1, 2].map((i) => position[i] - p[i]);
+      if (p[0] * toCamera[0] + p[1] * toCamera[1] + p[2] * toCamera[2] <= 0) return false; // 地平線の向こう
+      const v = [0, 1, 2].map((i) => p[i] - position[i]);
+      const z = v[0] * f[0] + v[1] * f[1] + v[2] * f[2];
+      if (z <= 0) return false;
+      const x = (v[0] * right[0] + v[1] * right[1] + v[2] * right[2]) / z;
+      const y = (v[0] * up[0] + v[1] * up[1] + v[2] * up[2]) / z;
+      return Math.abs(x) <= halfX && y <= top && y >= bottom;
+    });
+  };
+  if (!fits(viewAt(MAX_DISTANCE))) return viewAt(MAX_DISTANCE);
+  if (fits(viewAt(MIN_DISTANCE))) return viewAt(MIN_DISTANCE);
+  let near = MIN_DISTANCE;
+  let far = MAX_DISTANCE;
+  for (let i = 0; i < 24; i++) {
+    const middle = (near + far) / 2;
+    if (fits(viewAt(middle))) far = middle;
+    else near = middle;
+  }
+  return viewAt(far);
+}
+
 // 移動のドラッグで中心を動かす量。previous は前の指の下の地点、current は今の指の下の地点 (どちらも同じカメラで求める)。
 // 指の下の地面が指に付いてくる向きに動かす
 export function panRegionDelta(previous: LonLat, current: LonLat): RegionDelta {

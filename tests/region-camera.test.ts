@@ -9,6 +9,7 @@ import {
   DRAG_FOLLOW_SECONDS,
   flightOf,
   followRegionDrag,
+  frameRegionView,
   interpolateRegionView,
   liftRegionView,
   lookRegionView,
@@ -279,3 +280,47 @@ test('ごく小さな移動では方角が乱れない', () => {
     assert.ok(Math.abs(wrapDegrees(cruiseRegionView(view, angle, 0).heading - view.heading)) < 0.01, `cruise ${angle}`);
   }
 });
+
+test('見せたい点が全部入る距離に寄せ、狭い範囲ほど近くなる', () => {
+  const options = { heading: 0, tilt: 40, fovY: 45.7, aspect: 16 / 9 };
+  // 東京のまわりの狭い範囲と、ヨーロッパの広い範囲
+  const small = frameRegionView([{ lat: 35.5, lon: 139.5 }, { lat: 35.8, lon: 139.9 }], options);
+  const large = frameRegionView([{ lat: 43, lon: -2 }, { lat: 52, lon: 15 }, { lat: 45, lon: 25 }], options);
+  assert.ok(small.distance < large.distance, `${small.distance} < ${large.distance}`);
+  assert.ok(Math.abs(small.lat - 35.65) < 0.1 && Math.abs(small.lon - 139.7) < 0.1);
+  assert.equal(small.distance, 0.1); // 狭すぎる範囲は一番近い距離
+  assert.equal(large.heading, 0);
+  assert.equal(large.tilt, 40);
+});
+
+test('寄せたカメラでは、どの点も画面の余白の内側に入る', () => {
+  const points = [{ lat: 43.5, lon: 5 }, { lat: 47.5, lon: 15 }, { lat: 44, lon: 13 }];
+  const fovY = 45.7;
+  const aspect = 16 / 9;
+  const margin = { top: 0.16, bottom: 0.38, side: 0.16 };
+  const view = frameRegionView(points, { heading: 20, tilt: 45, fovY, aspect, margin });
+  const { position, target, up } = regionPose(view);
+  const f = [0, 1, 2].map((i) => target[i] - position[i]);
+  const fl = Math.hypot(...f);
+  const fwd = f.map((c) => c / fl);
+  const right = [fwd[1] * up[2] - fwd[2] * up[1], fwd[2] * up[0] - fwd[0] * up[2], fwd[0] * up[1] - fwd[1] * up[0]];
+  const limitY = Math.tan((fovY * DEG) / 2);
+  for (const { lat, lon } of points) {
+    const phi = (lon + 180) * DEG;
+    const theta = (90 - lat) * DEG;
+    const p = [-Math.cos(phi) * Math.sin(theta), Math.cos(theta), Math.sin(phi) * Math.sin(theta)];
+    const v = [0, 1, 2].map((i) => p[i] - position[i]);
+    const z = v[0] * fwd[0] + v[1] * fwd[1] + v[2] * fwd[2];
+    const x = (v[0] * right[0] + v[1] * right[1] + v[2] * right[2]) / z;
+    const y = (v[0] * up[0] + v[1] * up[1] + v[2] * up[2]) / z;
+    // 下は字幕の分だけ余白を広く取る
+    assert.ok(y <= limitY * 0.84 + 1e-9 && y >= -limitY * 0.62 - 1e-9, `${lat},${lon}: y=${y}`);
+    assert.ok(Math.abs(x) <= limitY * aspect * 0.84 + 1e-9, `${lat},${lon}: x=${x}`);
+  }
+});
+
+test('日付変更線をまたぐ点は、間の経度を中心にする', () => {
+  const view = frameRegionView([{ lat: -17, lon: 178 }, { lat: -18, lon: -179 }], { heading: 0, tilt: 30, fovY: 45, aspect: 1.6 });
+  assert.ok(Math.abs(wrapDegrees(view.lon - 179.5)) < 0.5, String(view.lon));
+});
+

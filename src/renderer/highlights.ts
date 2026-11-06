@@ -38,8 +38,10 @@ const OUTLINE_REVEAL_SECONDS = 1.6;
 const FADE_IN_SECONDS = 0.5;
 const FADE_OUT_SECONDS = 0.7;
 const LABEL_CANDIDATES = 200; // 川のラベルを置く候補の点の数
-const LABEL_KEEP_RATIO = 0.6;
-const POINT_DOT_OFFSET = 9; // 点のハイライトのラベルの左端から印の中心まで (style.css の .highlight-label.point と合わせる) // 今の点より画面の中心にこれだけ近い点が見つかったときだけ、ラベルを動かす (ちらつかないように)
+const LABEL_KEEP_RATIO = 0.6; // 今の点より画面の中心にこれだけ近い点が見つかったときだけ、ラベルを動かす (ちらつかないように)
+const POINT_TEXT_GAP = 10; // 点のハイライトの印の中心から名前までの間 (CSS ピクセル)
+const DOT_BOX = 18; // 点のハイライトの印が占める範囲。ほかのラベルを重ねない
+const DOT_SIZE = 10; // 印の大きさ (style.css の .highlight-dot と合わせる)
 
 // どの種類にも付けられる見た目の指定。
 // label は画面に出す名前 (省くと、範囲と点は日本語名、川は英語名)、color は CSS の色 (#ff9a3c など)、
@@ -322,7 +324,8 @@ function buildFill(polygons: number[][][]): THREE.BufferGeometry {
 
 // ラベル。画面に入っていて地球の手前にあり、ほかのラベルと重ならない候補の点のうち、画面の中心に一番近い点に置く。
 // 範囲は 1 つ目の点 (重心) が使えればそこを使う。川は、なぞり終えた所の点だけを使う。
-// 国名は国の中央付近の 1 点だけで、重なるときは出さない
+// 国名、点のハイライトの名前、範囲の名前は、重なるときはずらして置く (右、左、斜め、上下の順に空いている所を探す)。
+// 点のハイライトの印は名前と別の要素で、いつも点の位置に置く
 interface Label {
   element: HTMLElement;
   points: THREE.Vector3[];
@@ -331,9 +334,46 @@ interface Label {
   fixed: boolean; // 国名と点。位置が決まっているので先に置き、重なるときは出さない
   align: 'above' | 'center' | 'dot'; // 点の上 (川)、点に中央そろえ (範囲、国名)、点に印を置いて右に文字 (点のハイライト)
   current: number; // 今置いている候補 (-1 は置いていない)
+  offset: number; // 今使っているずらし方 (placements の何番目か)
   transform: string;
   width: number; // 文字の大きさは変わらないので、最初に測って使い回す
   height: number;
+  dot: HTMLElement | null; // 点のハイライトの印
+  dotTransform: string;
+  dotBox: LabelBox | null; // 印が占める範囲。自分の名前は重なりの判定から外す
+  frame: boolean; // カメラを寄せるときに収める点か (国名は国の中央にあり対象から遠いことがあるので外す)
+}
+
+// ラベルを置く場所の候補。点 (x, y) に対する左上の位置を、試す順に返す。
+// dot は印の右、左、斜め、上下。center は中央、上下、左右。above (川の名前) は線の上だけ
+function placements(align: Label['align'], x: number, y: number, w: number, h: number): [number, number][] {
+  const g = POINT_TEXT_GAP;
+  if (align === 'dot') {
+    return [
+      [x + g, y - h / 2],
+      [x - g - w, y - h / 2],
+      [x + g * 0.5, y - h - g * 0.5],
+      [x + g * 0.5, y + g * 0.5],
+      [x - g * 0.5 - w, y - h - g * 0.5],
+      [x - g * 0.5 - w, y + g * 0.5],
+      [x - w / 2, y - h - g],
+      [x - w / 2, y + g],
+    ];
+  }
+  if (align === 'center') {
+    return [
+      [x - w / 2, y - h / 2],
+      [x - w / 2, y - h * 1.4],
+      [x - w / 2, y + h * 0.4],
+      [x + w * 0.1, y - h / 2],
+      [x - w * 1.1, y - h / 2],
+      [x + w * 0.1, y - h * 1.4],
+      [x + w * 0.1, y + h * 0.4],
+      [x - w * 1.1, y - h * 1.4],
+      [x - w * 1.1, y + h * 0.4],
+    ];
+  }
+  return [[x - w / 2, y - h * 1.9]];
 }
 
 interface Item {
@@ -397,6 +437,26 @@ export class Highlights {
     return built.info;
   }
 
+  // 示しているもの (消えかけのものは除く) の、カメラに収めたい地点。川と線は沿った点、範囲は重心と縁、点はその位置
+  framePoints(): { lat: number; lon: number }[] {
+    const out: { lat: number; lon: number }[] = [];
+    for (const item of this.items) {
+      if (item.leaving) continue;
+      for (const label of item.labels) {
+        if (!label.frame) continue;
+        for (const point of label.points) {
+          const length = point.length();
+          // globe.ts の lonLatToVector3 の逆 (region-camera.ts の lonLatOf と同じ式)
+          out.push({
+            lat: (Math.asin(point.y / length) * 180) / Math.PI,
+            lon: ((((Math.atan2(point.z, -point.x) * 180) / Math.PI - 180 + 540) % 360) - 180),
+          });
+        }
+      }
+    }
+    return out;
+  }
+
   // 国名を出している国。設定の「国名を表示」の国名と二重にしないために使う
   activeCountries(): Set<string> {
     return new Set(this.items.filter((item) => !item.leaving).flatMap((item) => item.countryCodes));
@@ -418,18 +478,20 @@ export class Highlights {
       element.style.opacity = '0';
       this.labelContainer.append(element);
       const align = kind === 'river' ? 'above' : 'center';
-      item.labels.push({ element, points, progress, preferFirst, fixed: false, align, current: -1, transform: '', width: 0, height: 0 });
+      item.labels.push({ element, points, progress, preferFirst, fixed: false, align, current: -1, offset: 0, transform: '', width: 0, height: 0, dot: null, dotTransform: '', dotBox: null, frame: true });
     };
-    // 点のハイライト。光る印と、名前 (標高があれば添える)
+    // 点のハイライト。光る印 (点の位置に置く) と、名前 (標高があれば添える。重なるときはずらす)
     const addPointLabel = (text: string, elevation: number | null, lon: number, lat: number): void => {
+      const dot = document.createElement('span');
+      dot.className = 'highlight-dot';
+      if (spec.color) dot.style.setProperty('--dot-color', spec.color);
+      dot.style.opacity = '0';
+      this.labelContainer.append(dot);
       const element = document.createElement('span');
       element.className = 'highlight-label point';
-      const dot = document.createElement('span');
-      dot.className = 'dot';
-      if (spec.color) dot.style.setProperty('--dot-color', spec.color);
       const name = document.createElement('span');
       name.textContent = text;
-      element.append(dot, name);
+      element.append(name);
       if (elevation !== null) {
         const height = document.createElement('span');
         height.className = 'elevation';
@@ -439,7 +501,7 @@ export class Highlights {
       element.style.opacity = '0';
       this.labelContainer.append(element);
       const point = lonLatToVector3(lon, lat, LINE_RADIUS);
-      item.labels.push({ element, points: [point], progress: [0], preferFirst: true, fixed: true, align: 'dot', current: -1, transform: '', width: 0, height: 0 });
+      item.labels.push({ element, points: [point], progress: [0], preferFirst: true, fixed: true, align: 'dot', current: -1, offset: 0, transform: '', width: 0, height: 0, dot, dotTransform: '', dotBox: null, frame: true });
     };
     // 通る国、重なる国の名前と国旗。国の中央付近の点に置き、川は光る線がその国に差しかかってから出す
     const countryList = await this.loadCountries();
@@ -463,7 +525,7 @@ export class Highlights {
         element.style.opacity = '0';
         this.labelContainer.append(element);
         const point = lonLatToVector3(country.x, country.y, LINE_RADIUS);
-        item.labels.push({ element, points: [point], progress: [first], preferFirst: true, fixed: true, align: 'center', current: -1, transform: '', width: 0, height: 0 });
+        item.labels.push({ element, points: [point], progress: [first], preferFirst: true, fixed: true, align: 'center', current: -1, offset: 0, transform: '', width: 0, height: 0, dot: null, dotTransform: '', dotBox: null, frame: false });
       }
       return listed;
     };
@@ -629,7 +691,10 @@ export class Highlights {
     // 消えきったものを片付ける
     for (const item of this.items.filter((i) => i.leaving && i.fade <= 0)) {
       this.group.remove(item.group);
-      for (const label of item.labels) label.element.remove();
+      for (const label of item.labels) {
+        label.element.remove();
+        label.dot?.remove();
+      }
       item.group.traverse((object) => {
         if (object instanceof THREE.Mesh) {
           object.geometry.dispose();
@@ -646,6 +711,25 @@ export class Highlights {
   layoutLabels(camera: THREE.Camera, blocked: LabelBox[]): LabelBox[] {
     const placed = [...blocked];
     const result: LabelBox[] = [];
+    // 点のハイライトの印を先に置く。印はずらさず、ほかのラベルは印に重ねない
+    for (const item of this.items) {
+      for (const label of item.labels) {
+        if (!label.dot) continue;
+        const point = item.labelOpacity > 0.01 ? this.screenPoint(label.points[0], camera) : null;
+        if (point) {
+          const box = { x: point.x - DOT_BOX / 2, y: point.y - DOT_BOX / 2, width: DOT_BOX, height: DOT_BOX };
+          label.dotBox = box;
+          placed.push(box);
+          result.push(box);
+          const transform = `translate(${(point.x - DOT_SIZE / 2).toFixed(1)}px, ${(point.y - DOT_SIZE / 2).toFixed(1)}px)`;
+          if (transform !== label.dotTransform) {
+            label.dotTransform = transform;
+            label.dot.style.transform = transform;
+          }
+        }
+        label.dot.style.opacity = point ? item.labelOpacity.toFixed(3) : '0';
+      }
+    }
     for (const fixedPass of [true, false]) {
       for (const item of this.items) {
         for (const label of item.labels) {
@@ -672,30 +756,33 @@ export class Highlights {
       label.width = label.element.offsetWidth;
       label.height = label.element.offsetHeight;
     }
-    // 候補の点に置いたときの範囲と、画面の中心からの距離 (NDC)。使えない点と重なる点は null
-    const candidate = (index: number): { box: LabelBox; distance: number } | null => {
+    // 候補の点に置いたときの範囲と、画面の中心からの距離 (NDC)。使えない点と、どうずらしても重なる点は null。
+    // ずらすのは 1 点しかないラベルと、範囲の名前の重心だけ (川の名前は候補の点が多いので、ほかの点を選ぶ)
+    const candidate = (index: number): { box: LabelBox; distance: number; offset: number } | null => {
       if (label.progress[index] > reveal + 1e-4) return null;
-      const point = label.points[index];
-      if (point.dot(this.toCamera.copy(camera.position).sub(point)) <= 0) return null; // 地球の裏側
-      this.projected.copy(point).project(camera);
-      if (this.projected.z >= 1 || Math.abs(this.projected.x) > 0.9 || Math.abs(this.projected.y) > 0.85) return null;
-      const x = ((this.projected.x + 1) / 2) * window.innerWidth;
-      const y = ((1 - this.projected.y) / 2) * window.innerHeight;
-      // 川の名前は線の少し上、範囲の名前と国名は点に中央そろえ、点のハイライトは印を点に合わせる
-      const left = label.align === 'dot' ? x - POINT_DOT_OFFSET : x - label.width / 2;
-      const top = label.align === 'above' ? y - label.height * 1.9 : y - label.height / 2;
-      const box = { x: left, y: top, width: label.width, height: label.height };
-      if (placed.some((other) => overlaps(box, other))) return null;
-      return { box, distance: Math.hypot(this.projected.x, this.projected.y) };
+      const point = this.screenPoint(label.points[index], camera);
+      if (!point) return null;
+      const all = placements(label.align, point.x, point.y, label.width, label.height);
+      const options = label.fixed || (label.preferFirst && index === 0) ? all : all.slice(0, 1);
+      // ちらつかないよう、今のずらし方を先に試す
+      const order = options.map((_, k) => k);
+      if (index === label.current && label.offset < options.length) order.unshift(label.offset);
+      for (const k of order) {
+        const [x, y] = options[k];
+        const box = { x, y, width: label.width, height: label.height };
+        if (!placed.some((other) => other !== label.dotBox && overlaps(box, other))) return { box, distance: point.distance, offset: k };
+      }
+      return null;
     };
     if (label.preferFirst) {
       const first = candidate(0);
       if (first) {
         label.current = 0;
+        label.offset = first.offset;
         return first.box;
       }
     }
-    let best: { box: LabelBox; distance: number } | null = null;
+    let best: { box: LabelBox; distance: number; offset: number } | null = null;
     let chosen = -1;
     for (let i = label.preferFirst ? 1 : 0; i < label.points.length; i++) {
       const c = candidate(i);
@@ -706,8 +793,24 @@ export class Highlights {
     }
     // ちらつかないよう、今の点がまだ使えて、はっきり中心に近い点がなければ動かさない
     const current = label.current >= 0 && label.current !== chosen ? candidate(label.current) : null;
-    if (current && (!best || best.distance > current.distance * LABEL_KEEP_RATIO)) return current.box;
+    if (current && (!best || best.distance > current.distance * LABEL_KEEP_RATIO)) {
+      label.offset = current.offset;
+      return current.box;
+    }
     label.current = chosen;
+    if (best) label.offset = best.offset;
     return best?.box ?? null;
+  }
+
+  // 点の画面上の位置 (CSS ピクセル) と、画面の中心からの距離 (NDC)。地球の裏側や画面の端の外は null
+  private screenPoint(point: THREE.Vector3, camera: THREE.Camera): { x: number; y: number; distance: number } | null {
+    if (point.dot(this.toCamera.copy(camera.position).sub(point)) <= 0) return null;
+    this.projected.copy(point).project(camera);
+    if (this.projected.z >= 1 || Math.abs(this.projected.x) > 0.9 || Math.abs(this.projected.y) > 0.85) return null;
+    return {
+      x: ((this.projected.x + 1) / 2) * window.innerWidth,
+      y: ((1 - this.projected.y) / 2) * window.innerHeight,
+      distance: Math.hypot(this.projected.x, this.projected.y),
+    };
   }
 }

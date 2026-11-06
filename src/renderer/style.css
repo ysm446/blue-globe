@@ -302,7 +302,7 @@ button.city-label:active {
   opacity: 0;
 }
 
-/* 点のハイライト (山頂、滝など)。光る印を点に合わせ、右に名前と標高を出す */
+/* 点のハイライト (山頂、滝など) の名前と標高。印の右に置き、重なるときは highlights.ts がずらす */
 .highlight-label.point {
   display: flex;
   align-items: center;
@@ -310,17 +310,21 @@ button.city-label:active {
   color: #fff;
 }
 
-.highlight-label.point .dot {
-  position: relative;
+/* 点のハイライトの光る印。いつも点の位置に置く (大きさは highlights.ts の DOT_SIZE と合わせる) */
+.highlight-dot {
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 10px;
   height: 10px;
-  margin-left: 4px; /* 印の中心が左端から 9px。highlights.ts の POINT_DOT_OFFSET と合わせる */
+  pointer-events: none;
+  transition: opacity 200ms;
   border-radius: 50%;
   background: var(--dot-color, #ffd27a); /* 色を指定したハイライトは highlights.ts が --dot-color を入れる */
   box-shadow: 0 0 6px 2px var(--dot-color, rgba(255, 196, 90, 0.85));
 }
 
-.highlight-label.point .dot::after {
+.highlight-dot::after {
   content: '';
   position: absolute;
   inset: -6px;

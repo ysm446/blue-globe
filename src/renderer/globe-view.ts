@@ -27,6 +27,7 @@ import { bearingDegrees, easeInOut, separationDegrees, wrapDegrees, type LonLat 
 import { SpeedOverlay } from './overlay';
 import { ParticleSystem } from './particles';
 import {
+  frameRegionView,
   addRegionDrag,
   approachDistance,
   clampRegionDistance,
@@ -80,6 +81,7 @@ const EARTH_COASTLINE_OPACITY = 0.1;
 const REGION_COASTLINE_OPACITY = 0.2;
 const EARTH_BORDER_OPACITY = 0.1;
 const REGION_BORDER_OPACITY = 0.25;
+const FRAME_SECONDS = 2.5; // ハイライトに合わせてカメラを寄せるときの飛行の時間
 const SKY_UPDATE_MS = 60_000; // 太陽も星も 1 分で 0.25° しか動かない
 
 const REFERENCE_HZ = 120; // 粒子の移動量と軌跡の長さ、カメラの慣性はこの更新回数を基準に合わせてある
@@ -1840,6 +1842,22 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     borders,
     highlight: (spec: HighlightSpec, append = false) => highlights.show(spec, append),
     clearHighlights: () => highlights.clear(),
+    // 示しているハイライトが画面に収まるよう、カメラを寄せる・引く (地域ビューの間だけ)。方角と傾きは省くと今のまま
+    frameHighlights(options: { heading?: number; tilt?: number; seconds?: number } = {}): RegionView | null {
+      const points = highlights.framePoints();
+      if (!regionView || points.length === 0) return null;
+      const to = frameRegionView(points, {
+        heading: options.heading ?? regionView.heading,
+        tilt: options.tilt ?? regionView.tilt,
+        fovY: camera.fov,
+        aspect: camera.aspect,
+      });
+      // 遠くへは視点の呼び出しと同じく、途中で高く上がり、時間も少し長くかける
+      const separation = separationDegrees(regionView, to);
+      flyRegion(to, false, options.seconds ?? FRAME_SECONDS * (1 + separation / 180));
+      if (regionFlight) regionFlight.lift = bookmarkLift(separation);
+      return to;
+    },
     caption: (text: string, seconds?: number) => tourCaption.show(text, seconds),
     clearCaption: () => tourCaption.clear(),
     stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),
