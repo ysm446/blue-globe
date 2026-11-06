@@ -303,7 +303,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   const borders = createBorders(BORDER_RADIUS);
   scene.add(coastlines.group, borders.group);
   // ツアーのハイライト (川をなぞる線、山脈などの範囲)。今は検証用フックからだけ使う
-  const highlights = new Highlights();
+  const highlights = new Highlights(el('highlight-labels'));
   scene.add(highlights.group);
 
   const windUniforms = createWindUniforms();
@@ -1754,8 +1754,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     earth.setCloudsEnabled(mode === 'weather' && (!solar.active || solar.earthPixels() >= CLOUD_LOD_PIXELS));
     updateRegionBlend(dt);
     updateMapLines(dt);
-    highlights.group.visible = !solar.active;
-    highlights.update(dt, renderer.domElement.width, renderer.domElement.height);
+    highlights.update(dt, renderer.domElement.width, renderer.domElement.height, camera, !solar.active);
     updateRegionDetail(dt);
     // 線を描かない間は、詳しい線のデータを読み込まない
     if (coastlines.group.visible) {

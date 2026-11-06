@@ -246,6 +246,30 @@ button.city-label:active {
   transform: scale(1.6);
 }
 
+/* ツアーのハイライト (川、山脈など) の名前。都市のラベルより大きく、ハイライトと同じ色にする */
+.highlight-label {
+  position: fixed;
+  top: 0;
+  left: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000, 0 0 8px rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+  user-select: none;
+  will-change: transform, opacity;
+}
+
+.highlight-label.river {
+  color: #bfeaff;
+}
+
+.highlight-label.area {
+  color: #ffdca6;
+}
+
 /* 惑星の名前。星の点を邪魔しないよう、小さく控えめにする */
 .planet-label {
   position: fixed;

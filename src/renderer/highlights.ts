@@ -29,12 +29,15 @@ const RIVER_REVEAL_SECONDS = 4;
 const OUTLINE_REVEAL_SECONDS = 1.6;
 const FADE_IN_SECONDS = 0.5;
 const FADE_OUT_SECONDS = 0.7;
+const LABEL_CANDIDATES = 200; // 川のラベルを置く候補の点の数
+const LABEL_KEEP_RATIO = 0.6; // 今の点より画面の中心にこれだけ近い点が見つかったときだけ、ラベルを動かす (ちらつかないように)
 
+// label は画面に出す名前。省くと、範囲は日本語名、川は英語名 (データに日本語名がない) を出す
 export type HighlightSpec =
-  | { type: 'river'; name: string }
-  | { type: 'area'; name: string }
-  | { type: 'line'; points: [number, number][]; name?: string } // [lat, lon] の並び
-  | { type: 'polygon'; points: [number, number][]; name?: string };
+  | { type: 'river'; name: string; label?: string }
+  | { type: 'area'; name: string; label?: string }
+  | { type: 'line'; points: [number, number][]; name?: string; label?: string } // [lat, lon] の並び
+  | { type: 'polygon'; points: [number, number][]; name?: string; label?: string };
 
 export interface HighlightInfo {
   name: string;
@@ -207,10 +210,23 @@ function buildFill(polygons: number[][][]): THREE.BufferGeometry {
   return geometry;
 }
 
+// ラベル。画面に入っていて地球の手前にある候補の点のうち、画面の中心に一番近い点に置く。
+// 範囲は 1 つ目の点 (重心) が見えていればそこを使う。川は、なぞり終えた所の点だけを使う
+interface Label {
+  element: HTMLElement;
+  points: THREE.Vector3[];
+  progress: number[]; // 川の候補の点の、源流からの距離 (0〜1)。範囲は 0
+  preferFirst: boolean;
+  current: number; // 今置いている候補 (-1 は置いていない)
+  transform: string;
+}
+
 interface Item {
   group: THREE.Group;
   ribbons: { material: THREE.ShaderMaterial; seconds: number }[];
   fill: THREE.ShaderMaterial | null;
+  label: Label | null;
+  revealSeconds: number;
   clock: number;
   fade: number;
   leaving: boolean;
@@ -224,6 +240,10 @@ export class Highlights {
   private rivers: Promise<RiverRecord[]> | null = null;
   private regions: Promise<RegionRecord[]> | null = null;
   private readonly resolution = new THREE.Vector2(1, 1);
+  private readonly projected = new THREE.Vector3();
+  private readonly toCamera = new THREE.Vector3();
+
+  constructor(private readonly labelContainer: HTMLElement) {}
 
   private loadRivers(): Promise<RiverRecord[]> {
     this.rivers ??= import('./data/rivers-10m.json').then((mod) => mod.default as unknown as RiverRecord[]);
@@ -251,7 +271,44 @@ export class Highlights {
   }
 
   private async build(spec: HighlightSpec): Promise<{ item: Item; info: HighlightInfo } | null> {
-    const item: Item = { group: new THREE.Group(), ribbons: [], fill: null, clock: 0, fade: 0, leaving: false };
+    const item: Item = { group: new THREE.Group(), ribbons: [], fill: null, label: null, revealSeconds: 1, clock: 0, fade: 0, leaving: false };
+    const addLabel = (text: string, kind: 'river' | 'area', points: THREE.Vector3[], progress: number[], preferFirst: boolean): void => {
+      if (!text || points.length === 0) return;
+      const element = document.createElement('span');
+      element.className = `highlight-label ${kind}`;
+      element.textContent = text;
+      element.style.opacity = '0';
+      this.labelContainer.append(element);
+      item.label = { element, points, progress, preferFirst, current: -1, transform: '' };
+    };
+    const lineCandidates = (lines: { coords: number[]; progress: number[] }[]): { points: THREE.Vector3[]; progress: number[] } => {
+      const total = lines.reduce((sum, line) => sum + line.progress.length, 0);
+      const stride = Math.max(1, Math.floor(total / LABEL_CANDIDATES));
+      const points: THREE.Vector3[] = [];
+      const progress: number[] = [];
+      for (const line of lines) {
+        for (let i = 0; i < line.progress.length; i += stride) {
+          points.push(lonLatToVector3(line.coords[i * 2], line.coords[i * 2 + 1], LINE_RADIUS));
+          progress.push(line.progress[i]);
+        }
+      }
+      return { points, progress };
+    };
+    // 範囲のラベルの候補。1 つ目は一番大きな多角形の外周の点の平均 (おおよその重心)、残りは縁の点
+    const areaCandidates = (polygons: number[][][]): THREE.Vector3[] => {
+      const outer = polygons.map((rings) => unwrapLongitudes(rings[0])).reduce((a, b) => (b.length > a.length ? b : a));
+      let lon = 0;
+      let lat = 0;
+      for (let i = 0; i + 1 < outer.length; i += 2) {
+        lon += outer[i];
+        lat += outer[i + 1];
+      }
+      const count = outer.length / 2;
+      const points = [lonLatToVector3(lon / count, lat / count, LINE_RADIUS)];
+      const stride = Math.max(1, Math.floor(count / 60));
+      for (let i = 0; i < count; i += stride) points.push(lonLatToVector3(outer[i * 2], outer[i * 2 + 1], LINE_RADIUS));
+      return points;
+    };
     const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number): void => {
       const material = ribbonMaterial(color, width, head);
       item.group.add(new THREE.Mesh(buildRibbon(lines), material));
@@ -292,28 +349,41 @@ export class Highlights {
         return { coords, progress };
       });
       addRibbon(lines, RIVER_COLOR, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1);
+      const candidates = lineCandidates(lines);
+      addLabel(spec.label ?? river.n, 'river', candidates.points, candidates.progress, false);
+      item.revealSeconds = RIVER_REVEAL_SECONDS;
       return { item, info: { name: river.n, kind: 'river', lengthKm: river.L, bounds: boundsOf(river.l, 1) } };
     }
     if (spec.type === 'area') {
       const region = findByName(await this.loadRegions(), spec.name, regionNames);
       if (!region) return null;
       addArea(region.p);
+      const points = areaCandidates(region.p);
+      addLabel(spec.label ?? (region.ja || region.n), 'area', points, points.map(() => 0), true);
       return { item, info: { name: region.n, nameJa: region.ja, kind: region.c, bounds: boundsOf(region.p.flat()) } };
     }
     if (spec.points.length < 2) return null;
     const coords = unwrapLongitudes(flatOf(spec.points));
+    const text = spec.label ?? spec.name ?? '';
     if (spec.type === 'line') {
-      addRibbon([{ coords, progress: progressAlong(coords) }], RIVER_COLOR, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1);
+      const line = { coords, progress: progressAlong(coords) };
+      addRibbon([line], RIVER_COLOR, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1);
+      const candidates = lineCandidates([line]);
+      addLabel(text, 'river', candidates.points, candidates.progress, false);
+      item.revealSeconds = RIVER_REVEAL_SECONDS;
     } else {
       const closed = [...coords, coords[0], coords[1]];
       addArea([[closed]]);
+      const points = areaCandidates([[closed]]);
+      addLabel(text, 'area', points, points.map(() => 0), true);
     }
     return { item, info: { name: spec.name ?? '', kind: spec.type, bounds: boundsOf([coords]) } };
   }
 
   // 毎フレーム呼ぶ。width と height は描画の画素数
-  update(dt: number, width: number, height: number): void {
+  update(dt: number, width: number, height: number, camera: THREE.Camera, visible: boolean): void {
     this.resolution.set(width, height);
+    this.group.visible = visible;
     for (const item of this.items) {
       item.clock += dt;
       item.fade = item.leaving ? Math.max(0, item.fade - dt / FADE_OUT_SECONDS) : Math.min(1, item.fade + dt / FADE_IN_SECONDS);
@@ -325,10 +395,15 @@ export class Highlights {
         u.uResolution.value.copy(this.resolution);
       }
       if (item.fill) item.fill.uniforms.uOpacity.value = opacity * AREA_FILL_OPACITY;
+      if (item.label) {
+        const reveal = easeInOut(Math.min(1, item.clock / item.revealSeconds));
+        this.placeLabel(item.label, camera, visible ? opacity : 0, reveal);
+      }
     }
     // 消えきったものを片付ける
     for (const item of this.items.filter((i) => i.leaving && i.fade <= 0)) {
       this.group.remove(item.group);
+      item.label?.element.remove();
       item.group.traverse((object) => {
         if (object instanceof THREE.Mesh) {
           object.geometry.dispose();
@@ -337,5 +412,45 @@ export class Highlights {
       });
     }
     this.items = this.items.filter((i) => !(i.leaving && i.fade <= 0));
+  }
+
+  private placeLabel(label: Label, camera: THREE.Camera, opacity: number, reveal: number): void {
+    const usable = (index: number): number => {
+      // 画面の中心からの距離 (NDC)。使えない点は Infinity
+      if (label.progress[index] > reveal + 1e-4) return Infinity;
+      const point = label.points[index];
+      if (point.dot(this.toCamera.copy(camera.position).sub(point)) <= 0) return Infinity; // 地球の裏側
+      this.projected.copy(point).project(camera);
+      if (this.projected.z >= 1 || Math.abs(this.projected.x) > 0.9 || Math.abs(this.projected.y) > 0.85) return Infinity;
+      return Math.hypot(this.projected.x, this.projected.y);
+    };
+    let chosen = -1;
+    if (label.preferFirst && usable(0) < Infinity) chosen = 0;
+    else {
+      let best = Infinity;
+      for (let i = 0; i < label.points.length; i++) {
+        const d = usable(i);
+        if (d < best) {
+          best = d;
+          chosen = i;
+        }
+      }
+      const current = label.current >= 0 ? usable(label.current) : Infinity;
+      if (current < Infinity && best > current * LABEL_KEEP_RATIO) chosen = label.current;
+    }
+    label.current = chosen;
+    if (chosen >= 0) {
+      this.projected.copy(label.points[chosen]).project(camera);
+      const x = ((this.projected.x + 1) / 2) * window.innerWidth;
+      const y = ((1 - this.projected.y) / 2) * window.innerHeight;
+      // 川は線の少し上、範囲は重心に中央そろえで置く
+      const lift = label.preferFirst ? '-50%' : '-190%';
+      const transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, ${lift})`;
+      if (transform !== label.transform) {
+        label.transform = transform;
+        label.element.style.transform = transform;
+      }
+    }
+    label.element.style.opacity = chosen >= 0 ? opacity.toFixed(3) : '0';
   }
 }
