@@ -79,6 +79,11 @@ const AREA_GRADIENT_MAX_KM = 90; // 大きな範囲 (砂漠など) でも縁が�
 // ラベルの文字は線と同じ色を少し淡くする (白と混ぜる)
 const labelColor = (css: string): string => `color-mix(in srgb, ${css} 72%, white)`;
 const DASH_COUNT = 36; // 破線の、線全体での切れ目の数
+// なぞり終えた川と線に、源流から河口へ流れる明るい波を通す (明るさだけを変え、色相は変えない)
+const FLOW_WAVES = 8; // 線全体に並ぶ波の数
+const FLOW_PERIOD_SECONDS = 2.5; // 1 つの場所を波が 1 つ通り過ぎる時間
+const FLOW_BASE = 0.8; // 波のない所の明るさ (川は明るく、上げても見た目が変わりにくいので、谷を下げて波を見せる)
+const FLOW_PEAK = 0.45; // 波の山で足す明るさ (山は約 1.25 倍)
 const ARROW_SIZE_PX = 9; // 矢印の大きさ (描画の画素。先端から根元まで)
 const ARROW_COUNT = 6; // 線の途中に置く矢印の数 (終点の矢印は別)
 const RIVER_REVEAL_SECONDS = 4;
@@ -93,7 +98,7 @@ const DOT_SIZE = 10; // 印の大きさ (style.css の .highlight-dot と合わ�
 
 // どの種類にも付けられる見た目の指定。
 // label は画面に出す名前 (省くと、範囲と点は日本語名、川は英語名)、color は CSS の色 (#ff9a3c など)、
-// dashed は破線 (推定のルートや別の説など)、arrows は進む向きの矢印 (座標で渡す線は既定で付ける)、
+// dashed は破線 (推定のルートや別の説など)、arrows は進む向きの矢印 (座標で渡す線は既定で付ける。川には付けない)、
 // countries は通る国・重なる国の名前を出すか (既定は出す。歴史の話などでは false)
 export interface HighlightStyle {
   label?: string;
@@ -147,7 +152,20 @@ void main() {
 }
 `;
 
+// 流れる波の明るさの倍率。なぞり終えてから (uReveal が 1 に達してから) ふわっと入れる
+const FLOW_GLSL = /* glsl */ `
+uniform float uTime;
+uniform float uFlow; // 0 で揺らさない
+float flowGain(float progress, float reveal) {
+  float wave = 0.5 + 0.5 * sin(6.2831853 * (progress * ${FLOW_WAVES.toFixed(1)} - uTime / ${FLOW_PERIOD_SECONDS.toFixed(2)}));
+  float pulse = wave * wave * wave * wave; // 山を細くして、光の粒が流れるように見せる
+  float on = uFlow * smoothstep(0.999, 1.0, reveal);
+  return mix(1.0, ${FLOW_BASE.toFixed(2)} + ${FLOW_PEAK.toFixed(2)} * pulse, on);
+}
+`;
+
 const RIBBON_FS = /* glsl */ `
+${FLOW_GLSL}
 uniform vec3 uColor;
 uniform float uOpacity;
 uniform float uReveal;
@@ -164,7 +182,7 @@ void main() {
   float peak = max(max(uColor.r, uColor.g), uColor.b);
   vec3 color = mix(uColor, vec3(peak), 0.25 * (1.0 - smoothstep(0.0, 0.55, side)));
   float head = uHead * exp(-(uReveal - vProgress) * 40.0) * (1.0 - step(0.999, uReveal));
-  gl_FragColor = vec4(color * (1.0 + head * 1.2), edge * uOpacity);
+  gl_FragColor = vec4(color * (1.0 + head * 1.2) * flowGain(vProgress, uReveal), edge * uOpacity);
 }
 `;
 
@@ -191,13 +209,14 @@ void main() {
 `;
 
 const ARROW_FS = /* glsl */ `
+${FLOW_GLSL}
 uniform vec3 uColor;
 uniform float uOpacity;
 uniform float uReveal;
 varying float vProgress;
 void main() {
   if (vProgress > uReveal) discard;
-  gl_FragColor = vec4(uColor, uOpacity);
+  gl_FragColor = vec4(uColor * flowGain(vProgress, uReveal), uOpacity);
 }
 `;
 
@@ -261,9 +280,11 @@ function buildRibbon(lines: { coords: number[]; progress: number[] }[]): THREE.I
   return geometry;
 }
 
-function ribbonMaterial(color: THREE.Color, width: number, head: number, dashed = false): THREE.ShaderMaterial {
+function ribbonMaterial(color: THREE.Color, width: number, head: number, dashed = false, flow = 0): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
+      uTime: { value: 0 },
+      uFlow: { value: flow },
       uColor: { value: color },
       uOpacity: { value: 0 },
       uReveal: { value: 0 },
@@ -669,13 +690,16 @@ export class Highlights {
     const lineColor = base.clone().multiplyScalar(spec.type === 'river' ? RIVER_GLOW : LINE_GLOW);
     const areaColor = base;
     const areaLineColor = lineColor;
-    const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number, arrows = false): void => {
-      const material = ribbonMaterial(color, width, head, spec.dashed);
+    // flow は流れる波を通すか (川と線は通し、範囲の縁取りは落ち着かないので通さない)
+    const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number, arrows = false, flow = false): void => {
+      const material = ribbonMaterial(color, width, head, spec.dashed, flow ? 1 : 0);
       item.group.add(new THREE.Mesh(buildRibbon(lines), material));
       item.ribbons.push({ material, seconds });
       if (!arrows) return;
       const arrow = new THREE.ShaderMaterial({
         uniforms: {
+          uTime: { value: 0 },
+          uFlow: { value: flow ? 1 : 0 },
           uColor: { value: color },
           uOpacity: { value: 0 },
           uReveal: { value: 0 },
@@ -729,7 +753,8 @@ export class Highlights {
         const progress = along.map((t) => Math.min(1, (line[0] + t * length) / Math.max(river.L, 1)));
         return { coords, progress };
       });
-      addRibbon(lines, lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, RIVER_HEAD, spec.arrows ?? false);
+      // 川は流れる光で向きが分かるので、arrows を指定されても矢印は描かない
+      addRibbon(lines, lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, RIVER_HEAD, false, true);
       const candidates = lineCandidates(lines);
       addLabel(spec.label ?? river.n, 'river', candidates.points, candidates.progress, false);
       item.revealSeconds = RIVER_REVEAL_SECONDS;
@@ -769,7 +794,7 @@ export class Highlights {
     const text = spec.label ?? spec.name ?? '';
     if (spec.type === 'line') {
       const line = { coords, progress: progressAlong(coords) };
-      addRibbon([line], lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1, spec.arrows ?? true);
+      addRibbon([line], lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1, spec.arrows ?? true, true);
       const candidates = lineCandidates([line]);
       addLabel(text, 'river', candidates.points, candidates.progress, false);
       item.revealSeconds = RIVER_REVEAL_SECONDS;
@@ -793,6 +818,7 @@ export class Highlights {
       for (const { material, seconds } of item.ribbons) {
         const u = material.uniforms;
         u.uReveal.value = easeInOut(Math.min(1, item.clock / seconds)) * 1.0001;
+        u.uTime.value = item.clock;
         u.uOpacity.value = opacity;
         u.uResolution.value.copy(this.resolution);
       }

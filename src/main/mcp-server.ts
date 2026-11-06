@@ -69,7 +69,7 @@ const style = {
     .optional()
     .describe('色。パレットの名前 (sky, teal, gold, coral, violet, leaf, snow) か CSS の色。省くと種類に合った色'),
   dashed: z.boolean().optional().describe('破線にする (推定のルートや別の説など)'),
-  arrows: z.boolean().optional().describe('進む向きの矢印 (座標の線は既定で付く)'),
+  arrows: z.boolean().optional().describe('進む向きの矢印 (座標の線は既定で付く。川は流れる光で向きを示すので付かない)'),
   countries: z.boolean().optional().describe('通る国・重なる国の名前と国旗を出すか (既定は出す。歴史の話では false)'),
 };
 const latLon = z.tuple([z.number().min(-90).max(90), z.number().min(-180).max(180)]);
