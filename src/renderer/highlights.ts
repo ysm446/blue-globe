@@ -84,6 +84,11 @@ const FLOW_WAVES = 8; // 線全体に並ぶ波の数
 const FLOW_PERIOD_SECONDS = 2.5; // 1 つの場所を波が 1 つ通り過ぎる時間
 const FLOW_BASE = 0.8; // 波のない所の明るさ (川は明るく、上げても見た目が変わりにくいので、谷を下げて波を見せる)
 const FLOW_PEAK = 0.45; // 波の山で足す明るさ (山は約 1.25 倍)
+// 範囲の縁取りのきらめき。縁に沿って場所ごとにばらばらな明るさの揺れを、ゆっくり動かす
+const TWINKLE_CELLS = 24; // 縁の 1 周に並ぶ揺れの区画の数 (細かすぎると細い縁では見分けにくい)
+const TWINKLE_SPEED = 0.8; // 揺れが移り変わる速さ (1 秒あたり)
+const TWINKLE_BASE = 0.65; // 縁は細く、雪などの明るい地面に埋もれやすいので、暗い所をはっきり下げる
+const TWINKLE_PEAK = 0.8; // 一番明るい所は約 1.45 倍
 const ARROW_SIZE_PX = 9; // 矢印の大きさ (描画の画素。先端から根元まで)
 const ARROW_COUNT = 6; // 線の途中に置く矢印の数 (終点の矢印は別)
 const RIVER_REVEAL_SECONDS = 4;
@@ -153,14 +158,33 @@ void main() {
 `;
 
 // 流れる波の明るさの倍率。なぞり終えてから (uReveal が 1 に達してから) ふわっと入れる
+// uFlow が 1 なら流れる波 (川と線)、2 ならきらめき (範囲の縁取り)、0 なら揺らさない
 const FLOW_GLSL = /* glsl */ `
 uniform float uTime;
-uniform float uFlow; // 0 で揺らさない
+uniform float uFlow;
+float flowHash(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+// 区画の値をなめらかにつないだ揺れ (0〜1)。x は縁に沿った位置、y は時刻
+float flowNoise(vec2 p) {
+  vec2 i = floor(p);
+  vec2 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(flowHash(i), flowHash(i + vec2(1.0, 0.0)), f.x), mix(flowHash(i + vec2(0.0, 1.0)), flowHash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
 float flowGain(float progress, float reveal) {
-  float wave = 0.5 + 0.5 * sin(6.2831853 * (progress * ${FLOW_WAVES.toFixed(1)} - uTime / ${FLOW_PERIOD_SECONDS.toFixed(2)}));
-  float pulse = wave * wave * wave * wave; // 山を細くして、光の粒が流れるように見せる
-  float on = uFlow * smoothstep(0.999, 1.0, reveal);
-  return mix(1.0, ${FLOW_BASE.toFixed(2)} + ${FLOW_PEAK.toFixed(2)} * pulse, on);
+  if (uFlow < 0.5) return 1.0;
+  float on = smoothstep(0.999, 1.0, reveal);
+  float gain;
+  if (uFlow < 1.5) {
+    float wave = 0.5 + 0.5 * sin(6.2831853 * (progress * ${FLOW_WAVES.toFixed(1)} - uTime / ${FLOW_PERIOD_SECONDS.toFixed(2)}));
+    float pulse = wave * wave * wave * wave; // 山を細くして、光の粒が流れるように見せる
+    gain = ${FLOW_BASE.toFixed(2)} + ${FLOW_PEAK.toFixed(2)} * pulse;
+  } else {
+    float n = flowNoise(vec2(progress * ${TWINKLE_CELLS.toFixed(1)}, uTime * ${TWINKLE_SPEED.toFixed(2)}));
+    gain = ${TWINKLE_BASE.toFixed(2)} + ${TWINKLE_PEAK.toFixed(2)} * n * n; // 明るく光る所を少しまばらにする
+  }
+  return mix(1.0, gain, on);
 }
 `;
 
@@ -690,16 +714,17 @@ export class Highlights {
     const lineColor = base.clone().multiplyScalar(spec.type === 'river' ? RIVER_GLOW : LINE_GLOW);
     const areaColor = base;
     const areaLineColor = lineColor;
-    // flow は流れる波を通すか (川と線は通し、範囲の縁取りは落ち着かないので通さない)
-    const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number, arrows = false, flow = false): void => {
-      const material = ribbonMaterial(color, width, head, spec.dashed, flow ? 1 : 0);
+    // flow は揺らぎの種類。wave は流れる波 (川と線)、twinkle はきらめき (範囲の縁取り)
+    const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number, arrows = false, flow: 'none' | 'wave' | 'twinkle' = 'none'): void => {
+      const flowMode = flow === 'wave' ? 1 : flow === 'twinkle' ? 2 : 0;
+      const material = ribbonMaterial(color, width, head, spec.dashed, flowMode);
       item.group.add(new THREE.Mesh(buildRibbon(lines), material));
       item.ribbons.push({ material, seconds });
       if (!arrows) return;
       const arrow = new THREE.ShaderMaterial({
         uniforms: {
           uTime: { value: 0 },
-          uFlow: { value: flow ? 1 : 0 },
+          uFlow: { value: flowMode },
           uColor: { value: color },
           uOpacity: { value: 0 },
           uReveal: { value: 0 },
@@ -734,7 +759,7 @@ export class Highlights {
         const coords = unwrapLongitudes(ring);
         return { coords, progress: progressAlong(coords) };
       });
-      addRibbon(rings, areaLineColor, OUTLINE_WIDTH_PX, OUTLINE_REVEAL_SECONDS, 0.6);
+      addRibbon(rings, areaLineColor, OUTLINE_WIDTH_PX, OUTLINE_REVEAL_SECONDS, 0.6, false, 'twinkle');
     };
     const flatOf = (points: [number, number][]): number[] => points.flatMap(([lat, lon]) => [lon, lat]);
 
@@ -754,7 +779,7 @@ export class Highlights {
         return { coords, progress };
       });
       // 川は流れる光で向きが分かるので、arrows を指定されても矢印は描かない
-      addRibbon(lines, lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, RIVER_HEAD, false, true);
+      addRibbon(lines, lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, RIVER_HEAD, false, 'wave');
       const candidates = lineCandidates(lines);
       addLabel(spec.label ?? river.n, 'river', candidates.points, candidates.progress, false);
       item.revealSeconds = RIVER_REVEAL_SECONDS;
@@ -794,7 +819,7 @@ export class Highlights {
     const text = spec.label ?? spec.name ?? '';
     if (spec.type === 'line') {
       const line = { coords, progress: progressAlong(coords) };
-      addRibbon([line], lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1, spec.arrows ?? true, true);
+      addRibbon([line], lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1, spec.arrows ?? true, 'wave');
       const candidates = lineCandidates([line]);
       addLabel(text, 'river', candidates.points, candidates.progress, false);
       item.revealSeconds = RIVER_REVEAL_SECONDS;
