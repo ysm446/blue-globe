@@ -19,6 +19,7 @@ import { createBorders, createCoastlines, Globe, lonLatToVector3 } from './globe
 import { GpuParticleSystem } from './gpu-particles';
 import { HdrPipeline } from './hdr';
 import { HeadingTape, type TapeMarker } from './heading-tape';
+import { stepFade } from './fade';
 import { bearingDegrees, easeInOut, separationDegrees, wrapDegrees, type LonLat } from './math';
 import { SpeedOverlay } from './overlay';
 import { ParticleSystem } from './particles';
@@ -338,21 +339,26 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   let borderStrength = 1; // 国境線の濃さの倍率 (設定)
   // 地域ビューへの切り替えの進み具合 (0 が地球ビュー、1 が地域ビュー)。起動時の setMode で線の濃さに使うので、ここで宣言する
   let regionBlend = 0;
+  let mapLineFade = 0; // 海岸線と国境線の現れ具合 (0〜1)。表示を切り替えるとふわっと変わる
 
   function syncLineOpacity(): void {
     const wind = mode === 'wind';
     const lerp = THREE.MathUtils.lerp;
-    coastlines.setOpacity(wind ? COASTLINE_OPACITY : lerp(EARTH_COASTLINE_OPACITY, REGION_COASTLINE_OPACITY, regionBlend));
+    const fade = easeInOut(mapLineFade);
+    coastlines.setOpacity(fade * (wind ? COASTLINE_OPACITY : lerp(EARTH_COASTLINE_OPACITY, REGION_COASTLINE_OPACITY, regionBlend)));
     const border = wind ? BORDER_OPACITY : lerp(EARTH_BORDER_OPACITY, REGION_BORDER_OPACITY, regionBlend);
     borders.setColor(wind ? COLORS.border : COLORS.earthBorder);
-    borders.setOpacity(Math.min(1, border * borderStrength));
+    borders.setOpacity(fade * Math.min(1, border * borderStrength));
   }
 
-  // 風速モードは線がないと風の場所が分からないので、設定にかかわらず描く。太陽系では描かない
-  function syncMapLines(): void {
-    const visible = (mode === 'wind' || showMapLines) && !solar.active;
+  // 毎フレーム呼ぶ。風速モードは線がないと風の場所が分からないので、設定にかかわらず描く。太陽系では描かない
+  function updateMapLines(dt: number): void {
+    const wanted = (mode === 'wind' || showMapLines) && !solar.active;
+    mapLineFade = stepFade(mapLineFade, wanted, dt);
+    const visible = mapLineFade > 0;
     coastlines.group.visible = visible;
     borders.group.visible = visible;
+    syncLineOpacity();
   }
 
   let viewTime: Date | null = null; // 過去の時刻を見ている間は、その時刻の太陽と星にする
@@ -399,7 +405,6 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     windStars.visible = wind;
     scene.background = solar.active ? null : wind ? flatBackground : spaceBackground;
     syncLineOpacity();
-    syncMapLines();
   }
   setMode(mode);
 
@@ -1666,7 +1671,6 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     showMapLines = graphics.show_map_lines;
     borderStrength = graphics.border_opacity;
     syncLineOpacity();
-    syncMapLines();
     cityLabelsEnabled = graphics.show_city_labels;
     planetLabelsEnabled = graphics.show_planet_labels;
     syncCityLabels();
@@ -1745,6 +1749,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     // 太陽系へ引いて地球が小さく写るようになったら、雲は描かない
     earth.setCloudsEnabled(mode === 'weather' && (!solar.active || solar.earthPixels() >= CLOUD_LOD_PIXELS));
     updateRegionBlend(dt);
+    updateMapLines(dt);
     updateRegionDetail(dt);
     // 線を描かない間は、詳しい線のデータを読み込まない
     if (coastlines.group.visible) {
