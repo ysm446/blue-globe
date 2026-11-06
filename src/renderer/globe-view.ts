@@ -1568,8 +1568,10 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     const markerBox = point
       ? [{ x: point.x - MARKER_BOX_LEFT, y: point.y - MARKER_BOX_HEIGHT / 2, width: MARKER_BOX_LEFT + MARKER_LABEL_OFFSET + markerLabelWidth, height: MARKER_BOX_HEIGHT }]
       : [];
-    cityLabels.update(toScreen, markerBox, apparentAltitude());
-    countryLabels.update(toScreen, [...markerBox, ...cityLabels.shownBoxes()], apparentAltitude(), highlights.activeCountries());
+    // ツアーのハイライトのラベルを先に置き、都市のラベル、国名の順にそれを避けて置く
+    const highlightBoxes = highlights.layoutLabels(camera, markerBox);
+    cityLabels.update(toScreen, [...markerBox, ...highlightBoxes], apparentAltitude());
+    countryLabels.update(toScreen, [...markerBox, ...highlightBoxes, ...cityLabels.shownBoxes()], apparentAltitude(), highlights.activeCountries());
   }
 
   window.addEventListener('resize', () => {
@@ -1760,7 +1762,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     earth.setCloudsEnabled(mode === 'weather' && (!solar.active || solar.earthPixels() >= CLOUD_LOD_PIXELS));
     updateRegionBlend(dt);
     updateMapLines(dt);
-    highlights.update(dt, renderer.domElement.width, renderer.domElement.height, camera, !solar.active);
+    highlights.update(dt, renderer.domElement.width, renderer.domElement.height, !solar.active);
     updateRegionDetail(dt);
     // 線を描かない間は、詳しい線のデータを読み込まない
     if (coastlines.group.visible) {

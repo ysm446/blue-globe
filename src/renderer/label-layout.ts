@@ -8,7 +8,7 @@ export interface LabelBox {
 
 const LABEL_GAP = 2; // 隣のラベルと文字がくっついて読みにくくならないようにする
 
-function overlaps(a: LabelBox, b: LabelBox): boolean {
+export function overlaps(a: LabelBox, b: LabelBox): boolean {
   return (
     a.x < b.x + b.width + LABEL_GAP &&
     b.x < a.x + a.width + LABEL_GAP &&

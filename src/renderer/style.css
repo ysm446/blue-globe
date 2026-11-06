@@ -260,6 +260,7 @@ button.city-label:active {
   pointer-events: none;
   user-select: none;
   will-change: transform, opacity;
+  transition: opacity 200ms;
 }
 
 .highlight-label.river {

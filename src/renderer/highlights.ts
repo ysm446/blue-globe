@@ -3,6 +3,7 @@
 // 線分ごとに画面上で幅を持たせた帯として描き、源流からの距離 (0〜1) が uReveal を超えた部分は描かない
 import * as THREE from 'three';
 import { lonLatToVector3 } from './globe';
+import { overlaps, type LabelBox } from './label-layout';
 import {
   boundsOf,
   findByName,
@@ -212,15 +213,19 @@ function buildFill(polygons: number[][][]): THREE.BufferGeometry {
   return geometry;
 }
 
-// ラベル。画面に入っていて地球の手前にある候補の点のうち、画面の中心に一番近い点に置く。
-// 範囲は 1 つ目の点 (重心) が見えていればそこを使う。川は、なぞり終えた所の点だけを使う
+// ラベル。画面に入っていて地球の手前にあり、ほかのラベルと重ならない候補の点のうち、画面の中心に一番近い点に置く。
+// 範囲は 1 つ目の点 (重心) が使えればそこを使う。川は、なぞり終えた所の点だけを使う。
+// 国名は国の中央付近の 1 点だけで、重なるときは出さない
 interface Label {
   element: HTMLElement;
   points: THREE.Vector3[];
   progress: number[]; // 川の候補の点の、源流からの距離 (0〜1)。範囲は 0
   preferFirst: boolean;
+  country: boolean;
   current: number; // 今置いている候補 (-1 は置いていない)
   transform: string;
+  width: number; // 文字の大きさは変わらないので、最初に測って使い回す
+  height: number;
 }
 
 interface Item {
@@ -230,6 +235,8 @@ interface Item {
   labels: Label[];
   countryCodes: string[]; // 国名を出している国 (ADM0_A3)
   revealSeconds: number;
+  labelOpacity: number; // update で求め、layoutLabels で使う
+  labelReveal: number;
   clock: number;
   fade: number;
   leaving: boolean;
@@ -287,7 +294,7 @@ export class Highlights {
   }
 
   private async build(spec: HighlightSpec): Promise<{ item: Item; info: HighlightInfo } | null> {
-    const item: Item = { group: new THREE.Group(), ribbons: [], fill: null, labels: [], countryCodes: [], revealSeconds: 1, clock: 0, fade: 0, leaving: false };
+    const item: Item = { group: new THREE.Group(), ribbons: [], fill: null, labels: [], countryCodes: [], revealSeconds: 1, labelOpacity: 0, labelReveal: 0, clock: 0, fade: 0, leaving: false };
     const addLabel = (text: string, kind: 'river' | 'area', points: THREE.Vector3[], progress: number[], preferFirst: boolean): void => {
       if (!text || points.length === 0) return;
       const element = document.createElement('span');
@@ -295,7 +302,7 @@ export class Highlights {
       element.textContent = text;
       element.style.opacity = '0';
       this.labelContainer.append(element);
-      item.labels.push({ element, points, progress, preferFirst, current: -1, transform: '' });
+      item.labels.push({ element, points, progress, preferFirst, country: false, current: -1, transform: '', width: 0, height: 0 });
     };
     // 通る国、重なる国の名前と国旗。国の中央付近の点に置き、川は光る線がその国に差しかかってから出す
     const countryList = await this.loadCountries();
@@ -318,7 +325,7 @@ export class Highlights {
         element.style.opacity = '0';
         this.labelContainer.append(element);
         const point = lonLatToVector3(country.x, country.y, LINE_RADIUS);
-        item.labels.push({ element, points: [point], progress: [first], preferFirst: true, current: -1, transform: '' });
+        item.labels.push({ element, points: [point], progress: [first], preferFirst: true, country: true, current: -1, transform: '', width: 0, height: 0 });
       }
       return listed;
     };
@@ -424,7 +431,7 @@ export class Highlights {
   }
 
   // 毎フレーム呼ぶ。width と height は描画の画素数
-  update(dt: number, width: number, height: number, camera: THREE.Camera, visible: boolean): void {
+  update(dt: number, width: number, height: number, visible: boolean): void {
     this.resolution.set(width, height);
     this.group.visible = visible;
     for (const item of this.items) {
@@ -438,8 +445,8 @@ export class Highlights {
         u.uResolution.value.copy(this.resolution);
       }
       if (item.fill) item.fill.uniforms.uOpacity.value = opacity * AREA_FILL_OPACITY;
-      const reveal = easeInOut(Math.min(1, item.clock / item.revealSeconds));
-      for (const label of item.labels) this.placeLabel(label, camera, visible ? opacity : 0, reveal);
+      item.labelOpacity = visible ? opacity : 0;
+      item.labelReveal = easeInOut(Math.min(1, item.clock / item.revealSeconds));
     }
     // 消えきったものを片付ける
     for (const item of this.items.filter((i) => i.leaving && i.fade <= 0)) {
@@ -455,43 +462,73 @@ export class Highlights {
     this.items = this.items.filter((i) => !(i.leaving && i.fade <= 0));
   }
 
-  private placeLabel(label: Label, camera: THREE.Camera, opacity: number, reveal: number): void {
-    const usable = (index: number): number => {
-      // 画面の中心からの距離 (NDC)。使えない点は Infinity
-      if (label.progress[index] > reveal + 1e-4) return Infinity;
-      const point = label.points[index];
-      if (point.dot(this.toCamera.copy(camera.position).sub(point)) <= 0) return Infinity; // 地球の裏側
-      this.projected.copy(point).project(camera);
-      if (this.projected.z >= 1 || Math.abs(this.projected.x) > 0.9 || Math.abs(this.projected.y) > 0.85) return Infinity;
-      return Math.hypot(this.projected.x, this.projected.y);
-    };
-    let chosen = -1;
-    if (label.preferFirst && usable(0) < Infinity) chosen = 0;
-    else {
-      let best = Infinity;
-      for (let i = 0; i < label.points.length; i++) {
-        const d = usable(i);
-        if (d < best) {
-          best = d;
-          chosen = i;
+  // 毎フレーム、update のあとに呼ぶ。blocked は重ねない範囲 (地点のマーカー)。置いたラベルの範囲を返すので、
+  // 都市のラベルと国名はそれを避けて置く (ツアーで示しているものを優先する)。
+  // 国名は位置が決まっているので先に置き、候補の多い川や範囲の名前は空いている所を選ぶ
+  layoutLabels(camera: THREE.Camera, blocked: LabelBox[]): LabelBox[] {
+    const placed = [...blocked];
+    const result: LabelBox[] = [];
+    for (const countryPass of [true, false]) {
+      for (const item of this.items) {
+        for (const label of item.labels) {
+          if (label.country !== countryPass) continue;
+          const box = item.labelOpacity > 0.01 ? this.chooseBox(label, camera, item.labelReveal, placed) : null;
+          if (box) {
+            placed.push(box);
+            result.push(box);
+            const transform = `translate(${box.x.toFixed(1)}px, ${box.y.toFixed(1)}px)`;
+            if (transform !== label.transform) {
+              label.transform = transform;
+              label.element.style.transform = transform;
+            }
+          } else label.current = -1;
+          label.element.style.opacity = box ? item.labelOpacity.toFixed(3) : '0';
         }
       }
-      const current = label.current >= 0 ? usable(label.current) : Infinity;
-      if (current < Infinity && best > current * LABEL_KEEP_RATIO) chosen = label.current;
     }
-    label.current = chosen;
-    if (chosen >= 0) {
-      this.projected.copy(label.points[chosen]).project(camera);
+    return result;
+  }
+
+  private chooseBox(label: Label, camera: THREE.Camera, reveal: number, placed: LabelBox[]): LabelBox | null {
+    if (label.width === 0) {
+      label.width = label.element.offsetWidth;
+      label.height = label.element.offsetHeight;
+    }
+    // 候補の点に置いたときの範囲と、画面の中心からの距離 (NDC)。使えない点と重なる点は null
+    const candidate = (index: number): { box: LabelBox; distance: number } | null => {
+      if (label.progress[index] > reveal + 1e-4) return null;
+      const point = label.points[index];
+      if (point.dot(this.toCamera.copy(camera.position).sub(point)) <= 0) return null; // 地球の裏側
+      this.projected.copy(point).project(camera);
+      if (this.projected.z >= 1 || Math.abs(this.projected.x) > 0.9 || Math.abs(this.projected.y) > 0.85) return null;
       const x = ((this.projected.x + 1) / 2) * window.innerWidth;
       const y = ((1 - this.projected.y) / 2) * window.innerHeight;
-      // 川は線の少し上、範囲は重心に中央そろえで置く
-      const lift = label.preferFirst ? '-50%' : '-190%';
-      const transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, ${lift})`;
-      if (transform !== label.transform) {
-        label.transform = transform;
-        label.element.style.transform = transform;
+      // 川の名前は線の少し上、範囲の名前と国名は点に中央そろえ
+      const lift = label.preferFirst ? 0.5 : 1.9;
+      const box = { x: x - label.width / 2, y: y - label.height * lift, width: label.width, height: label.height };
+      if (placed.some((other) => overlaps(box, other))) return null;
+      return { box, distance: Math.hypot(this.projected.x, this.projected.y) };
+    };
+    if (label.preferFirst) {
+      const first = candidate(0);
+      if (first) {
+        label.current = 0;
+        return first.box;
       }
     }
-    label.element.style.opacity = chosen >= 0 ? opacity.toFixed(3) : '0';
+    let best: { box: LabelBox; distance: number } | null = null;
+    let chosen = -1;
+    for (let i = label.preferFirst ? 1 : 0; i < label.points.length; i++) {
+      const c = candidate(i);
+      if (c && (!best || c.distance < best.distance)) {
+        best = c;
+        chosen = i;
+      }
+    }
+    // ちらつかないよう、今の点がまだ使えて、はっきり中心に近い点がなければ動かさない
+    const current = label.current >= 0 && label.current !== chosen ? candidate(label.current) : null;
+    if (current && (!best || best.distance > current.distance * LABEL_KEEP_RATIO)) return current.box;
+    label.current = chosen;
+    return best?.box ?? null;
   }
 }
