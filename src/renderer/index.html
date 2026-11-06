@@ -321,6 +321,11 @@
           <label class="check-row" data-help="地域ビューで、視点のまわりに NASA GIBS の 500m の画像を取得して重ねます。通信とメモリを使います。既定: オン"><input id="region-detail-toggle" type="checkbox" />地域ビューの高解像度の画像(NASA から取得)</label>
           <button class="reset-button" data-reset="region_detail" type="button" aria-label="地域ビューの高解像度の画像を既定に戻す" title="既定に戻す"></button>
         </div>
+        <h3 class="settings-subhead">デバッグ</h3>
+        <div class="check-line">
+          <label class="check-row" data-help="動作確認用。地表のメッシュ(三角形の分割)の上に黒い線を重ねます。雲がある所では、線は雲の下に隠れます。既定: オフ"><input id="wireframe-toggle" type="checkbox" />ワイヤーフレーム(地表のメッシュを線で表示)</label>
+          <button class="reset-button" data-reset="wireframe" type="button" aria-label="ワイヤーフレームを既定に戻す" title="既定に戻す"></button>
+        </div>
         <button class="reset-all" data-reset-section type="button">すべて既定に戻す</button>
       </section>
       <section id="panel-graphics" role="tabpanel" aria-labelledby="tab-graphics" hidden>

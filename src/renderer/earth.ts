@@ -8,6 +8,7 @@ import { CloudBlend } from './cloud-blend';
 import { stepFade } from './fade';
 import { moonlightStrength } from './astro';
 import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, MOONLIGHT_GLSL, VALUE_NOISE_GLSL } from './glsl';
+import { createWireOverlay } from './globe';
 import { easeInOut } from './math';
 import type { RegionDetail } from './region-detail';
 import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
@@ -389,6 +390,7 @@ void main() {
 export class RealisticEarth {
   readonly group = new THREE.Group();
   private readonly material: THREE.ShaderMaterial;
+  private readonly wire: ReturnType<typeof createWireOverlay>;
   private readonly cloudMesh: THREE.Mesh;
   private readonly cloudMaterial: THREE.ShaderMaterial;
   private readonly sunDir = new THREE.Vector3(1, 0, 0);
@@ -437,7 +439,10 @@ export class RealisticEarth {
       vertexShader: VS,
       fragmentShader: EARTH_FS,
     });
-    this.group.add(new THREE.Mesh(new THREE.SphereGeometry(radius, 192, 128), this.material));
+    const surface = new THREE.Mesh(new THREE.SphereGeometry(radius, 192, 128), this.material);
+    this.group.add(surface);
+    this.wire = createWireOverlay(surface);
+    this.group.add(this.wire.mesh);
 
     this.cloudMaterial = new THREE.ShaderMaterial({
       uniforms: {
@@ -532,6 +537,11 @@ export class RealisticEarth {
   setMoonDirection(direction: THREE.Vector3): void {
     this.moon.uMoonDir.value.copy(direction);
     this.updateMoonlight();
+  }
+
+  // 動作確認用。地表のメッシュの上に黒い線を重ねる
+  setWireframe(enabled: boolean): void {
+    this.wire.setVisible(enabled);
   }
 
   setMoonlightEnabled(enabled: boolean): void {

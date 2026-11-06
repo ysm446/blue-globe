@@ -1604,6 +1604,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     earth.setGlintStrength(graphics.glint_strength);
     earth.setCityGlow(graphics.city_glow);
     earth.setMoonlightEnabled(graphics.moonlight);
+    earth.setWireframe(graphics.wireframe);
+    flatGlobe.setWireframe(graphics.wireframe);
     earth.setVolumeCloudsEnabled(graphics.volume_clouds);
     earth.setVolumeCloudStyle({
       resolution: graphics.cloud_resolution / 100,

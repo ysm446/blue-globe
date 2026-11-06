@@ -281,15 +281,39 @@ export function createBorders(radius: number): LodLines {
   });
 }
 
+// 動作確認用のワイヤーフレーム。面のメッシュと同じ形を黒い線で上に重ねる。
+// 同じ形の線と面は奥行きがほぼ同じでちらつくので、重ねている間は面の側を少し奥へずらす
+// (ポリゴンオフセットは面にだけ効き、線には効かない)
+export function createWireOverlay(surface: THREE.Mesh): { mesh: THREE.Mesh; setVisible(visible: boolean): void } {
+  const mesh = new THREE.Mesh(surface.geometry, new THREE.MeshBasicMaterial({ color: 0x000000, wireframe: true }));
+  mesh.visible = false;
+  const material = surface.material as THREE.Material;
+  material.polygonOffsetFactor = 1;
+  material.polygonOffsetUnits = 1;
+  return {
+    mesh,
+    setVisible(visible: boolean): void {
+      mesh.visible = visible;
+      material.polygonOffset = visible;
+    },
+  };
+}
+
 // 地球本体 + 大気光
 const HALO_OPACITY = 0.07;
 
 export class Globe {
   readonly group = new THREE.Group();
+  private readonly wire: ReturnType<typeof createWireOverlay>;
 
   constructor(radius: number, colors: SurfaceColors, haloColor: string) {
-    const surface = new THREE.MeshBasicMaterial({ map: createEarthTexture(colors) });
-    this.group.add(new THREE.Mesh(new THREE.SphereGeometry(radius, 96, 72), surface));
+    const surface = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 96, 72),
+      new THREE.MeshBasicMaterial({ map: createEarthTexture(colors) }),
+    );
+    this.group.add(surface);
+    this.wire = createWireOverlay(surface);
+    this.group.add(this.wire.mesh);
 
     // ふちの淡い大気光
     const halo = new THREE.MeshBasicMaterial({
@@ -300,5 +324,10 @@ export class Globe {
       depthWrite: false,
     });
     this.group.add(new THREE.Mesh(new THREE.SphereGeometry(radius * 1.015, 96, 48), halo));
+  }
+
+  // 動作確認用。地表のメッシュの上に黒い線を重ねる
+  setWireframe(enabled: boolean): void {
+    this.wire.setVisible(enabled);
   }
 }

@@ -100,6 +100,7 @@ class SettingsApiTest(unittest.TestCase):
         "cruise_mode": "stepped",
         "cruise_bank": False,
         "lens_flare": False,
+        "wireframe": True,
         "show_hourly_panel": False,
         "show_weekly_panel": True,
         "show_details_panel": False,
@@ -108,6 +109,7 @@ class SettingsApiTest(unittest.TestCase):
 
     def test_graphics_defaults(self):
         graphics = self.client.get("/settings").json()["graphics"]
+        self.assertFalse(graphics["wireframe"])
         self.assertEqual(graphics["fps_limit"], 0)
         self.assertEqual(graphics["render_scale"], 100)
         self.assertTrue(graphics["bloom"])

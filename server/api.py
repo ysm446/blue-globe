@@ -123,6 +123,7 @@ class GraphicsUpdate(BaseModel):
     cruise_mode: Literal["analog", "stepped"]
     cruise_bank: bool
     lens_flare: bool
+    wireframe: bool
     show_hourly_panel: bool
     show_weekly_panel: bool
     show_details_panel: bool
