@@ -20,6 +20,7 @@ import { GpuParticleSystem } from './gpu-particles';
 import { HdrPipeline } from './hdr';
 import { HeadingTape, type TapeMarker } from './heading-tape';
 import { stepFade } from './fade';
+import { Highlights, type HighlightSpec } from './highlights';
 import { bearingDegrees, easeInOut, separationDegrees, wrapDegrees, type LonLat } from './math';
 import { SpeedOverlay } from './overlay';
 import { ParticleSystem } from './particles';
@@ -301,6 +302,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   coastlines.setOpacity(COASTLINE_OPACITY);
   const borders = createBorders(BORDER_RADIUS);
   scene.add(coastlines.group, borders.group);
+  // ツアーのハイライト (川をなぞる線、山脈などの範囲)。今は検証用フックからだけ使う
+  const highlights = new Highlights();
+  scene.add(highlights.group);
 
   const windUniforms = createWindUniforms();
   const overlay = new SpeedOverlay(GLOBE_RADIUS * 1.0008, windUniforms);
@@ -1750,6 +1754,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     earth.setCloudsEnabled(mode === 'weather' && (!solar.active || solar.earthPixels() >= CLOUD_LOD_PIXELS));
     updateRegionBlend(dt);
     updateMapLines(dt);
+    highlights.group.visible = !solar.active;
+    highlights.update(dt, renderer.domElement.width, renderer.domElement.height);
     updateRegionDetail(dt);
     // 線を描かない間は、詳しい線のデータを読み込まない
     if (coastlines.group.visible) {
@@ -1823,6 +1829,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     mapLinesVisible: () => [coastlines.group.visible, borders.group.visible],
     coastlines,
     borders,
+    highlight: (spec: HighlightSpec, append = false) => highlights.show(spec, append),
+    clearHighlights: () => highlights.clear(),
     stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),
     peekAt(body: 'sun' | 'moon' | 'dayside' | 'sunrise'): void {
       flight = null;
