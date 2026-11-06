@@ -38,6 +38,31 @@ export const HIGHLIGHT_PALETTE = {
 } as const;
 export type HighlightColorName = keyof typeof HIGHLIGHT_PALETTE;
 
+// 範囲の種類 (Natural Earth の FEATURECLA) ごとの既定の色。地形に合った色にする
+function areaColorOf(kind: string | undefined): string {
+  switch (kind) {
+    case 'Range/mtn':
+    case 'Foothills':
+    case 'Plateau':
+    case 'Valley':
+    case 'Gorge':
+      return HIGHLIGHT_PALETTE.leaf;
+    case 'Desert':
+    case 'Depression':
+      return HIGHLIGHT_PALETTE.gold;
+    case 'Wetlands':
+    case 'Delta':
+    case 'Lake':
+    case 'Basin':
+    case 'Lowland':
+    case 'Plain':
+    case 'Coast':
+      return HIGHLIGHT_PALETTE.teal;
+    default:
+      return HIGHLIGHT_PALETTE.violet;
+  }
+}
+
 function resolveColor(color: string | undefined, fallback: string): string {
   if (!color) return fallback;
   return (HIGHLIGHT_PALETTE as Record<string, string>)[color] ?? color;
@@ -46,8 +71,8 @@ function resolveColor(color: string | undefined, fallback: string): string {
 const LINE_GLOW = 1.15; // 線と縁取りを光らせる倍率 (HDR)。上げすぎると色相がずれる
 const RIVER_GLOW = 1.8; // 川は水面が光るように強めに光らせる (空色は色相がずれにくい)
 const RIVER_HEAD = 2.1; // 川をなぞる先端の明るさ (シェーダーの 1.2 倍と掛けて約 2.5 倍)
-const AREA_FILL_OPACITY = 0.42; // 範囲の塗りの、輪郭のすぐ内側の濃さ。内側ほど薄くなる
-const AREA_FILL_FLOOR = 0.06; // 範囲の中央の濃さ (輪郭のすぐ内側に対する割合)
+const AREA_FILL_OPACITY = 0.22; // 範囲の塗りの、輪郭のすぐ内側の濃さ。内側ほど薄くなる
+const AREA_FILL_FLOOR = 0.04; // 範囲の中央の濃さ (輪郭のすぐ内側に対する割合)
 const AREA_GRADIENT_SHARE = 0.22; // グラデーションの幅。範囲の中央から輪郭までの距離に対する割合
 const AREA_GRADIENT_MIN_KM = 12;
 const AREA_GRADIENT_MAX_KM = 90; // 大きな範囲 (砂漠など) でも縁が光って見えるよう、幅に上限を設ける
@@ -196,7 +221,7 @@ void main() {
   // 距離を 0 以上、明るさを 1 以下に抑える
   float glow = clamp(exp(-max(vEdge, 0.0) / max(uWidth, 1.0)), 0.0, 1.0);
   float alpha = uOpacity * (${AREA_FILL_FLOOR.toFixed(2)} + ${(1 - AREA_FILL_FLOOR).toFixed(2)} * glow);
-  gl_FragColor = vec4(uColor * (1.0 + glow * 0.6), alpha);
+  gl_FragColor = vec4(uColor * (1.0 + glow * 0.25), alpha);
 }
 `;
 
@@ -628,10 +653,14 @@ export class Highlights {
       for (let i = 0; i < count; i += stride) points.push(lonLatToVector3(outer[i * 2], outer[i * 2 + 1], LINE_RADIUS));
       return points;
     };
-    // 色の指定 (パレットの名前か CSS の色)。省くと、線と川は空色、範囲はすみれ、点は白
+    // 範囲は色を決める前に探す (種類で既定の色が変わる)
+    const region = spec.type === 'area' ? findByName(await this.loadRegions(), spec.name, regionNames) : null;
+    // 色の指定 (パレットの名前か CSS の色)。省くと、線と川は空色、範囲は種類に合った色 (山は若葉、砂漠は砂金など)、点は白
     const fallback =
-      spec.type === 'area' || spec.type === 'polygon'
-        ? HIGHLIGHT_PALETTE.violet
+      spec.type === 'area'
+        ? areaColorOf(region?.c)
+        : spec.type === 'polygon'
+          ? HIGHLIGHT_PALETTE.violet
         : spec.type === 'point'
           ? HIGHLIGHT_PALETTE.snow
           : HIGHLIGHT_PALETTE.sky;
@@ -708,7 +737,6 @@ export class Highlights {
       return { item, info: { name: river.n, kind: 'river', lengthKm: river.L, bounds: boundsOf(river.l, 1), countries } };
     }
     if (spec.type === 'area') {
-      const region = findByName(await this.loadRegions(), spec.name, regionNames);
       if (!region) return null;
       addArea(region.p);
       const points = areaCandidates(region.p);

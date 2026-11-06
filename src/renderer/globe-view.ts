@@ -82,6 +82,7 @@ const EARTH_COASTLINE_OPACITY = 0.1;
 const REGION_COASTLINE_OPACITY = 0.2;
 const EARTH_BORDER_OPACITY = 0.1;
 const REGION_BORDER_OPACITY = 0.25;
+const TOUR_TIME_SECONDS = 2.5; // ツアーで時刻を変えるときに太陽を動かす時間
 const FRAME_SECONDS = 2.5; // ハイライトに合わせてカメラを寄せるときの飛行の時間
 const SKY_UPDATE_MS = 60_000; // 太陽も星も 1 分で 0.25° しか動かない
 
@@ -338,7 +339,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
       for (const spec of specs) await highlights.show(spec, true);
     },
     clearHighlights: () => highlights.clear(),
-    frame: (cameraOptions) => frameHighlights(cameraOptions),
+    frame: (cameraOptions) => {
+      const view = frameHighlights(cameraOptions);
+      return view ? { lon: view.lon } : null;
+    },
+    setTime: setTourTime,
     stopMotion: () => {
       orbitAfterFlight = 0;
       stopCruise();
@@ -406,9 +411,34 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   }
 
   let viewTime: Date | null = null; // 過去の時刻を見ている間は、その時刻の太陽と星にする
+  // ツアーの場面の時刻。指定の間はこちらを優先し、変えるときは TOUR_TIME_SECONDS かけて太陽を動かす
+  let tourTime: { from: number; to: number; elapsed: number } | null = null;
+
+  function skyDate(): Date {
+    if (tourTime) {
+      const t = easeInOut(Math.min(1, tourTime.elapsed / TOUR_TIME_SECONDS));
+      return new Date(tourTime.from + (tourTime.to - tourTime.from) * t);
+    }
+    return viewTime ?? new Date();
+  }
+
+  function setTourTime(at: Date | null): void {
+    const from = skyDate().getTime();
+    if (at === null) {
+      tourTime = null;
+    } else {
+      // 近い向きへ動かす (日をまたいで太陽が 1 周しないよう、差を ±12 時間に収める)
+      let to = at.getTime();
+      const day = 86_400_000;
+      while (to - from > day / 2) to -= day;
+      while (from - to > day / 2) to += day;
+      tourTime = { from, to, elapsed: 0 };
+    }
+    updateSky();
+  }
 
   function updateSky(): void {
-    const date = viewTime ?? new Date();
+    const date = skyDate();
     sky.setTime(date);
     solar.setTime(date);
     earth.setSunDirection(sky.sunDir);
@@ -1805,6 +1835,10 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     earth.setCloudsEnabled(mode === 'weather' && (!solar.active || solar.earthPixels() >= CLOUD_LOD_PIXELS));
     updateRegionBlend(dt);
     updateMapLines(dt);
+    if (tourTime && tourTime.elapsed < TOUR_TIME_SECONDS) {
+      tourTime.elapsed += dt;
+      updateSky();
+    }
     highlights.update(dt, renderer.domElement.width, renderer.domElement.height, !solar.active);
     updateRegionDetail(dt);
     // 線を描かない間は、詳しい線のデータを読み込まない
@@ -1909,6 +1943,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     },
     setViewTime(at: Date | null): void {
       viewTime = at;
+      // ツアーの途中でも、人が時刻のスライダーを動かしたらそちらを優先する
+      tourTime = null;
       updateSky();
     },
     setWind,
