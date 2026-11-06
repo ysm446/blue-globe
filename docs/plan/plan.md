@@ -415,6 +415,8 @@ Unreal Engine のビューポートのブックマークと同じ操作。Ctrl+1
 
 ## 今後の候補(優先順)
 
+- (検討中、2026-11-06)Claude Code や Codex、ローカル LLM(Gemma 4 26B を想定)からカメラを動かせる MCP サーバーと、台本を受け取って進めるツアーガイド。計画は [docs/design/mcp-tour-guide.md](../design/mcp-tour-guide.md)。
+
 1. 地域ビューの風速モードへの対応を検討する。
 2. 国内の週間予報と今日の天気を、気象庁の予報に揃える(`forecast/{office}.json`)。Open-Meteo との食い違いがなくなる。
 3. 日本周辺の雲を、更新の早いひまわりの赤外画像(NASA GIBS。10分ごと)にする。色付きなので白い雲への変換が必要で、未検証。
