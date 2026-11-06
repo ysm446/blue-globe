@@ -29,6 +29,10 @@ const RIVER_COLOR = new THREE.Color(0.45, 0.85, 1.0).multiplyScalar(1.8); // HDR
 const AREA_COLOR = new THREE.Color(1.0, 0.72, 0.32);
 const AREA_LINE_COLOR = AREA_COLOR.clone().multiplyScalar(1.6);
 const AREA_FILL_OPACITY = 0.16;
+const LINE_GLOW = 1.6; // 色を指定した線と縁取りを光らせる倍率 (HDR)
+const DASH_COUNT = 36; // 破線の、線全体での切れ目の数
+const ARROW_SIZE_PX = 9; // 矢印の大きさ (描画の画素。先端から根元まで)
+const ARROW_COUNT = 6; // 線の途中に置く矢印の数 (終点の矢印は別)
 const RIVER_REVEAL_SECONDS = 4;
 const OUTLINE_REVEAL_SECONDS = 1.6;
 const FADE_IN_SECONDS = 0.5;
@@ -37,13 +41,26 @@ const LABEL_CANDIDATES = 200; // 川のラベルを置く候補の点の数
 const LABEL_KEEP_RATIO = 0.6;
 const POINT_DOT_OFFSET = 9; // 点のハイライトのラベルの左端から印の中心まで (style.css の .highlight-label.point と合わせる) // 今の点より画面の中心にこれだけ近い点が見つかったときだけ、ラベルを動かす (ちらつかないように)
 
-// label は画面に出す名前。省くと、範囲は日本語名、川は英語名 (データに日本語名がない) を出す
-export type HighlightSpec =
-  | { type: 'river'; name: string; label?: string }
-  | { type: 'area'; name: string; label?: string }
-  | { type: 'line'; points: [number, number][]; name?: string; label?: string } // [lat, lon] の並び
-  | { type: 'polygon'; points: [number, number][]; name?: string; label?: string }
-  | { type: 'point'; name?: string; lat?: number; lon?: number; label?: string }; // 名前で探すか、座標で置く
+// どの種類にも付けられる見た目の指定。
+// label は画面に出す名前 (省くと、範囲と点は日本語名、川は英語名)、color は CSS の色 (#ff9a3c など)、
+// dashed は破線 (推定のルートや別の説など)、arrows は進む向きの矢印 (座標で渡す線は既定で付ける)、
+// countries は通る国・重なる国の名前を出すか (既定は出す。歴史の話などでは false)
+export interface HighlightStyle {
+  label?: string;
+  color?: string;
+  dashed?: boolean;
+  arrows?: boolean;
+  countries?: boolean;
+}
+
+export type HighlightSpec = HighlightStyle &
+  (
+    | { type: 'river'; name: string }
+    | { type: 'area'; name: string }
+    | { type: 'line'; points: [number, number][]; name?: string } // [lat, lon] の並び
+    | { type: 'polygon'; points: [number, number][]; name?: string }
+    | { type: 'point'; name?: string; lat?: number; lon?: number } // 名前で探すか、座標で置く
+  );
 
 export interface HighlightInfo {
   name: string;
@@ -85,13 +102,48 @@ uniform vec3 uColor;
 uniform float uOpacity;
 uniform float uReveal;
 uniform float uHead; // なぞっている先端を明るくする強さ
+uniform float uDashes; // 破線の切れ目の数。0 で実線
 varying float vProgress;
 varying float vSide;
 void main() {
   if (vProgress > uReveal) discard;
+  if (uDashes > 0.0 && fract(vProgress * uDashes) > 0.6) discard;
   float edge = 1.0 - smoothstep(0.3, 1.0, abs(vSide));
   float head = uHead * exp(-(uReveal - vProgress) * 40.0) * (1.0 - step(0.999, uReveal));
   gl_FragColor = vec4(uColor * (1.0 + head * 2.5), edge * uOpacity);
+}
+`;
+
+// 矢印。点ごとに、線の進む向きへ先端を向けた三角形を画面上で描く
+const ARROW_VS = /* glsl */ `
+attribute vec2 corner; // x: 進む向き (先端 1、根元 -1)、y: 左右
+attribute vec3 aPosition;
+attribute vec3 aAhead; // 少し先の点。画面上の向きを求める
+attribute float aProgress;
+uniform vec2 uResolution;
+uniform float uWidth; // 矢印の大きさ (画素)
+varying float vProgress;
+void main() {
+  vec4 p = projectionMatrix * modelViewMatrix * vec4(aPosition, 1.0);
+  vec4 q = projectionMatrix * modelViewMatrix * vec4(aAhead, 1.0);
+  vec2 dir = (q.xy / q.w - p.xy / p.w) * uResolution;
+  dir = length(dir) > 1e-6 ? normalize(dir) : vec2(1.0, 0.0);
+  vec2 normal = vec2(-dir.y, dir.x);
+  vec2 offset = (dir * corner.x + normal * corner.y) * uWidth * 0.5;
+  p.xy += offset / uResolution * 2.0 * p.w;
+  gl_Position = p;
+  vProgress = aProgress;
+}
+`;
+
+const ARROW_FS = /* glsl */ `
+uniform vec3 uColor;
+uniform float uOpacity;
+uniform float uReveal;
+varying float vProgress;
+void main() {
+  if (vProgress > uReveal) discard;
+  gl_FragColor = vec4(uColor * 1.3, uOpacity);
 }
 `;
 
@@ -145,13 +197,14 @@ function buildRibbon(lines: { coords: number[]; progress: number[] }[]): THREE.I
   return geometry;
 }
 
-function ribbonMaterial(color: THREE.Color, width: number, head: number): THREE.ShaderMaterial {
+function ribbonMaterial(color: THREE.Color, width: number, head: number, dashed = false): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uColor: { value: color },
       uOpacity: { value: 0 },
       uReveal: { value: 0 },
       uHead: { value: head },
+      uDashes: { value: dashed ? DASH_COUNT : 0 },
       uResolution: { value: new THREE.Vector2(1, 1) },
       uWidth: { value: width },
     },
@@ -160,6 +213,55 @@ function ribbonMaterial(color: THREE.Color, width: number, head: number): THREE.
     transparent: true,
     depthWrite: false,
   });
+}
+
+// 矢印の形。線の途中に ARROW_COUNT 個 (端から少し離す) と、終点に 1 個置く。
+// 位置は進み具合 (0〜1) で決め、その位置の線分を補間して求める
+function buildArrows(lines: { coords: number[]; progress: number[] }[]): THREE.InstancedBufferGeometry {
+  const targets = Array.from({ length: ARROW_COUNT }, (_, i) => (i + 0.5) / ARROW_COUNT);
+  const positions: number[] = [];
+  const aheads: number[] = [];
+  const progress: number[] = [];
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const place = (lon0: number, lat0: number, lon1: number, lat1: number, t: number, value: number): void => {
+    const lon = lon0 + (lon1 - lon0) * t;
+    const lat = lat0 + (lat1 - lat0) * t;
+    lonLatToVector3(lon, lat, LINE_RADIUS, a);
+    lonLatToVector3(lon + (lon1 - lon0) * 0.05, lat + (lat1 - lat0) * 0.05, LINE_RADIUS, b);
+    positions.push(a.x, a.y, a.z);
+    aheads.push(b.x, b.y, b.z);
+    progress.push(value);
+  };
+  // 一番先まで伸びる線の終点に、終点の矢印を置く
+  let last: { coords: number[]; progress: number[] } | null = null;
+  for (const line of lines) {
+    const p = line.progress;
+    if (!last || p[p.length - 1] > last.progress[last.progress.length - 1]) last = line;
+    for (const target of targets) {
+      for (let i = 0; i + 1 < p.length; i++) {
+        if (p[i] <= target && target < p[i + 1] && p[i + 1] > p[i]) {
+          const c = line.coords;
+          place(c[i * 2], c[i * 2 + 1], c[i * 2 + 2], c[i * 2 + 3], (target - p[i]) / (p[i + 1] - p[i]), target);
+        }
+      }
+    }
+  }
+  if (last && last.coords.length >= 4) {
+    const c = last.coords;
+    const n = c.length;
+    place(c[n - 4], c[n - 3], c[n - 2], c[n - 1], 1, last.progress[last.progress.length - 1]);
+  }
+  const geometry = new THREE.InstancedBufferGeometry();
+  // 先端 (1, 0) と根元の左右。根元の中央を少しへこませて、矢じりの形にする
+  geometry.setAttribute('corner', new THREE.Float32BufferAttribute([1, 0, -1, 0.85, -0.55, 0, -1, -0.85], 2));
+  geometry.setIndex([0, 1, 2, 0, 2, 3]);
+  geometry.setAttribute('aPosition', new THREE.InstancedBufferAttribute(new Float32Array(positions), 3));
+  geometry.setAttribute('aAhead', new THREE.InstancedBufferAttribute(new Float32Array(aheads), 3));
+  geometry.setAttribute('aProgress', new THREE.InstancedBufferAttribute(new Float32Array(progress), 1));
+  geometry.instanceCount = progress.length;
+  geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 1.01);
+  return geometry;
 }
 
 // 線に沿った距離を 0〜1 にする (outline の輪や、座標で渡された線用)
@@ -312,6 +414,7 @@ export class Highlights {
       const element = document.createElement('span');
       element.className = `highlight-label ${kind}`;
       element.textContent = text;
+      if (spec.color) element.style.color = spec.color;
       element.style.opacity = '0';
       this.labelContainer.append(element);
       const align = kind === 'river' ? 'above' : 'center';
@@ -323,6 +426,7 @@ export class Highlights {
       element.className = 'highlight-label point';
       const dot = document.createElement('span');
       dot.className = 'dot';
+      if (spec.color) dot.style.setProperty('--dot-color', spec.color);
       const name = document.createElement('span');
       name.textContent = text;
       element.append(dot, name);
@@ -345,6 +449,7 @@ export class Highlights {
         const country = countryList.get(code);
         if (!country) continue;
         listed.push({ code, name: country.n, nameJa: country.ja });
+        if (spec.countries === false) continue; // 一覧は返すが、画面には出さない
         item.countryCodes.push(code);
         const element = document.createElement('span');
         element.className = 'highlight-label country';
@@ -390,14 +495,35 @@ export class Highlights {
       for (let i = 0; i < count; i += stride) points.push(lonLatToVector3(outer[i * 2], outer[i * 2 + 1], LINE_RADIUS));
       return points;
     };
-    const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number): void => {
-      const material = ribbonMaterial(color, width, head);
+    // 色の指定。線と縁取りは光らせ、ラベルの文字は指定の色をそのまま使う
+    const custom = spec.color ? new THREE.Color(spec.color) : null;
+    const lineColor = custom ? custom.clone().multiplyScalar(LINE_GLOW) : RIVER_COLOR;
+    const areaColor = custom ?? AREA_COLOR;
+    const areaLineColor = custom ? custom.clone().multiplyScalar(LINE_GLOW) : AREA_LINE_COLOR;
+    const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number, arrows = false): void => {
+      const material = ribbonMaterial(color, width, head, spec.dashed);
       item.group.add(new THREE.Mesh(buildRibbon(lines), material));
       item.ribbons.push({ material, seconds });
+      if (!arrows) return;
+      const arrow = new THREE.ShaderMaterial({
+        uniforms: {
+          uColor: { value: color },
+          uOpacity: { value: 0 },
+          uReveal: { value: 0 },
+          uResolution: { value: new THREE.Vector2(1, 1) },
+          uWidth: { value: ARROW_SIZE_PX * 2 },
+        },
+        vertexShader: ARROW_VS,
+        fragmentShader: ARROW_FS,
+        transparent: true,
+        depthWrite: false,
+      });
+      item.group.add(new THREE.Mesh(buildArrows(lines), arrow));
+      item.ribbons.push({ material: arrow, seconds });
     };
     const addArea = (polygons: number[][][]): void => {
       const fill = new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: AREA_COLOR }, uOpacity: { value: 0 } },
+        uniforms: { uColor: { value: areaColor }, uOpacity: { value: 0 } },
         vertexShader: FILL_VS,
         fragmentShader: FILL_FS,
         transparent: true,
@@ -410,7 +536,7 @@ export class Highlights {
         const coords = unwrapLongitudes(ring);
         return { coords, progress: progressAlong(coords) };
       });
-      addRibbon(rings, AREA_LINE_COLOR, OUTLINE_WIDTH_PX, OUTLINE_REVEAL_SECONDS, 0.6);
+      addRibbon(rings, areaLineColor, OUTLINE_WIDTH_PX, OUTLINE_REVEAL_SECONDS, 0.6);
     };
     const flatOf = (points: [number, number][]): number[] => points.flatMap(([lat, lon]) => [lon, lat]);
 
@@ -429,7 +555,7 @@ export class Highlights {
         const progress = along.map((t) => Math.min(1, (line[0] + t * length) / Math.max(river.L, 1)));
         return { coords, progress };
       });
-      addRibbon(lines, RIVER_COLOR, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1);
+      addRibbon(lines, lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1, spec.arrows ?? false);
       const candidates = lineCandidates(lines);
       addLabel(spec.label ?? river.n, 'river', candidates.points, candidates.progress, false);
       item.revealSeconds = RIVER_REVEAL_SECONDS;
@@ -469,7 +595,7 @@ export class Highlights {
     const text = spec.label ?? spec.name ?? '';
     if (spec.type === 'line') {
       const line = { coords, progress: progressAlong(coords) };
-      addRibbon([line], RIVER_COLOR, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1);
+      addRibbon([line], lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1, spec.arrows ?? true);
       const candidates = lineCandidates([line]);
       addLabel(text, 'river', candidates.points, candidates.progress, false);
       item.revealSeconds = RIVER_REVEAL_SECONDS;
