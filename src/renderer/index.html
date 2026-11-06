@@ -83,6 +83,7 @@
           <button type="button" data-mode="weather" aria-pressed="false">天気</button>
           <button type="button" data-mode="wind" aria-pressed="false">風速</button>
         </div>
+        <button id="display-toggle" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="display-menu" title="国境線や名前の表示を切り替える">表示</button>
       </div>
       <div id="view-switch" role="group" aria-label="視点">
         <button type="button" data-view="solar" aria-pressed="false">太陽系</button>
@@ -196,6 +197,8 @@
       </button>
       <button id="screenshot-toast-close" type="button" aria-label="閉じる">✕</button>
     </div>
+
+    <div id="display-menu" role="group" aria-label="表示の切り替え" hidden></div>
 
     <div id="music-popup" hidden>
       <input id="music-volume" type="range" min="0" max="100" step="1" aria-label="音量" />

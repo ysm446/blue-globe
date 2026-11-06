@@ -478,9 +478,74 @@ button.city-label:active {
   display: none;
 }
 
-#return-home {
+#return-home,
+#display-toggle {
   background: var(--panel);
   border-color: transparent;
+}
+
+#display-toggle[aria-expanded='true'] {
+  background: rgba(178, 178, 178, 0.26);
+  border-color: var(--line);
+}
+
+/* 「表示」ボタンから開くメニュー。位置は display-menu.ts がボタンに合わせて決める */
+#display-menu {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--panel);
+  border-radius: 8px;
+  box-shadow: var(--panel-glow);
+  backdrop-filter: var(--glass);
+}
+
+#display-menu[hidden] {
+  display: none;
+}
+
+/* オンとオフを左の印で示す */
+.display-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px;
+  text-align: left;
+  color: var(--text-2);
+  background: transparent;
+  border-color: transparent;
+}
+
+.display-item::before {
+  content: '';
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--text-3);
+  border-radius: 4px;
+}
+
+.display-item[aria-pressed='true'] {
+  color: var(--text);
+}
+
+.display-item[aria-pressed='true']::before {
+  background: var(--accent)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M3.5 8.5l3 3 6-7' fill='none' stroke='%23181818' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
+    center / 12px no-repeat;
+  border-color: var(--accent);
+}
+
+.display-item:hover:not(:disabled) {
+  background: rgba(178, 178, 178, 0.14);
+}
+
+/* 今の視点やモードでは効かない項目。切り替えはできる (設定は残る) */
+.display-item.inactive {
+  opacity: 0.45;
 }
 
 /* スライダーの幅は時刻と日付の幅で決まる */

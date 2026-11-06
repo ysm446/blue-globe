@@ -2,6 +2,7 @@ import type { DemoPlace } from './demo';
 import { initMcpBridge } from './mcp-bridge';
 import { initDemo } from './demo-controller';
 import { initLensControls } from './camera-panel';
+import { initDisplayMenu } from './display-menu';
 import { el, errorMessage, setStatus } from './dom';
 import { initGlobe } from './globe-view';
 import { initMapLayers } from './map-layers';
@@ -126,6 +127,8 @@ async function init(): Promise<void> {
   const globe = initGlobe(selectCity, (next) => showView(next));
   window.__weatherGlobeDebug.renderHourly = renderHourly;
   const mapLayers = initMapLayers(globe);
+  // 右下の「表示」のメニュー。設定の「表示」と同じ値を切り替えて保存する
+  const displayMenu = initDisplayMenu((changes) => changeGraphics(changes));
   let mode: MapMode = 'normal';
 
   const modeButtons = Array.from(
@@ -144,6 +147,7 @@ async function init(): Promise<void> {
     // 太陽系では、地表の表示モードと時刻のスライダー、カメラのパネルは意味がないので止める
     document.body.classList.toggle('solar', next === 'solar');
     for (const button of modeButtons) button.disabled = next === 'solar';
+    displayMenu.setContext(mode, next);
   }
 
   for (const button of viewButtons) {
@@ -166,6 +170,7 @@ async function init(): Promise<void> {
     }
     globe.changeMode(next);
     mapLayers.show(next);
+    displayMenu.setContext(next, view);
   }
 
   for (const button of modeButtons) {
@@ -290,9 +295,19 @@ async function init(): Promise<void> {
     applyUiFont(next.ui_font);
     showPanels(next);
     lensControls.sync(next);
+    displayMenu.sync(next);
   }
   // 保存は順番に行い、最後の操作が必ず残るようにする
   let graphicsSave: Promise<unknown> = Promise.resolve();
+  // 設定画面の外 (表示のメニュー) から変えた設定を反映して保存する
+  function changeGraphics(changes: Partial<GraphicsSettings>): void {
+    if (!graphics) return;
+    applyGraphics({ ...graphics, ...changes });
+    const saved = graphics;
+    graphicsSave = graphicsSave
+      .then(() => window.weatherApi.setGraphics(saved))
+      .catch((err) => console.error('display settings save failed', err));
+  }
   const lensControls = initLensControls((lens, commit) => {
     if (!graphics) return;
     graphics = { ...graphics, ...lens };
