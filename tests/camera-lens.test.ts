@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
+  apertureExposure,
   apparentScale,
   BASE_FOCAL_LENGTH,
   circleOfConfusion,
@@ -92,4 +93,11 @@ test('地球ビューの縁はほとんどぼけない', () => {
 test('地域ビューの地平線の近くははっきりぼける', () => {
   // 中心の地点まで 0.24 にピント、その 2.5 倍の奥
   assert.ok(blurPixels(0.24, 0.6) > 15);
+});
+
+test('絞りの明るさは F4 で 1、1 段ごとに半分', () => {
+  assert.equal(apertureExposure(4), 1);
+  assert.ok(Math.abs(apertureExposure(5.6) - 0.5) < 0.02); // 5.6 は √2 × 4 を丸めた刻印
+  assert.equal(apertureExposure(8), 0.25);
+  assert.equal(apertureExposure(2), 4);
 });

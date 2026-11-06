@@ -1,7 +1,7 @@
 // 地球儀の表示とカメラ操作。モード、地域ビュー、描画の設定をここで扱う
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { apparentScale, BASE_FOCAL_LENGTH, verticalFov } from './camera-lens';
+import { apertureExposure, apparentScale, BASE_FOCAL_LENGTH, verticalFov } from './camera-lens';
 import { CameraPanel } from './camera-panel';
 import { EARTH_RADIUS_KM } from './camera-readout';
 import { pickCityInDirection, type HopDirection } from './city-hop';
@@ -1403,6 +1403,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   let exposure = 1;
   let autoExposure = true;
   let exposureCompensation = 0; // EV。1 で明るさが 2 倍
+  let brightness = 1; // 画面の明るさの倍率 (自動露出、絞り、露出補正を合わせたもの)
   const toSun = new THREE.Vector3();
   const sunNdc = new THREE.Vector3();
   const cameraForward = new THREE.Vector3();
@@ -1425,7 +1426,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
       earthClearance(camera.position.toArray(), toSun.toArray(), GLOBE_RADIUS);
     const facing = camera.position.dot(sky.sunDir) / camera.position.length();
     exposure = adaptExposure(exposure, autoExposure ? targetExposure(facing, visibility) : 1, dt);
-    hdr.setExposure(exposure * 2 ** exposureCompensation, autoExposure ? visibility : 0, THREE.MathUtils.lerp(1, regionBloom, regionBlend));
+    // 絞りの明るさ。自動露出はシャッター速度と感度ですぐに打ち消すので、F 値を変えても明るさは変わらない。
+    // 被写界深度がオフのときは F 値を使わず、既定の F4 として扱う
+    const aperture = !autoExposure && depthOfField ? apertureExposure(depthOfField.fNumber) : 1;
+    brightness = exposure * aperture * 2 ** exposureCompensation;
+    hdr.setExposure(brightness, autoExposure ? visibility : 0, THREE.MathUtils.lerp(1, regionBloom, regionBlend));
     // 地平線の近くの太陽は赤く、レンズの光の筋とかぶりもその色にする。
     // 縁から少しだけ顔を出した太陽でも十分にまぶしいので、見えている割合の平方根で強さを決める。
     // 画面全体のかぶりは日の出や日の入りの間だけ強くし、普段の太陽では弱くする
@@ -1600,7 +1605,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     solar.updateLabels(!demoMotion);
     cameraPanel.update(dt, {
       focalLength,
-      exposure: mode !== 'wind' && earthReady ? exposure * 2 ** exposureCompensation : null,
+      exposure: mode !== 'wind' && earthReady ? brightness : null,
     });
     if (measureGpu) {
       gpuTimer.end();

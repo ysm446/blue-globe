@@ -23,13 +23,13 @@ export interface CameraPanelState {
   exposure: number | null; // 画面の明るさの倍率。露出の処理を通さないときは null
 }
 
-type LensSettings = Pick<GraphicsSettings, 'depth_of_field' | 'f_number'>;
+type LensSettings = Pick<GraphicsSettings, 'auto_exposure' | 'depth_of_field' | 'f_number'>;
 
-// パネルの被写界深度のチェックと F 値のスライダー。設定の depth_of_field と f_number をそのまま動かす (設定画面と同じ値)。
+// パネルの自動露出と被写界深度のチェック、F 値のスライダー。設定の auto_exposure、depth_of_field、f_number をそのまま動かす (設定画面と同じ値)。
 // onChange はスライダーを動かしている間も呼び、離したときやチェックを切り替えたときは commit を true にする (そこで保存する)
 export function initLensControls(onChange: (lens: Partial<LensSettings>, commit: boolean) => void) {
+  const exposureToggle = el<HTMLInputElement>('camera-auto-exposure');
   const toggle = el<HTMLInputElement>('camera-dof');
-  const toggleRow = el('camera-dof-row');
   const slider = el<HTMLInputElement>('camera-f-number');
   const output = el('camera-f-number-value');
   const read = (): number => F_NUMBERS[Number(slider.value)];
@@ -45,20 +45,27 @@ export function initLensControls(onChange: (lens: Partial<LensSettings>, commit:
   slider.addEventListener('change', () => onChange({ f_number: read() }, true));
 
   // マウスで切り替えたらフォーカスを外す。残っていると入力欄の操作中と見なされ、W/A/S/D などが効かない
-  let byPointer = false;
-  toggleRow.addEventListener('pointerdown', () => {
-    byPointer = true;
-  });
-  toggle.addEventListener('change', () => {
-    slider.disabled = !toggle.checked;
-    if (byPointer) toggle.blur();
-    byPointer = false;
-    onChange({ depth_of_field: toggle.checked }, true);
+  function onCheck(input: HTMLInputElement, changed: (checked: boolean) => void): void {
+    let byPointer = false;
+    input.closest('label')?.addEventListener('pointerdown', () => {
+      byPointer = true;
+    });
+    input.addEventListener('change', () => {
+      if (byPointer) input.blur();
+      byPointer = false;
+      changed(input.checked);
+    });
+  }
+  onCheck(exposureToggle, (checked) => onChange({ auto_exposure: checked }, true));
+  onCheck(toggle, (checked) => {
+    slider.disabled = !checked;
+    onChange({ depth_of_field: checked }, true);
   });
 
   return {
     // 設定が変わったら合わせる。被写界深度がオフのときは F 値が効かないので押せなくする
     sync(graphics: GraphicsSettings): void {
+      exposureToggle.checked = graphics.auto_exposure;
       toggle.checked = graphics.depth_of_field;
       slider.value = String(nearestFNumber(graphics.f_number));
       slider.disabled = !graphics.depth_of_field;

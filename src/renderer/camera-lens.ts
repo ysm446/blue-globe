@@ -31,6 +31,13 @@ export function apparentScale(fov: number): number {
 // F 値のスライダーの目盛り。レンズに刻まれた 1/3 段の値を並べる (設定画面とカメラのパネルで使う)
 export const F_NUMBERS = [1.4, 1.6, 1.8, 2, 2.2, 2.5, 2.8, 3.2, 3.5, 4, 4.5, 5, 5.6, 6.3, 7.1, 8, 9, 10, 11, 13, 14, 16, 18, 20, 22];
 
+export const BASE_F_NUMBER = 4; // 既定の F 値 (server/config.py と合わせる)。この絞りで、絞りを入れる前と同じ明るさになる
+
+// 絞りで変わる明るさの倍率。光の量は口径の面積に比例するので、1 段 (F 値が √2 倍) 絞ると半分になる
+export function apertureExposure(fNumber: number): number {
+  return (BASE_F_NUMBER / fNumber) ** 2;
+}
+
 // いちばん近い目盛りの位置
 export function nearestFNumber(value: number): number {
   let best = 0;

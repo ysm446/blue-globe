@@ -1013,16 +1013,20 @@ body.demo-idle * {
   white-space: nowrap;
 }
 
-#camera-dof-row {
+.camera-check {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 4px;
   font-size: 13px;
   cursor: pointer;
 }
 
-#camera-dof-row input {
+#camera-exposure-row {
+  margin-top: 8px;
+}
+
+.camera-check input {
   margin: 0;
   accent-color: var(--accent);
   cursor: pointer;

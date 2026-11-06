@@ -114,8 +114,9 @@
           <div><dt>レンズ</dt><dd id="camera-lens"></dd></div>
           <div><dt>露出</dt><dd id="camera-exposure"></dd></div>
         </dl>
-        <label id="camera-dof-row" title="画面の中心にピントを合わせ、奥や手前へ離れるほどぼかします(通常・天気モード)"><input id="camera-dof" type="checkbox" />被写界深度</label>
-        <div id="camera-f-number-row" title="レンズの絞り。小さいほどぼけが強くなります。被写界深度がオンのときに効きます">
+        <label id="camera-exposure-row" class="camera-check" title="太陽が画面に入ると絞り、夜側を見ているときは少し開けます。F 値を変えても明るさが変わらないように合わせます(通常・天気モード)"><input id="camera-auto-exposure" type="checkbox" />自動露出</label>
+        <label id="camera-dof-row" class="camera-check" title="画面の中心にピントを合わせ、奥や手前へ離れるほどぼかします(通常・天気モード)"><input id="camera-dof" type="checkbox" />被写界深度</label>
+        <div id="camera-f-number-row" title="レンズの絞り。小さいほどぼけが強くなります。自動露出がオフのときは、小さいほど明るくなります(1 段で 2 倍)。被写界深度がオンのときに効きます">
           <label for="camera-f-number">F 値</label>
           <div class="range-row">
             <input id="camera-f-number" type="range" min="0" max="24" step="1" />
@@ -427,7 +428,7 @@
             <output id="exposure-compensation-value" for="exposure-compensation"></output>
           </div>
           <button class="reset-button" data-reset="exposure_compensation" type="button" aria-label="露出補正を既定に戻す" title="既定に戻す"></button>
-          <label for="f-number" data-help="レンズの絞り。小さいほどぼけが強く、ピントの合う範囲が狭くなります。被写界深度がオンのときに効きます。既定: F4">F 値</label>
+          <label for="f-number" data-help="レンズの絞り。小さいほどぼけが強く、ピントの合う範囲が狭くなります。自動露出がオフのときは、小さいほど明るくなります(1 段で 2 倍、F4 が基準)。オンのときは露出が打ち消すので、明るさは変わりません。被写界深度がオンのときに効きます。既定: F4">F 値</label>
           <div class="range-row">
             <input id="f-number" type="range" min="0" max="24" step="1" />
             <output id="f-number-value" for="f-number"></output>
@@ -441,7 +442,7 @@
           <button class="reset-button" data-reset="globe_size" type="button" aria-label="地球儀の大きさを既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row" data-help="太陽が画面に入ると絞り、夜側を見ているときは少し開けます。画面の明るさの実測ではなく、太陽と地球の位置関係から決めます。既定: オン"><input id="exposure-toggle" type="checkbox" />自動露出(通常・天気モード)</label>
+          <label class="check-row" data-help="太陽が画面に入ると絞り、夜側を見ているときは少し開けます。画面の明るさの実測ではなく、太陽と地球の位置関係から決めます。F 値を変えても明るさが変わらないように合わせます。既定: オン"><input id="exposure-toggle" type="checkbox" />自動露出(通常・天気モード)</label>
           <button class="reset-button" data-reset="auto_exposure" type="button" aria-label="自動露出を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
