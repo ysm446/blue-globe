@@ -10,6 +10,7 @@ import {
   riverNames,
   unwrapLongitudes,
   type Bounds,
+  type CountryRecord,
   type RegionRecord,
   type RiverRecord,
 } from './highlight-data';
@@ -45,6 +46,7 @@ export interface HighlightInfo {
   kind: string; // river, line, polygon、または範囲の種類 (Range/mtn, Desert など)
   lengthKm?: number;
   bounds: Bounds;
+  countries?: { code: string; name: string; nameJa: string }[]; // 川は源流に近い順、範囲は重なりの大きい順
 }
 
 const RIBBON_VS = /* glsl */ `
@@ -225,7 +227,7 @@ interface Item {
   group: THREE.Group;
   ribbons: { material: THREE.ShaderMaterial; seconds: number }[];
   fill: THREE.ShaderMaterial | null;
-  label: Label | null;
+  labels: Label[];
   revealSeconds: number;
   clock: number;
   fade: number;
@@ -239,6 +241,7 @@ export class Highlights {
   private items: Item[] = [];
   private rivers: Promise<RiverRecord[]> | null = null;
   private regions: Promise<RegionRecord[]> | null = null;
+  private countries: Promise<Map<string, CountryRecord>> | null = null;
   private readonly resolution = new THREE.Vector2(1, 1);
   private readonly projected = new THREE.Vector3();
   private readonly toCamera = new THREE.Vector3();
@@ -248,6 +251,13 @@ export class Highlights {
   private loadRivers(): Promise<RiverRecord[]> {
     this.rivers ??= import('./data/rivers-10m.json').then((mod) => mod.default as unknown as RiverRecord[]);
     return this.rivers;
+  }
+
+  private loadCountries(): Promise<Map<string, CountryRecord>> {
+    this.countries ??= import('./data/countries-10m.json').then(
+      (mod) => new Map((mod.default as unknown as CountryRecord[]).map((country) => [country.a3, country])),
+    );
+    return this.countries;
   }
 
   private loadRegions(): Promise<RegionRecord[]> {
@@ -271,7 +281,7 @@ export class Highlights {
   }
 
   private async build(spec: HighlightSpec): Promise<{ item: Item; info: HighlightInfo } | null> {
-    const item: Item = { group: new THREE.Group(), ribbons: [], fill: null, label: null, revealSeconds: 1, clock: 0, fade: 0, leaving: false };
+    const item: Item = { group: new THREE.Group(), ribbons: [], fill: null, labels: [], revealSeconds: 1, clock: 0, fade: 0, leaving: false };
     const addLabel = (text: string, kind: 'river' | 'area', points: THREE.Vector3[], progress: number[], preferFirst: boolean): void => {
       if (!text || points.length === 0) return;
       const element = document.createElement('span');
@@ -279,7 +289,31 @@ export class Highlights {
       element.textContent = text;
       element.style.opacity = '0';
       this.labelContainer.append(element);
-      item.label = { element, points, progress, preferFirst, current: -1, transform: '' };
+      item.labels.push({ element, points, progress, preferFirst, current: -1, transform: '' });
+    };
+    // 通る国、重なる国の名前と国旗。国の中央付近の点に置き、川は光る線がその国に差しかかってから出す
+    const countryList = await this.loadCountries();
+    const addCountries = (entries: [string, number][]): HighlightInfo['countries'] => {
+      const listed: NonNullable<HighlightInfo['countries']> = [];
+      for (const [code, first] of entries) {
+        const country = countryList.get(code);
+        if (!country) continue;
+        listed.push({ code, name: country.n, nameJa: country.ja });
+        const element = document.createElement('span');
+        element.className = 'highlight-label country';
+        if (country.f) {
+          const flag = document.createElement('img');
+          flag.src = `./flags/${country.f}.svg`;
+          flag.alt = '';
+          element.append(flag);
+        }
+        element.append(country.ja || country.n);
+        element.style.opacity = '0';
+        this.labelContainer.append(element);
+        const point = lonLatToVector3(country.x, country.y, LINE_RADIUS);
+        item.labels.push({ element, points: [point], progress: [first], preferFirst: true, current: -1, transform: '' });
+      }
+      return listed;
     };
     const lineCandidates = (lines: { coords: number[]; progress: number[] }[]): { points: THREE.Vector3[]; progress: number[] } => {
       const total = lines.reduce((sum, line) => sum + line.progress.length, 0);
@@ -352,7 +386,8 @@ export class Highlights {
       const candidates = lineCandidates(lines);
       addLabel(spec.label ?? river.n, 'river', candidates.points, candidates.progress, false);
       item.revealSeconds = RIVER_REVEAL_SECONDS;
-      return { item, info: { name: river.n, kind: 'river', lengthKm: river.L, bounds: boundsOf(river.l, 1) } };
+      const countries = addCountries(river.c);
+      return { item, info: { name: river.n, kind: 'river', lengthKm: river.L, bounds: boundsOf(river.l, 1), countries } };
     }
     if (spec.type === 'area') {
       const region = findByName(await this.loadRegions(), spec.name, regionNames);
@@ -360,7 +395,8 @@ export class Highlights {
       addArea(region.p);
       const points = areaCandidates(region.p);
       addLabel(spec.label ?? (region.ja || region.n), 'area', points, points.map(() => 0), true);
-      return { item, info: { name: region.n, nameJa: region.ja, kind: region.c, bounds: boundsOf(region.p.flat()) } };
+      const countries = addCountries(region.k.map((code) => [code, 0]));
+      return { item, info: { name: region.n, nameJa: region.ja, kind: region.c, bounds: boundsOf(region.p.flat()), countries } };
     }
     if (spec.points.length < 2) return null;
     const coords = unwrapLongitudes(flatOf(spec.points));
@@ -395,15 +431,13 @@ export class Highlights {
         u.uResolution.value.copy(this.resolution);
       }
       if (item.fill) item.fill.uniforms.uOpacity.value = opacity * AREA_FILL_OPACITY;
-      if (item.label) {
-        const reveal = easeInOut(Math.min(1, item.clock / item.revealSeconds));
-        this.placeLabel(item.label, camera, visible ? opacity : 0, reveal);
-      }
+      const reveal = easeInOut(Math.min(1, item.clock / item.revealSeconds));
+      for (const label of item.labels) this.placeLabel(label, camera, visible ? opacity : 0, reveal);
     }
     // 消えきったものを片付ける
     for (const item of this.items.filter((i) => i.leaving && i.fade <= 0)) {
       this.group.remove(item.group);
-      item.label?.element.remove();
+      for (const label of item.labels) label.element.remove();
       item.group.traverse((object) => {
         if (object instanceof THREE.Mesh) {
           object.geometry.dispose();

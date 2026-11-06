@@ -9,6 +9,7 @@ export interface RiverRecord {
   r: number; // 重要度 (Natural Earth の scalerank。小さいほど大きな川)
   L: number;
   l: number[][];
+  c: [string, number][]; // 通る国 (ADM0_A3) と、その国に初めて入る所の源流からの距離 (0〜1)。源流に近い順
 }
 
 // 山脈、砂漠、高原などの範囲。p は多角形ごとの輪の並び (1 つ目が外周、残りが穴)
@@ -18,6 +19,18 @@ export interface RegionRecord {
   c: string; // 種類 (Range/mtn, Desert, Plateau など)
   r: number;
   p: number[][][];
+  k: string[]; // 重なる国 (ADM0_A3)。重なりの大きい順
+}
+
+// 国。x, y は国名を置くのに適した点 (経度、緯度)、f は国旗のファイル名 (国コードの小文字。ないときは空)
+export interface CountryRecord {
+  a3: string;
+  n: string;
+  ja: string;
+  f: string;
+  x: number;
+  y: number;
+  r: number;
 }
 
 export interface Bounds {

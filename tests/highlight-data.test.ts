@@ -49,6 +49,20 @@ test('川の線は源流から河口へ向いている', () => {
   assert.ok(sourceOf('Mississippi')[1] > 45);
 });
 
+test('ドナウ川が通る国は源流から順に並ぶ', () => {
+  const danube = findByName(rivers, 'Danube', riverNames)!;
+  const order = danube.c.map(([code]) => code);
+  // 国境になっている区間は両岸の国が入る。モルドバは接する区間が短く (1km 未満)、除かれる
+  assert.deepEqual(order, ['DEU', 'AUT', 'SVK', 'HUN', 'HRV', 'SRB', 'ROU', 'BGR', 'UKR']);
+  const firsts = danube.c.map(([, first]) => first);
+  assert.deepEqual(firsts, [...firsts].sort((a, b) => a - b));
+});
+
+test('アルプス山脈に重なる国', () => {
+  const alps = findByName(regions, 'Alps', regionNames)!;
+  assert.deepEqual([...alps.k].sort(), ['AUT', 'CHE', 'DEU', 'FRA', 'ITA']);
+});
+
 test('範囲は日付変更線をまたいでも狭い側を返す', () => {
   const b = boundsOf([[170, 10, 179, 12, -175, 11]]);
   assert.equal(b.west, 170);

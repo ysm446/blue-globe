@@ -1,15 +1,18 @@
 // ツアーのハイライト (川をなぞる、山域を示す) 用に、Natural Earth の GeoJSON を小さな JSON に変換する。
 // 実行: node scripts/build-highlights.mjs <ne_10m_rivers_lake_centerlines.geojson> <ne_10m_geography_regions_polys.geojson>
-// 入力は https://github.com/nvkelso/natural-earth-vector の geojson/ から取る。出力は src/renderer/data/ の 2 つのファイル
+//       <ne_10m_admin_0_countries.geojson> [flag-icons の flags/4x3 フォルダ]
+// 入力は https://github.com/nvkelso/natural-earth-vector の geojson/ から取る。出力は src/renderer/data/ の 3 つのファイル。
+// 国旗のフォルダ (npm の flag-icons。MIT) を渡すと、使う国の国旗を src/renderer/public/flags/ に写す
 import fs from 'node:fs';
 import path from 'node:path';
 
-const [riversFile, regionsFile] = process.argv.slice(2);
-if (!riversFile || !regionsFile) {
-  console.error('usage: node scripts/build-highlights.mjs <rivers.geojson> <regions.geojson>');
+const [riversFile, regionsFile, countriesFile, flagsDir] = process.argv.slice(2);
+if (!riversFile || !regionsFile || !countriesFile) {
+  console.error('usage: node scripts/build-highlights.mjs <rivers.geojson> <regions.geojson> <countries.geojson> [flagsDir]');
   process.exit(1);
 }
-const outDir = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..', 'src', 'renderer', 'data');
+const repoRoot = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
+const outDir = path.join(repoRoot, 'src', 'renderer', 'data');
 
 const TOLERANCE_DEG = 0.004; // 点を間引くときの許容のずれ (約 400m)。地域ビューで寄っても形が崩れない程度
 const round = (value) => Math.round(value * 1000) / 1000; // 約 100m
@@ -227,11 +230,165 @@ function buildRegions(file) {
   return regions.sort((a, b) => a.r - b.r);
 }
 
-const rivers = buildRivers(riversFile);
-const regions = buildRegions(regionsFile);
+// 国。判定には点を間引いた範囲を使う (10m のままでは遅い)。日本語名は、日本の地図で一般的な呼び方に一部直す
+const COUNTRY_TOLERANCE_DEG = 0.005;
+const RIVER_SAMPLE_KM = 5; // 川の上で国を調べる間隔
+const RIVER_MIN_KM = 1; // 通った長さがこれより短い国は、国境の線との誤差として除く
+const REGION_MIN_SHARE = 0.03; // 範囲の中で占める割合がこれより小さい国は除く
+const JA_OVERRIDES = {
+  TWN: '台湾',
+  KOS: 'コソボ',
+  CHN: '中国',
+  PRK: '北朝鮮',
+  KOR: '韓国',
+  USA: 'アメリカ',
+  THA: 'タイ',
+  MLI: 'マリ',
+  ZAF: '南アフリカ',
+  CAF: '中央アフリカ',
+  CYN: '北キプロス',
+};
+
+function loadCountries(file) {
+  return JSON.parse(fs.readFileSync(file, 'utf8')).features.map((feature) => {
+    const p = feature.properties;
+    const polygons = (feature.geometry.type === 'Polygon' ? [feature.geometry.coordinates] : feature.geometry.coordinates).map(
+      (rings) => rings.map((ring) => simplify(ring, COUNTRY_TOLERANCE_DEG)),
+    );
+    const bbox = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const rings of polygons) {
+      for (const [lon, lat] of rings[0]) {
+        bbox[0] = Math.min(bbox[0], lon);
+        bbox[1] = Math.min(bbox[1], lat);
+        bbox[2] = Math.max(bbox[2], lon);
+        bbox[3] = Math.max(bbox[3], lat);
+      }
+    }
+    const iso2 = p.ISO_A2_EH && p.ISO_A2_EH !== '-99' ? p.ISO_A2_EH.toLowerCase() : '';
+    return {
+      a3: p.ADM0_A3,
+      n: (p.NAME_EN || p.NAME).trim(),
+      ja: JA_OVERRIDES[p.ADM0_A3] ?? (p.NAME_JA || '').trim(),
+      f: iso2,
+      x: round(p.LABEL_X),
+      y: round(p.LABEL_Y),
+      r: p.LABELRANK,
+      polygons,
+      bbox,
+    };
+  });
+}
+
+function insideRing(lon, lat, ring) {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > lat !== yj > lat && lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function insideCountry(lon, lat, country) {
+  const [w, s, e, n] = country.bbox;
+  if (lon < w || lon > e || lat < s || lat > n) return false;
+  return country.polygons.some((rings) => insideRing(lon, lat, rings[0]) && !rings.slice(1).some((hole) => insideRing(lon, lat, hole)));
+}
+
+const countries = loadCountries(countriesFile);
+let lastCountry = null;
+function countryAt(lon, lat) {
+  // 続けて調べる点はたいてい同じ国にあるので、直前の国を先に調べる
+  if (lastCountry && insideCountry(lon, lat, lastCountry)) return lastCountry;
+  lastCountry = countries.find((country) => country !== lastCountry && insideCountry(lon, lat, country)) ?? null;
+  return lastCountry;
+}
+
+// 川が通る国を、源流に近い順に並べる。値は [国 (ADM0_A3), その国に初めて入る所の源流からの距離 (0〜1)]
+function riverCountries(river) {
+  const found = new Map(); // a3 → { first, km }
+  for (const line of river.l) {
+    let along = line[0];
+    for (let i = 3; i + 1 < line.length; i += 2) {
+      const a = [line[i - 2], line[i - 1]];
+      const b = [line[i], line[i + 1]];
+      const segment = distanceKm(a, b);
+      const steps = Math.max(1, Math.ceil(segment / RIVER_SAMPLE_KM));
+      for (let k = 0; k < steps; k++) {
+        const t = (k + 0.5) / steps;
+        const country = countryAt(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t);
+        if (!country) continue;
+        const entry = found.get(country.a3) ?? { first: Infinity, km: 0 };
+        entry.first = Math.min(entry.first, (along + segment * t) / Math.max(river.L, 1));
+        entry.km += segment / steps;
+        found.set(country.a3, entry);
+      }
+      along += segment;
+    }
+  }
+  return [...found]
+    .filter(([, entry]) => entry.km >= RIVER_MIN_KM)
+    .sort((x, y) => x[1].first - y[1].first)
+    .map(([a3, entry]) => [a3, Math.round(Math.min(1, entry.first) * 1000) / 1000]);
+}
+
+// 範囲に重なる国を、重なりの大きい順に並べる。範囲の中に格子状に点を打って数える
+function regionCountries(region) {
+  const counts = new Map();
+  let total = 0;
+  for (const rings of region.p) {
+    const toPoints = (ring) => {
+      const points = [];
+      for (let i = 0; i + 1 < ring.length; i += 2) points.push([ring[i], ring[i + 1]]);
+      return points;
+    };
+    const outer = toPoints(rings[0]);
+    const holes = rings.slice(1).map(toPoints);
+    const lons = outer.map((p) => p[0]);
+    const lats = outer.map((p) => p[1]);
+    const [w, e, s, n] = [Math.min(...lons), Math.max(...lons), Math.min(...lats), Math.max(...lats)];
+    if (e - w > 180) continue; // 日付変更線をまたぐ範囲は数えない (まれ)
+    const step = Math.max(0.05, Math.sqrt((e - w) * (n - s)) / 40);
+    for (let lat = s + step / 2; lat < n; lat += step) {
+      for (let lon = w + step / 2; lon < e; lon += step) {
+        if (!insideRing(lon, lat, outer) || holes.some((hole) => insideRing(lon, lat, hole))) continue;
+        total++;
+        const country = countryAt(lon, lat);
+        if (country) counts.set(country.a3, (counts.get(country.a3) ?? 0) + 1);
+      }
+    }
+  }
+  return [...counts]
+    .filter(([, count]) => count / Math.max(total, 1) >= REGION_MIN_SHARE)
+    .sort((x, y) => y[1] - x[1])
+    .map(([a3]) => a3);
+}
+
+const rivers = buildRivers(riversFile).map((river) => ({ ...river, c: riverCountries(river) }));
+const regions = buildRegions(regionsFile).map((region) => ({ ...region, k: regionCountries(region) }));
+const countryTable = countries.map(({ a3, n, ja, f, x, y, r }) => ({ a3, n, ja, f, x, y, r }));
+
+// 使う国の国旗を写す。flag-icons にない国 (国コードのない地域など) は国旗を出さない
+if (flagsDir) {
+  const target = path.join(repoRoot, 'src', 'renderer', 'public', 'flags');
+  fs.mkdirSync(target, { recursive: true });
+  let copied = 0;
+  for (const country of countryTable) {
+    const source = path.join(flagsDir, `${country.f}.svg`);
+    if (!country.f || !fs.existsSync(source)) {
+      country.f = '';
+      continue;
+    }
+    fs.copyFileSync(source, path.join(target, `${country.f}.svg`));
+    copied++;
+  }
+  console.log(`国旗: ${copied} 枚`);
+}
+
 for (const [name, data] of [
   ['rivers-10m.json', rivers],
   ['regions-10m.json', regions],
+  ['countries-10m.json', countryTable],
 ]) {
   const file = path.join(outDir, name);
   fs.writeFileSync(file, JSON.stringify(data));

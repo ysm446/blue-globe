@@ -270,6 +270,25 @@ button.city-label:active {
   color: #ffdca6;
 }
 
+/* 通る国、重なる国。ハイライトの名前より小さくし、国旗を添える */
+.highlight-label.country {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  transition: opacity 400ms;
+}
+
+.highlight-label.country img {
+  height: 13px;
+  width: auto;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.6);
+}
+
 /* 惑星の名前。星の点を邪魔しないよう、小さく控えめにする */
 .planet-label {
   position: fixed;
