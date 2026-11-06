@@ -84,6 +84,8 @@ const FOCUS_DIST = 2.15; // 風速モードで地点に寄ったときのカメ�
 const EARTH_VIEW_DIST = 3.3; // 通常・天気モードは地球全体が見える距離にする
 const OVERVIEW_DIST = 4.6;
 const FLY_SECONDS = 2.8;
+// 飛ぶ前から行き先の高解像度の画像を読む距離 (度)。読む範囲 (約 31.5 度四方) の大半が今の範囲と重なる近さ
+const DETAIL_PRELOAD_DEGREES = 8;
 const CLOUD_LOD_PIXELS = 150; // 太陽系へ引いていくとき、地球がこれより小さく写ると雲を描かない
 const PANEL_OVERLAP_WIDTH = 900; // これより狭い画面ではパネルを下に置く (style.css と合わせる)
 
@@ -548,8 +550,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   function updateRegionDetail(dt: number): void {
     if (regionView && !regionFlight?.leaving) {
       if (!regionDetail) return;
-      // 飛んでいる間は行き先のタイルを先に読む
-      const center = regionFlight?.to ?? regionView;
+      const center = regionFlight ? flightDetailCenter(regionFlight) : regionView;
       regionDetail.setView(center.lat, center.lon);
       regionDetail.update(dt);
       const { shown, total, failed } = regionDetail.progress;
@@ -574,6 +575,15 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     earthDetailFrom = null;
     viewStatus.hidden = true;
     if (!regionView && regionDetail && regionBlend < REGION_RELEASE_BLEND) stopRegionDetail();
+  }
+
+  // 飛んでいる間に高解像度の画像を読む範囲の中心。行き先が近ければ (読む範囲の大半が重なる) 行き先のタイルを先に読む。
+  // 遠くへ飛ぶときに行き先を読むと、今見ている場所のタイルが一斉に入れ替わり、届くまで低解像度の画像に切り替わってしまう。
+  // そこで半分までは出発点のまま持ち、そこから行き先を読む。遠くへは途中で高く上がるので、切り替えは地表が小さく見えている間に起こる。
+  // 出発点と行き先の両方の範囲に入るタイルは、切り替えても残る
+  function flightDetailCenter(f: { from: RegionView; to: RegionView; elapsed: number; seconds: number }): LonLat {
+    if (separationDegrees(f.from, f.to) < DETAIL_PRELOAD_DEGREES || f.elapsed >= f.seconds / 2) return f.to;
+    return f.from;
   }
 
   // 地球ビューで高解像度の画像を使える状態か。風速モードは地表を描かず、太陽系の視点は地球が遠い
