@@ -36,6 +36,7 @@ DEFAULT_SETTINGS = {
         "moonlight": True,  # 夜側の雲と地表を、月の位置と満ち欠けに合わせて照らす
         "glint_strength": 1.3,  # 1 が地球の写真に合わせた強さ
         "region_detail": True,
+        "region_relief": True,  # 地域ビューの地表に、地形の陰影が焼き込まれた画像を使う
         "volume_clouds": True,
         # 立体の雲の見た目。volume-clouds.ts の CloudStyle を参照
         "cloud_resolution": 50,

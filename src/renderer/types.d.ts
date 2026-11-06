@@ -18,6 +18,9 @@ type GlobeView = 'solar' | 'globe' | 'region';
 
 type EarthTileLayer = 'day' | 'night' | 'water';
 
+// 取得する画像の種類。day は地形の陰影あり、day-plain は陰影なし
+type EarthTileSource = EarthTileLayer | 'day-plain';
+
 type EarthTextureName = 'earth-day' | 'earth-night' | 'earth-water';
 
 interface WeatherLocation {
@@ -56,6 +59,7 @@ interface GraphicsSettings {
   city_glow: number; // 街明かりのまわりの淡い光 (暈) の強さ。1 が既定 (0〜2)
   moonlight: boolean; // 夜側の雲と地表を、月の位置と満ち欠けに合わせて照らす
   region_detail: boolean; // 地域ビューで高解像度の画像を取得して使う
+  region_relief: boolean; // 地域ビューの地表に、地形の陰影が焼き込まれた画像を使う
   volume_clouds: boolean; // 近づいたときに雲を立体で描く
   cloud_resolution: number; // 立体の雲を描く解像度 (画面に対する %。50, 75, 100)
   cloud_edge_detail: number; // 立体の雲の縁の細かさ (0〜1)
@@ -149,7 +153,7 @@ interface Window {
     setCameraBookmark(slot: number, bookmark: CameraBookmark): Promise<AppSettings>;
     getGraphicsDefaults(): Promise<GraphicsSettings>;
     getTexture(name: EarthTextureName): Promise<Uint8Array>;
-    getEarthTile(layer: EarthTileLayer, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null
+    getEarthTile(layer: EarthTileSource, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null
     getNews(at?: string): Promise<NewsReport>;
     getPlaceNews(name: string, latitude: number, longitude: number, at?: string): Promise<NewsReport>;
     getSettings(): Promise<AppSettings>;

@@ -204,8 +204,11 @@ ipcMain.handle('texture:get', async (_event, name: string) => {
 const TILE_FETCH_TIMEOUT_MS = 20_000;
 const NIGHT_TILE_JPEG_QUALITY = 85; // 配信は PNG で 1 枚 140〜300KB ある
 const TILE_URL = 'https://gibs.earthdata.nasa.gov/wmts/epsg4326/best';
+// 地表は 2 種類。day は地形の陰影 (北西から光を当てた固定の陰) と海底の地形が焼き込まれた画像、
+// day-plain は陰影のない画像。設定で切り替え、どちらも別のフォルダに保存する
 const TILE_SOURCES: Record<string, string> = {
   day: 'BlueMarble_ShadedRelief_Bathymetry/default/500m/7/{row}/{col}.jpeg',
+  'day-plain': 'BlueMarble_NextGeneration/default/500m/7/{row}/{col}.jpeg',
   night: 'VIIRS_Black_Marble/default/2016-01-01/500m/7/{row}/{col}.png',
   water: 'MODIS_Water_Mask/default/250m/7/{row}/{col}.png', // レベル 7 は他の面と同じ 160×80 枚
 };

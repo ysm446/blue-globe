@@ -146,10 +146,30 @@ export class RegionDetail {
     const current = new Set(this.order);
     this.fills = this.fills.filter((entry) => current.has(entry));
     this.maskData.fill(0);
+    // 読み直し中 (reload) のタイルも、届くまでは前の画像を見せる
     for (const entry of this.order) {
-      if (entry.state === 'shown') this.writeMask(entry);
+      if (entry.opacity > 0) this.writeMask(entry);
     }
     this.mask.needsUpdate = true;
+  }
+
+  // 同じ範囲のタイルを、取得する画像を替えて読み直す (地形の陰影の切り替え)。
+  // 届くまでは今の画像を見せたままにし、届いたものから置き換える。見え具合は引き継ぐので、フェードはしない
+  reload(layer: EarthTileLayer): void {
+    const replaced = new Set<TileEntry>();
+    for (const [key, entry] of this.entries) {
+      if (entry.layer !== layer) continue;
+      entry.bitmap?.close();
+      const next: TileEntry = { ...entry, state: 'queued', bitmap: null, retryAt: 0 };
+      this.entries.set(key, next);
+      this.order[this.order.indexOf(entry)] = next;
+      // 元の画像をまだ写していない置き場所は、新しい方で写す
+      const fill = this.fills.indexOf(entry);
+      if (fill >= 0) this.fills[fill] = next;
+      replaced.add(entry);
+    }
+    // 読み込み中の古いタイルは、届いても entries と一致しないので捨てられる
+    this.uploads = this.uploads.filter((entry) => !replaced.has(entry));
   }
 
   private writeMask(entry: TileEntry): void {

@@ -321,6 +321,10 @@
           <label class="check-row" data-help="地域ビューで、視点のまわりに NASA GIBS の 500m の画像を取得して重ねます。通信とメモリを使います。既定: オン"><input id="region-detail-toggle" type="checkbox" />地域ビューの高解像度の画像(NASA から取得)</label>
           <button class="reset-button" data-reset="region_detail" type="button" aria-label="地域ビューの高解像度の画像を既定に戻す" title="既定に戻す"></button>
         </div>
+        <div class="check-line">
+          <label class="check-row" data-help="高解像度の画像に、地形の陰影が焼き込まれたもの(NASA Blue Marble Shaded Relief)を使います。陰は北西から光を当てた固定のもので、太陽の向きとは関係ありません。オフにすると陰影のない画像(Blue Marble Next Generation)を使います。どちらも一度取得した分は保存し、切り替えても消しません。既定: オン"><input id="region-relief-toggle" type="checkbox" />高解像度の画像に地形の陰影を付ける</label>
+          <button class="reset-button" data-reset="region_relief" type="button" aria-label="地形の陰影を既定に戻す" title="既定に戻す"></button>
+        </div>
         <h3 class="settings-subhead">デバッグ</h3>
         <div class="check-line">
           <label class="check-row" data-help="動作確認用。地表のメッシュ(三角形の分割)の上に黒い線を重ねます。雲がある所では、線は雲の下に隠れます。既定: オフ"><input id="wireframe-toggle" type="checkbox" />ワイヤーフレーム(地表のメッシュを線で表示)</label>
@@ -481,7 +485,8 @@
         地名検索: 国土地理院、Open-Meteo<br />
         雲: NOAA GMGSI(衛星の全球合成画像)と NOAA GFS をもとに加工したもので、元データそのものではありません。近づいたときの立体の雲は、高さと細かい形を見た目のために作っています<br />
         星と星座の線: Hipparcos カタログ、d3-celestial<br />
-        地域ビューの地表と街明かり: NASA GIBS の固定の合成画像(街明かりは 2016 年)<br />
+        地表: NASA Blue Marble Next Generation(地球ビュー、陰影なしの設定)、Blue Marble Shaded Relief and Bathymetry(陰影ありの設定)。NASA GIBS の固定の合成画像<br />
+        地域ビューの街明かり: NASA Black Marble(2016 年。GIBS)<br />
         We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS),
         part of NASA's Earth Science Data and Information System (ESDIS).
         </p>

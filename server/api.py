@@ -113,6 +113,7 @@ class GraphicsUpdate(BaseModel):
     moonlight: bool
     glint_strength: float = Field(ge=0, le=3)
     region_detail: bool
+    region_relief: bool
     volume_clouds: bool
     cloud_resolution: Literal[50, 75, 100]
     cloud_edge_detail: float = Field(ge=0, le=1)

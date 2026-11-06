@@ -90,6 +90,7 @@ class SettingsApiTest(unittest.TestCase):
         "moonlight": False,
         "glint_strength": 2.0,
         "region_detail": False,
+        "region_relief": False,
         "volume_clouds": False,
         "cloud_resolution": 100,
         "cloud_edge_detail": 0.2,
@@ -116,6 +117,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertTrue(graphics["show_map_lines"])
         self.assertEqual(graphics["cloud_shadow"], 0.55)
         self.assertTrue(graphics["region_detail"])
+        self.assertTrue(graphics["region_relief"])
         self.assertEqual(graphics["region_bloom"], 0.5)
         self.assertEqual(graphics["glint_strength"], 1.3)
 

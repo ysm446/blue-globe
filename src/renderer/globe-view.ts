@@ -528,13 +528,16 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   // 高解像度の画像は VRAM を多く使うので、地域ビューの間だけ持つ
   let regionDetail: RegionDetail | null = null;
   let regionDetailEnabled = true;
+  let regionRelief = true; // 地表に地形の陰影が焼き込まれた画像を使う
   let regionBloom = 1;
   const viewStatus = el('view-status');
 
   function startRegionDetail(): void {
     if (!regionDetailEnabled) return;
     if (!regionDetail && RegionDetail.isSupported(renderer)) {
-      regionDetail = new RegionDetail(renderer, (layer, col, row) => window.weatherApi.getEarthTile(layer, col, row));
+      regionDetail = new RegionDetail(renderer, (layer, col, row) =>
+        window.weatherApi.getEarthTile(layer === 'day' && !regionRelief ? 'day-plain' : layer, col, row),
+      );
       if (baseTextures) regionDetail.setBase(baseTextures);
       earth.setRegionDetail(regionDetail);
     }
@@ -1616,6 +1619,10 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     });
     regionBloom = graphics.region_bloom;
     regionDetailEnabled = graphics.region_detail;
+    if (graphics.region_relief !== regionRelief) {
+      regionRelief = graphics.region_relief;
+      regionDetail?.reload('day');
+    }
     // オンにしたときの地球ビューの分は、次のフレームで高さを見て読み込む
     if (!regionDetailEnabled) stopRegionDetail();
     else if (regionView && !regionFlight?.leaving) startRegionDetail();

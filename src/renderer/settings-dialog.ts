@@ -251,6 +251,7 @@ export function initSettingsDialog(
     show_constellations: el<HTMLInputElement>('constellations-toggle'),
     star_twinkle: el<HTMLInputElement>('twinkle-toggle'),
     region_detail: el<HTMLInputElement>('region-detail-toggle'),
+    region_relief: el<HTMLInputElement>('region-relief-toggle'),
     volume_clouds: el<HTMLInputElement>('volume-clouds-toggle'),
     moonlight: el<HTMLInputElement>('moonlight-toggle'),
     cruise_bank: el<HTMLInputElement>('cruise-bank-toggle'),
