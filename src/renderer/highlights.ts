@@ -7,11 +7,13 @@ import { overlaps, type LabelBox } from './label-layout';
 import {
   boundsOf,
   findByName,
+  pointNames,
   regionNames,
   riverNames,
   unwrapLongitudes,
   type Bounds,
   type CountryRecord,
+  type PointRecord,
   type RegionRecord,
   type RiverRecord,
 } from './highlight-data';
@@ -32,20 +34,23 @@ const OUTLINE_REVEAL_SECONDS = 1.6;
 const FADE_IN_SECONDS = 0.5;
 const FADE_OUT_SECONDS = 0.7;
 const LABEL_CANDIDATES = 200; // 川のラベルを置く候補の点の数
-const LABEL_KEEP_RATIO = 0.6; // 今の点より画面の中心にこれだけ近い点が見つかったときだけ、ラベルを動かす (ちらつかないように)
+const LABEL_KEEP_RATIO = 0.6;
+const POINT_DOT_OFFSET = 9; // 点のハイライトのラベルの左端から印の中心まで (style.css の .highlight-label.point と合わせる) // 今の点より画面の中心にこれだけ近い点が見つかったときだけ、ラベルを動かす (ちらつかないように)
 
 // label は画面に出す名前。省くと、範囲は日本語名、川は英語名 (データに日本語名がない) を出す
 export type HighlightSpec =
   | { type: 'river'; name: string; label?: string }
   | { type: 'area'; name: string; label?: string }
   | { type: 'line'; points: [number, number][]; name?: string; label?: string } // [lat, lon] の並び
-  | { type: 'polygon'; points: [number, number][]; name?: string; label?: string };
+  | { type: 'polygon'; points: [number, number][]; name?: string; label?: string }
+  | { type: 'point'; name?: string; lat?: number; lon?: number; label?: string }; // 名前で探すか、座標で置く
 
 export interface HighlightInfo {
   name: string;
   nameJa?: string;
   kind: string; // river, line, polygon、または範囲の種類 (Range/mtn, Desert など)
   lengthKm?: number;
+  elevationM?: number; // 山頂などの標高
   bounds: Bounds;
   countries?: { code: string; name: string; nameJa: string }[]; // 川は源流に近い順、範囲は重なりの大きい順
 }
@@ -221,7 +226,8 @@ interface Label {
   points: THREE.Vector3[];
   progress: number[]; // 川の候補の点の、源流からの距離 (0〜1)。範囲は 0
   preferFirst: boolean;
-  country: boolean;
+  fixed: boolean; // 国名と点。位置が決まっているので先に置き、重なるときは出さない
+  align: 'above' | 'center' | 'dot'; // 点の上 (川)、点に中央そろえ (範囲、国名)、点に印を置いて右に文字 (点のハイライト)
   current: number; // 今置いている候補 (-1 は置いていない)
   transform: string;
   width: number; // 文字の大きさは変わらないので、最初に測って使い回す
@@ -249,6 +255,7 @@ export class Highlights {
   private items: Item[] = [];
   private rivers: Promise<RiverRecord[]> | null = null;
   private regions: Promise<RegionRecord[]> | null = null;
+  private points: Promise<PointRecord[]> | null = null;
   private countries: Promise<Map<string, CountryRecord>> | null = null;
   private readonly resolution = new THREE.Vector2(1, 1);
   private readonly projected = new THREE.Vector3();
@@ -266,6 +273,11 @@ export class Highlights {
       (mod) => new Map((mod.default as unknown as CountryRecord[]).map((country) => [country.a3, country])),
     );
     return this.countries;
+  }
+
+  private loadPoints(): Promise<PointRecord[]> {
+    this.points ??= import('./data/points-10m.json').then((mod) => mod.default as unknown as PointRecord[]);
+    return this.points;
   }
 
   private loadRegions(): Promise<RegionRecord[]> {
@@ -302,7 +314,28 @@ export class Highlights {
       element.textContent = text;
       element.style.opacity = '0';
       this.labelContainer.append(element);
-      item.labels.push({ element, points, progress, preferFirst, country: false, current: -1, transform: '', width: 0, height: 0 });
+      const align = kind === 'river' ? 'above' : 'center';
+      item.labels.push({ element, points, progress, preferFirst, fixed: false, align, current: -1, transform: '', width: 0, height: 0 });
+    };
+    // 点のハイライト。光る印と、名前 (標高があれば添える)
+    const addPointLabel = (text: string, elevation: number | null, lon: number, lat: number): void => {
+      const element = document.createElement('span');
+      element.className = 'highlight-label point';
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      const name = document.createElement('span');
+      name.textContent = text;
+      element.append(dot, name);
+      if (elevation !== null) {
+        const height = document.createElement('span');
+        height.className = 'elevation';
+        height.textContent = `${elevation.toLocaleString('ja-JP')}m`;
+        element.append(height);
+      }
+      element.style.opacity = '0';
+      this.labelContainer.append(element);
+      const point = lonLatToVector3(lon, lat, LINE_RADIUS);
+      item.labels.push({ element, points: [point], progress: [0], preferFirst: true, fixed: true, align: 'dot', current: -1, transform: '', width: 0, height: 0 });
     };
     // 通る国、重なる国の名前と国旗。国の中央付近の点に置き、川は光る線がその国に差しかかってから出す
     const countryList = await this.loadCountries();
@@ -325,7 +358,7 @@ export class Highlights {
         element.style.opacity = '0';
         this.labelContainer.append(element);
         const point = lonLatToVector3(country.x, country.y, LINE_RADIUS);
-        item.labels.push({ element, points: [point], progress: [first], preferFirst: true, country: true, current: -1, transform: '', width: 0, height: 0 });
+        item.labels.push({ element, points: [point], progress: [first], preferFirst: true, fixed: true, align: 'center', current: -1, transform: '', width: 0, height: 0 });
       }
       return listed;
     };
@@ -412,6 +445,25 @@ export class Highlights {
       const countries = addCountries(region.k.map((code) => [code, 0]));
       return { item, info: { name: region.n, nameJa: region.ja, kind: region.c, bounds: boundsOf(region.p.flat()), countries } };
     }
+    if (spec.type === 'point') {
+      let found: PointRecord | null = null;
+      if (spec.name) found = findByName(await this.loadPoints(), spec.name, pointNames);
+      const lat = spec.lat ?? found?.y;
+      const lon = spec.lon ?? found?.x;
+      if (lat === undefined || lon === undefined) return null;
+      const text = spec.label ?? (found ? found.ja || found.n : spec.name ?? '');
+      addPointLabel(text, found?.e ?? null, lon, lat);
+      const countries = addCountries((found?.k ?? []).map((code) => [code, 0]));
+      const info: HighlightInfo = {
+        name: found?.n ?? spec.name ?? '',
+        nameJa: found?.ja,
+        kind: found?.c ?? 'point',
+        bounds: { south: lat, north: lat, west: lon, east: lon },
+        countries,
+      };
+      if (found?.e) info.elevationM = found.e;
+      return { item, info };
+    }
     if (spec.points.length < 2) return null;
     const coords = unwrapLongitudes(flatOf(spec.points));
     const text = spec.label ?? spec.name ?? '';
@@ -468,10 +520,10 @@ export class Highlights {
   layoutLabels(camera: THREE.Camera, blocked: LabelBox[]): LabelBox[] {
     const placed = [...blocked];
     const result: LabelBox[] = [];
-    for (const countryPass of [true, false]) {
+    for (const fixedPass of [true, false]) {
       for (const item of this.items) {
         for (const label of item.labels) {
-          if (label.country !== countryPass) continue;
+          if (label.fixed !== fixedPass) continue;
           const box = item.labelOpacity > 0.01 ? this.chooseBox(label, camera, item.labelReveal, placed) : null;
           if (box) {
             placed.push(box);
@@ -503,9 +555,10 @@ export class Highlights {
       if (this.projected.z >= 1 || Math.abs(this.projected.x) > 0.9 || Math.abs(this.projected.y) > 0.85) return null;
       const x = ((this.projected.x + 1) / 2) * window.innerWidth;
       const y = ((1 - this.projected.y) / 2) * window.innerHeight;
-      // 川の名前は線の少し上、範囲の名前と国名は点に中央そろえ
-      const lift = label.preferFirst ? 0.5 : 1.9;
-      const box = { x: x - label.width / 2, y: y - label.height * lift, width: label.width, height: label.height };
+      // 川の名前は線の少し上、範囲の名前と国名は点に中央そろえ、点のハイライトは印を点に合わせる
+      const left = label.align === 'dot' ? x - POINT_DOT_OFFSET : x - label.width / 2;
+      const top = label.align === 'above' ? y - label.height * 1.9 : y - label.height / 2;
+      const box = { x: left, y: top, width: label.width, height: label.height };
       if (placed.some((other) => overlaps(box, other))) return null;
       return { box, distance: Math.hypot(this.projected.x, this.projected.y) };
     };

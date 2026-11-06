@@ -22,6 +22,7 @@ import { HeadingTape, type TapeMarker } from './heading-tape';
 import { stepFade } from './fade';
 import { Highlights, type HighlightSpec } from './highlights';
 import { CountryLabels } from './country-labels';
+import { TourCaption } from './tour-caption';
 import { bearingDegrees, easeInOut, separationDegrees, wrapDegrees, type LonLat } from './math';
 import { SpeedOverlay } from './overlay';
 import { ParticleSystem } from './particles';
@@ -305,6 +306,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   scene.add(coastlines.group, borders.group);
   // ツアーのハイライト (川をなぞる線、山脈などの範囲)。今は検証用フックからだけ使う
   const highlights = new Highlights(el('highlight-labels'));
+  const tourCaption = new TourCaption(el('tour-caption'));
   scene.add(highlights.group);
 
   const windUniforms = createWindUniforms();
@@ -1838,6 +1840,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     borders,
     highlight: (spec: HighlightSpec, append = false) => highlights.show(spec, append),
     clearHighlights: () => highlights.clear(),
+    caption: (text: string, seconds?: number) => tourCaption.show(text, seconds),
+    clearCaption: () => tourCaption.clear(),
     stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),
     peekAt(body: 'sun' | 'moon' | 'dayside' | 'sunrise'): void {
       flight = null;

@@ -1,14 +1,17 @@
 // ツアーのハイライト (川をなぞる、山域を示す) 用に、Natural Earth の GeoJSON を小さな JSON に変換する。
 // 実行: node scripts/build-highlights.mjs <ne_10m_rivers_lake_centerlines.geojson> <ne_10m_geography_regions_polys.geojson>
-//       <ne_10m_admin_0_countries.geojson> [flag-icons の flags/4x3 フォルダ]
-// 入力は https://github.com/nvkelso/natural-earth-vector の geojson/ から取る。出力は src/renderer/data/ の 3 つのファイル。
+//       <ne_10m_admin_0_countries.geojson> <ne_10m_geography_regions_elevation_points.geojson>
+//       <ne_10m_geography_regions_points.geojson> [flag-icons の flags/4x3 フォルダ]
+// 入力は https://github.com/nvkelso/natural-earth-vector の geojson/ から取る。出力は src/renderer/data/ の 4 つのファイル。
 // 国旗のフォルダ (npm の flag-icons。MIT) を渡すと、使う国の国旗を src/renderer/public/flags/ に写す
 import fs from 'node:fs';
 import path from 'node:path';
 
-const [riversFile, regionsFile, countriesFile, flagsDir] = process.argv.slice(2);
-if (!riversFile || !regionsFile || !countriesFile) {
-  console.error('usage: node scripts/build-highlights.mjs <rivers.geojson> <regions.geojson> <countries.geojson> [flagsDir]');
+const [riversFile, regionsFile, countriesFile, elevationPointsFile, regionPointsFile, flagsDir] = process.argv.slice(2);
+if (!riversFile || !regionsFile || !countriesFile || !elevationPointsFile || !regionPointsFile) {
+  console.error(
+    'usage: node scripts/build-highlights.mjs <rivers.geojson> <regions.geojson> <countries.geojson> <elevation-points.geojson> <region-points.geojson> [flagsDir]',
+  );
   process.exit(1);
 }
 const repoRoot = path.join(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
@@ -368,6 +371,34 @@ const rivers = buildRivers(riversFile).map((river) => ({ ...river, c: riverCount
 const regions = buildRegions(regionsFile).map((region) => ({ ...region, k: regionCountries(region) }));
 const countryTable = countries.map(({ a3, n, ja, f, x, y, r }) => ({ a3, n, ja, f, x, y, r }));
 
+// 点。山頂など (標高点) と、滝・岬・島などの代表点。e は標高 (m。ないときは null)、k はその点がある国 (海の上なら空)
+function buildPoints(files) {
+  const points = [];
+  for (const file of files) {
+    for (const feature of JSON.parse(fs.readFileSync(file, 'utf8')).features) {
+      const p = feature.properties;
+      const [lon, lat] = feature.geometry.coordinates;
+      const name = (p.name_en || p.name || '').trim();
+      if (!name) continue;
+      const country = countryAt(lon, lat);
+      const alias = (p.name || '').trim();
+      points.push({
+        n: name,
+        a: alias && alias !== name ? [alias] : [], // 別名 (英語名の欄と名前の欄が違うもの。Iguaçu Falls と Iguazu Falls など)
+        ja: (p.name_ja || '').trim(),
+        c: p.featurecla,
+        e: typeof p.elevation === 'number' && p.elevation !== 0 ? p.elevation : null,
+        x: round(lon),
+        y: round(lat),
+        r: p.scalerank,
+        k: country ? [country.a3] : [],
+      });
+    }
+  }
+  return points.sort((a, b) => a.r - b.r);
+}
+const points = buildPoints([elevationPointsFile, regionPointsFile]);
+
 // 使う国の国旗を写す。flag-icons にない国 (国コードのない地域など) は国旗を出さない
 if (flagsDir) {
   const target = path.join(repoRoot, 'src', 'renderer', 'public', 'flags');
@@ -389,6 +420,7 @@ for (const [name, data] of [
   ['rivers-10m.json', rivers],
   ['regions-10m.json', regions],
   ['countries-10m.json', countryTable],
+  ['points-10m.json', points],
 ]) {
   const file = path.join(outDir, name);
   fs.writeFileSync(file, JSON.stringify(data));

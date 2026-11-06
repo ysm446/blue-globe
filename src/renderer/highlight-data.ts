@@ -22,6 +22,20 @@ export interface RegionRecord {
   k: string[]; // 重なる国 (ADM0_A3)。重なりの大きい順
 }
 
+// 点。山頂など (標高点) と、滝・岬・島などの代表点。c は種類 (mountain, waterfall, cape, island など)、
+// e は標高 (m。ないときは null)、k はその点がある国 (ADM0_A3。海の上なら空)
+export interface PointRecord {
+  n: string;
+  a: string[]; // 別名
+  ja: string;
+  c: string;
+  e: number | null;
+  x: number;
+  y: number;
+  r: number;
+  k: string[];
+}
+
 // 国。x, y は国名を置くのに適した点 (経度、緯度)、f は国旗のファイル名 (国コードの小文字。ないときは空)
 export interface CountryRecord {
   a3: string;
@@ -82,6 +96,7 @@ export function findByName<T extends { r: number }>(records: T[], query: string,
 
 export const riverNames = (river: RiverRecord): string[] => [river.n, ...river.a];
 export const regionNames = (region: RegionRecord): string[] => [region.n, region.ja];
+export const pointNames = (point: PointRecord): string[] => [point.n, ...(point.a ?? []), point.ja];
 
 // 経度を、前の点から 180 度より離れないように続ける (日付変更線をまたいでも途切れないように)
 export function unwrapLongitudes(coords: number[], start = 0): number[] {

@@ -6,9 +6,11 @@ import {
   boundsOf,
   findByName,
   normalizeName,
+  pointNames,
   regionNames,
   riverNames,
   unwrapLongitudes,
+  type PointRecord,
   type RegionRecord,
   type RiverRecord,
 } from '../src/renderer/highlight-data.ts';
@@ -61,6 +63,19 @@ test('ドナウ川が通る国は源流から順に並ぶ', () => {
 test('アルプス山脈に重なる国', () => {
   const alps = findByName(regions, 'Alps', regionNames)!;
   assert.deepEqual([...alps.k].sort(), ['AUT', 'CHE', 'DEU', 'FRA', 'ITA']);
+});
+
+test('山頂や滝を英語名と日本語名で探せ、標高と国を持つ', () => {
+  const points = JSON.parse(fs.readFileSync('src/renderer/data/points-10m.json', 'utf8')) as PointRecord[];
+  const everest = findByName(points, 'エベレスト', pointNames)!;
+  assert.equal(everest.n, 'Mount Everest');
+  assert.equal(everest.e, 8848);
+  assert.ok(['NPL', 'CHN'].includes(everest.k[0]), everest.k.join(',')); // 国境の上にある
+  assert.equal(findByName(points, 'Mount Everest', pointNames)?.ja, 'エベレスト');
+  const fuji = findByName(points, '富士山', pointNames)!;
+  assert.equal(fuji.e, 3776);
+  assert.deepEqual(fuji.k, ['JPN']);
+  assert.equal(findByName(points, 'Iguazu Falls', pointNames)?.c, 'waterfall');
 });
 
 test('範囲は日付変更線をまたいでも狭い側を返す', () => {

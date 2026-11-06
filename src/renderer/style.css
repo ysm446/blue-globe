@@ -302,6 +302,50 @@ button.city-label:active {
   opacity: 0;
 }
 
+/* 点のハイライト (山頂、滝など)。光る印を点に合わせ、右に名前と標高を出す */
+.highlight-label.point {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #fff;
+}
+
+.highlight-label.point .dot {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  margin-left: 4px; /* 印の中心が左端から 9px。highlights.ts の POINT_DOT_OFFSET と合わせる */
+  border-radius: 50%;
+  background: #ffd27a;
+  box-shadow: 0 0 6px 2px rgba(255, 196, 90, 0.85);
+}
+
+.highlight-label.point .dot::after {
+  content: '';
+  position: absolute;
+  inset: -6px;
+  border: 2px solid rgba(255, 210, 122, 0.8);
+  border-radius: 50%;
+  animation: highlight-pulse 1.8s ease-out infinite;
+}
+
+@keyframes highlight-pulse {
+  from {
+    transform: scale(0.5);
+    opacity: 1;
+  }
+  to {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.highlight-label.point .elevation {
+  color: #ffdca6;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 /* 通る国、重なる国。ハイライトの名前より小さくし、国旗を添える */
 .highlight-label.country {
   display: flex;
@@ -1308,6 +1352,38 @@ body.hide-camera-panel #camera-panel {
   gap: 8px;
   transform: translateX(-50%);
   pointer-events: none;
+}
+
+/* ツアーの字幕。右下の操作のボタンと重ならないよう、下の段より上に出す */
+#tour-caption {
+  position: fixed;
+  left: 50%;
+  bottom: 68px;
+  max-width: min(760px, 80vw);
+  padding: 10px 20px;
+  color: #fff;
+  font-size: 17px;
+  line-height: 1.65;
+  text-align: center;
+  background: rgba(8, 12, 20, 0.62);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
+  opacity: 0;
+  visibility: hidden;
+  transform: translate(-50%, 6px);
+  transition: opacity 400ms, visibility 400ms, transform 400ms;
+  pointer-events: none;
+}
+
+/* まだ出していない文字。場所は取ったまま見せない */
+#tour-caption .pending {
+  color: transparent;
+}
+
+#tour-caption.shown {
+  opacity: 1;
+  visibility: visible;
+  transform: translate(-50%, 0);
 }
 
 #bottom-center #view-status,
