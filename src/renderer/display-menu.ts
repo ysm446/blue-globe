@@ -60,7 +60,8 @@ export function initDisplayMenu(onChange: (changes: Partial<GraphicsSettings>) =
     const anchor = toggle.getBoundingClientRect();
     const above = anchor.top - MENU_GAP - menu.offsetHeight >= EDGE;
     menu.style.top = `${above ? anchor.top - MENU_GAP - menu.offsetHeight : anchor.bottom + MENU_GAP}px`;
-    menu.style.left = `${Math.max(EDGE, Math.min(anchor.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - EDGE))}px`;
+    // ボタンは右下の並びの左端にあるので、メニューの左端をボタンの左端にそろえる
+    menu.style.left = `${Math.max(EDGE, Math.min(anchor.left, window.innerWidth - menu.offsetWidth - EDGE))}px`;
   }
 
   function setOpen(open: boolean): void {
