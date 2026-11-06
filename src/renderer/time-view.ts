@@ -1,6 +1,41 @@
 // 過去の時刻を見るスライダーの計算。画面の計算から切り離して検証できるよう、DOM に依存しない
 export const TIME_RANGE_MINUTES = 24 * 60;
 export const TIME_STEP_MINUTES = 15;
+export const MAX_DAYS_BACK = 3; // 日付のメニューで選べるのは 3 日前まで
+const DAY_MS = TIME_RANGE_MINUTES * 60_000;
+
+// daysBack 日前の 0 時。offsetSeconds は時計の時差で、null はパソコンの時刻
+export function dayStart(daysBack: number, now: number, offsetSeconds: number | null): number {
+  if (offsetSeconds === null) {
+    const date = new Date(now);
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - daysBack);
+    return date.getTime();
+  }
+  const shift = offsetSeconds * 1000;
+  return Math.floor((now + shift) / DAY_MS) * DAY_MS - daysBack * DAY_MS - shift;
+}
+
+// スライダーの左端の時刻。今日は今から 24 時間前まで、過去の日はその日の 0 時から
+export function windowStart(daysBack: number, now: number, offsetSeconds: number | null): number {
+  return daysBack === 0 ? now - DAY_MS : dayStart(daysBack, now, offsetSeconds);
+}
+
+// スライダーの右端の値 (左端からの分)。今日の右端は今。過去の日は翌日の 0 時を含めない
+export function windowMax(daysBack: number): number {
+  return daysBack === 0 ? TIME_RANGE_MINUTES : TIME_RANGE_MINUTES - TIME_STEP_MINUTES;
+}
+
+// 日を選んだときのスライダーの値。見ている時刻の時と分を保つ。今日は今より先へは行かない
+export function sliderValueForDay(daysBack: number, viewAt: number, now: number, offsetSeconds: number | null): number {
+  const minutesIntoDay = (viewAt - dayStart(0, viewAt, offsetSeconds)) / 60_000;
+  const step = TIME_STEP_MINUTES;
+  if (daysBack === 0) {
+    const target = Math.min(now, dayStart(0, now, offsetSeconds) + minutesIntoDay * 60_000);
+    return TIME_RANGE_MINUTES - Math.round((now - target) / 60_000 / step) * step;
+  }
+  return Math.min(windowMax(daysBack), Math.round(minutesIntoDay / step) * step);
+}
 
 // 何分前かから、見る時刻を求める。0 は今で、null を返す
 export function viewTimeAt(minutesBefore: number, now: number = Date.now()): Date | null {

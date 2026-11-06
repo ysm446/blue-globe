@@ -589,6 +589,69 @@ button.city-label:active {
   font-variant-numeric: tabular-nums;
   text-align: right;
   white-space: nowrap;
+  /* 押すと日付のメニューが開く。押せる範囲を少し広げ、文字の位置は変えない */
+  margin: -2px -6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+#clock-date:hover,
+#clock-date[aria-expanded='true'] {
+  color: var(--text);
+  background: rgba(178, 178, 178, 0.14);
+}
+
+/* デモと太陽系では今の様子を見せるので、日付は選べない */
+body.demo #clock-date,
+body.solar #clock-date {
+  pointer-events: none;
+}
+
+/* 日付を押すと開くメニュー。位置は time-control.ts が日付に合わせて決める */
+#date-menu {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--panel);
+  border-radius: 8px;
+  box-shadow: var(--panel-glow);
+  backdrop-filter: var(--glass);
+}
+
+#date-menu[hidden] {
+  display: none;
+}
+
+.date-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  padding: 4px 10px;
+  text-align: left;
+  color: var(--text-2);
+  background: transparent;
+  border-color: transparent;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.date-item:hover {
+  background: rgba(178, 178, 178, 0.14);
+}
+
+.date-item[aria-checked='true'] {
+  color: var(--text);
+  background: rgba(178, 178, 178, 0.2);
+}
+
+.date-note {
+  color: var(--text-3);
+  font-size: 0.85em;
 }
 
 #time-control {

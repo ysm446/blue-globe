@@ -40,7 +40,7 @@
       <div id="time-panel">
         <div id="time-head">
           <time id="clock-time"></time>
-          <div id="clock-date"></div>
+          <div id="clock-date" role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" aria-controls="date-menu" title="日付を選ぶ (3 日前まで)"></div>
         </div>
         <div id="time-control" class="range-row"><input id="time-slider" type="range" aria-label="過去の時刻" /></div>
         <div id="sun-marks" aria-hidden="true"></div>
@@ -198,6 +198,7 @@
     </div>
 
     <div id="display-menu" role="group" aria-label="表示の切り替え" hidden></div>
+    <div id="date-menu" role="menu" aria-label="日付" hidden></div>
 
     <div id="music-popup" hidden>
       <input id="music-volume" type="range" min="0" max="100" step="1" aria-label="音量" />

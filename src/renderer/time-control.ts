@@ -1,10 +1,22 @@
 // 過去の時刻を見るスライダー。動かしている間は太陽と時計だけを追従させ、止めたらデータを取りに行く。
 // 太陽と時計は選んだ時刻へ一瞬で切り替えず、なめらかに追いつかせる。
-// スライダーの下には、範囲の中の日の出 (▲) と日の入り (▼) の位置に印を置く
+// スライダーの下には、範囲の中の日の出 (▲) と日の入り (▼) の位置に印を置く。
+// 日付を押すと、3 日前までの日を選ぶメニューが開く。今日はスライダーが今から 24 時間前まで、
+// 過去の日はその日の 0 時から 24 時までを動かす
 import { sunEvents, type SunEvent } from './astro';
 import { el } from './dom';
 import type { LonLat } from './math';
-import { offsetLabel, smoothTowards, TIME_RANGE_MINUTES, TIME_STEP_MINUTES, viewTimeAt } from './time-view';
+import {
+  dayStart,
+  MAX_DAYS_BACK,
+  offsetLabel,
+  sliderValueForDay,
+  smoothTowards,
+  TIME_STEP_MINUTES,
+  viewTimeAt,
+  windowMax,
+  windowStart,
+} from './time-view';
 
 const COMMIT_DELAY_MS = 300; // キーを続けて押している間は取得しない
 const SUN_MARKS_UPDATE_MS = 60_000; // 範囲は今の時刻とともにずれる
@@ -15,12 +27,18 @@ const SUN_MARKS: Record<SunEvent['kind'], { points: string; label: string }> = {
 };
 const FOLLOW_SECONDS = 0.7; // 選んだ時刻へ追いつく速さ。24 時間動かすと、1 秒で約 8 割、2 秒でほぼ着く
 const ARRIVED_MINUTES = 0.25; // ここまで近づいたら、選んだ時刻にそろえて止める
+const DAY_NOTES = ['今日', '昨日', '2日前', '3日前'];
+const MENU_GAP = 6; // 日付とメニューの間 (px)
+const EDGE = 8; // 画面の端との間 (px)
 
 export function initTimeControl(
   onPreview: (at: Date | null) => void,
   onCommit: (at: Date | null) => void,
 ) {
   const slider = el<HTMLInputElement>('time-slider');
+  const dateButton = el('clock-date');
+  const dateMenu = el('date-menu');
+  let daysBack = 0; // 選んでいる日。0 は今日
   let timer = 0;
   let view: Date | null = null;
   let committed: Date | null = null;
@@ -29,14 +47,26 @@ export function initTimeControl(
   let velocity = 0;
   let frame = 0;
   let lastFrameTime = 0;
+  let sunPlace: LonLat | null = null;
+  let sunOffsetSeconds: number | null = null; // 時計の時差。null はパソコンの時刻
 
-  slider.min = String(-TIME_RANGE_MINUTES);
-  slider.max = '0';
+  slider.min = '0';
+  slider.max = String(windowMax(0));
   slider.step = String(TIME_STEP_MINUTES);
-  slider.value = '0';
+  slider.value = slider.max;
 
+  // スライダーで選んでいる時刻。今日の右端は今で、null
+  function goalTime(now = Date.now()): number | null {
+    const value = Number(slider.value);
+    if (daysBack === 0 && value === windowMax(0)) return null;
+    return windowStart(daysBack, now, sunOffsetSeconds) + value * 60_000;
+  }
+
+  // 選んでいる時刻が何分前か
   function goalMinutes(): number {
-    return -Number(slider.value);
+    const now = Date.now();
+    const goal = goalTime(now);
+    return goal === null ? 0 : (now - goal) / 60_000;
   }
 
   function follow(time: number): void {
@@ -56,9 +86,13 @@ export function initTimeControl(
 
   function show(): void {
     const minutesBefore = goalMinutes();
-    slider.setAttribute('aria-valuetext', offsetLabel(minutesBefore)); // 画面には出さず、読み上げに使う
-    slider.style.setProperty('--fill', `${(1 - minutesBefore / TIME_RANGE_MINUTES) * 100}%`);
     view = viewTimeAt(minutesBefore);
+    // 画面には出さず、読み上げに使う
+    slider.setAttribute(
+      'aria-valuetext',
+      view && daysBack > 0 ? `${dayLabel(daysBack)} ${clockLabel(view)}` : offsetLabel(Math.round(minutesBefore)),
+    );
+    slider.style.setProperty('--fill', `${(Number(slider.value) / Number(slider.max)) * 100}%`);
     if (frame === 0) {
       lastFrameTime = performance.now();
       frame = requestAnimationFrame(follow);
@@ -73,8 +107,6 @@ export function initTimeControl(
   }
 
   const sunMarks = el('sun-marks');
-  let sunPlace: LonLat | null = null;
-  let sunOffsetSeconds: number | null = null;
 
   // 時計と同じく、時差が分かっている都市はその現地時刻、それ以外はパソコンの時刻で出す
   function clockLabel(at: Date): string {
@@ -83,17 +115,29 @@ export function initTimeControl(
     return local.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', timeZone: shifted ? 'UTC' : undefined });
   }
 
-  // 位置はスライダーの値と同じく、左端が 24 時間前、右端が今
+  // 時計の日付と同じ書き方で、days 日前の日付を出す
+  function dayLabel(days: number): string {
+    const shifted = sunOffsetSeconds !== null;
+    const noon = dayStart(days, Date.now(), sunOffsetSeconds) + 12 * 3600_000 + (sunOffsetSeconds ?? 0) * 1000;
+    return new Date(noon).toLocaleDateString('ja-JP', {
+      month: 'long',
+      day: 'numeric',
+      weekday: 'short',
+      timeZone: shifted ? 'UTC' : undefined,
+    });
+  }
+
+  // 位置はスライダーの値と同じく、左端が範囲の始まり、右端がスライダーの右端
   function renderSunMarks(): void {
     if (!sunPlace) {
       sunMarks.replaceChildren();
       return;
     }
-    const now = Date.now();
-    const from = new Date(now - TIME_RANGE_MINUTES * 60_000);
-    sunMarks.innerHTML = sunEvents(sunPlace, from, new Date(now))
+    const span = Number(slider.max) * 60_000;
+    const from = new Date(windowStart(daysBack, Date.now(), sunOffsetSeconds));
+    sunMarks.innerHTML = sunEvents(sunPlace, from, new Date(from.getTime() + span))
       .map(({ kind, at }) => {
-        const position = (at.getTime() - from.getTime()) / (TIME_RANGE_MINUTES * 60_000);
+        const position = (at.getTime() - from.getTime()) / span;
         const { points, label } = SUN_MARKS[kind];
         return (
           `<svg viewBox="0 0 8 7" style="--at: ${position.toFixed(4)}">` +
@@ -109,18 +153,96 @@ export function initTimeControl(
     sunPlace = place;
     sunOffsetSeconds = offsetSeconds;
     renderSunMarks();
+    if (!dateMenu.hidden) renderMenu();
+  }
+
+  // 日を切り替える。動かしている途中の時刻は追わず、選んだ日の時刻へすぐに移す
+  // (何日分も追いかけると昼と夜が目まぐるしく入れ替わる)。value を省くと、見ている時刻の時と分を保つ
+  function selectDay(days: number, value?: number): void {
+    const from = goalTime() ?? Date.now();
+    daysBack = days;
+    slider.max = String(windowMax(days));
+    slider.value = String(value ?? sliderValueForDay(days, from, Date.now(), sunOffsetSeconds));
+    cancelAnimationFrame(frame);
+    frame = 0;
+    shownMinutes = goalMinutes();
+    velocity = 0;
+    show();
+    commit();
+    renderSunMarks();
   }
 
   // 今の時刻へすぐに戻す (デモを始めるとき)
   function reset(): void {
-    cancelAnimationFrame(frame);
-    frame = 0;
-    slider.value = '0';
-    shownMinutes = 0;
-    velocity = 0;
-    show();
-    commit();
+    setMenuOpen(false);
+    selectDay(0, windowMax(0));
   }
+
+  const dayButtons = DAY_NOTES.slice(0, MAX_DAYS_BACK + 1).map((note, days) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'date-item';
+    button.setAttribute('role', 'menuitemradio');
+    button.addEventListener('click', () => {
+      setMenuOpen(false);
+      if (days !== daysBack) selectDay(days);
+    });
+    dateMenu.append(button);
+    return { button, note };
+  });
+
+  function renderMenu(): void {
+    dayButtons.forEach(({ button, note }, days) => {
+      button.innerHTML = `<span>${dayLabel(days)}</span><span class="date-note">${note}</span>`;
+      button.setAttribute('aria-checked', String(days === daysBack));
+    });
+  }
+
+  // 日付の下に、右端を日付の右端にそろえて開く。下に収まらなければ上へ
+  function placeMenu(): void {
+    const anchor = dateButton.getBoundingClientRect();
+    const below = anchor.bottom + MENU_GAP + dateMenu.offsetHeight <= window.innerHeight - EDGE;
+    dateMenu.style.top = `${below ? anchor.bottom + MENU_GAP : anchor.top - MENU_GAP - dateMenu.offsetHeight}px`;
+    const left = anchor.right - dateMenu.offsetWidth;
+    dateMenu.style.left = `${Math.max(EDGE, Math.min(left, window.innerWidth - dateMenu.offsetWidth - EDGE))}px`;
+  }
+
+  function setMenuOpen(open: boolean): void {
+    dateMenu.hidden = !open;
+    dateButton.setAttribute('aria-expanded', String(open));
+    if (open) {
+      renderMenu();
+      placeMenu();
+    }
+  }
+
+  dateButton.addEventListener('click', () => {
+    setMenuOpen(dateMenu.hidden);
+    dateButton.blur(); // フォーカスが残ると W/A/S/D などが効かないことがある
+  });
+  dateButton.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    setMenuOpen(dateMenu.hidden);
+  });
+  // メニューの外を押したら閉じる (地球のドラッグを始めたときも閉じる)
+  document.addEventListener('pointerdown', (event) => {
+    if (dateMenu.hidden || !(event.target instanceof Node)) return;
+    if (!dateMenu.contains(event.target) && !dateButton.contains(event.target)) setMenuOpen(false);
+  });
+  // 捕捉の段で受け、ツアーなど Esc で終わるものより先に閉じる (開いているときだけ)
+  window.addEventListener(
+    'keydown',
+    (event) => {
+      if (event.key !== 'Escape' || dateMenu.hidden) return;
+      event.stopImmediatePropagation();
+      setMenuOpen(false);
+    },
+    true,
+  );
+  window.addEventListener('resize', () => {
+    if (!dateMenu.hidden) placeMenu();
+  });
 
   slider.addEventListener('input', show);
   slider.addEventListener('change', () => {

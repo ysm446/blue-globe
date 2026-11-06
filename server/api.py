@@ -29,7 +29,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-PAST_LIMIT = timedelta(hours=25)  # 画面は 24 時間まで。操作の間に少し過ぎても受け付ける
+PAST_LIMIT = timedelta(hours=97)  # 画面は 3 日前の 0 時まで (最長 96 時間前)。操作の間に少し過ぎても受け付ける
 
 
 def _past_time(at: datetime | None) -> datetime | None:
@@ -40,7 +40,7 @@ def _past_time(at: datetime | None) -> datetime | None:
         raise HTTPException(400, "時刻にはタイムゾーンが必要です")
     age = datetime.now(timezone.utc) - at
     if age < timedelta(minutes=-1) or age > PAST_LIMIT:
-        raise HTTPException(400, "見られるのは過去 24 時間までです")
+        raise HTTPException(400, "見られるのは 3 日前までです")
     return at
 
 

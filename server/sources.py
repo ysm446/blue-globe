@@ -17,12 +17,12 @@ def _get_json(url: str, **params) -> dict | list:
 
 
 def fetch_forecast(latitude: float, longitude: float, past: bool = False) -> dict:
-    """past を付けると前日からの時間別予報も返し、現在の値と同じ項目を時間別でも返す。"""
+    """past を付けると 4 日前からの時間別予報も返し、現在の値と同じ項目を時間別でも返す。"""
     hourly = "temperature_2m,precipitation_probability,weather_code,is_day"
     extra = {}
     if past:
         hourly += ",apparent_temperature,relative_humidity_2m,wind_speed_10m,wind_direction_10m,wind_gusts_10m"
-        extra["past_days"] = 1
+        extra["past_days"] = 4  # 3 日前の 0 時から。地点と時計の時差がずれても足りるよう 1 日多く
     return _get_json(
         "https://api.open-meteo.com/v1/forecast",
         latitude=latitude,

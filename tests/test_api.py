@@ -438,7 +438,7 @@ class PlaceNewsTest(unittest.TestCase):
 
     def test_future_and_too_old_times_are_rejected(self):
         now = datetime.now(timezone.utc)
-        for at in (now + timedelta(hours=2), now - timedelta(hours=30)):
+        for at in (now + timedelta(hours=2), now - timedelta(hours=98)):
             response = self.client.get("/news/place", params={"name": "x", "latitude": 0, "longitude": 0, "at": at.isoformat()})
             self.assertEqual(response.status_code, 400)
 

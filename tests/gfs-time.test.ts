@@ -36,9 +36,10 @@ test('保存の名前は一番近い区切りになり、日付をまたいで�
   assert.equal(nearestStepStamp(new Date('2026-11-01T23:50:00Z')), '2026110200');
 });
 
-test('過去 25 時間より前や、未来や、不正な値は受け付けない', () => {
+test('過去 97 時間より前や、未来や、不正な値は受け付けない', () => {
   assert.equal(parsePastTime('2026-11-01T08:00:00Z', NOW).toISOString(), '2026-11-01T08:00:00.000Z');
-  assert.throws(() => parsePastTime('2026-10-31T07:00:00Z', NOW));
+  assert.equal(parsePastTime('2026-10-29T07:00:00Z', NOW).toISOString(), '2026-10-29T07:00:00.000Z'); // 96 時間前
+  assert.throws(() => parsePastTime('2026-10-29T05:00:00Z', NOW));
   assert.throws(() => parsePastTime('2026-11-02T08:00:00Z', NOW));
   assert.throws(() => parsePastTime('tomorrow', NOW));
   assert.throws(() => parsePastTime(123, NOW));

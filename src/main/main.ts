@@ -13,7 +13,7 @@ import { setMcpServerEnabled } from './mcp-server';
 
 const GFS_MAX_AGE_MS = 3 * 3600_000; // GFS 1.0° は 3 時間刻み
 const GFS_FETCH_TIMEOUT_MS = 30_000;
-const PAST_KEEP_MS = 48 * 3600_000; // 見られるのは 24 時間前まで。古いものは残しておいても使わない
+const PAST_KEEP_MS = 5 * 24 * 3600_000; // 見られるのは 3 日前の 0 時 (最長 96 時間前) まで。それより古いものは使わない
 const AUDIO_SCHEME = 'weather-audio';
 const AUDIO_EXTENSIONS = ['mp3', 'm4a', 'aac', 'ogg', 'opus', 'wav', 'flac'];
 

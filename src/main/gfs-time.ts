@@ -3,7 +3,7 @@ const STEP_HOURS = 3; // gfs 1.00° の予報時間刻み
 const MAX_FORECAST_HOUR = 384;
 const PUBLISH_DELAY_HOURS = 5; // ランが NOMADS に並ぶまでのおおよその遅れ
 const HOUR_MS = 3600_000;
-export const PAST_LIMIT_HOURS = 25; // 画面は 24 時間まで。操作の間に少し過ぎても受け付ける
+export const PAST_LIMIT_HOURS = 97; // 画面は 3 日前の 0 時まで (最長 96 時間前)。操作の間に少し過ぎても受け付ける
 
 // target の時点を含むラン (00/06/12/18Z) を新しい順に列挙する。まだ公開されていないランは含めない
 export function candidateRuns(target: Date, now: Date = new Date()): Date[] {
