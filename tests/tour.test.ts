@@ -1,8 +1,9 @@
-// ツアーの時刻と、保存するときの名前と id の計算の検証。実行: node --test tests/tour.test.ts
+// ツアーの時刻、保存するときの名前と id、字幕の文字数の計算の検証。実行: node --test tests/tour.test.ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { localHourToDate } from '../src/renderer/tour-time.ts';
 import { defaultTourTitle, newTourId } from '../src/renderer/tour-library.ts';
+import { revealedCount } from '../src/renderer/caption-reveal.ts';
 
 const NOW = new Date('2026-11-06T13:00:00Z');
 
@@ -45,4 +46,11 @@ test('id はサーバーが受け付ける形', () => {
   const id = newTourId(Date.UTC(2026, 10, 6), () => 0.5);
   assert.match(id, /^[A-Za-z0-9_-]{1,64}$/);
   assert.notEqual(newTourId(1, () => 0.1), newTourId(1, () => 0.2));
+});
+
+test('字幕の文字数は、フレームの時刻が出し始めより前でも 0 から始まる', () => {
+  assert.equal(revealedCount(-5, 40), 0);
+  assert.equal(revealedCount(0, 40), 0);
+  assert.equal(revealedCount(1000, 40), 28);
+  assert.equal(revealedCount(10_000, 40), 40);
 });

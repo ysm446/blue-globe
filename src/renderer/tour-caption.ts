@@ -2,7 +2,7 @@
 // 文字は先頭から順に現れる (ストリーミング表示)。板の大きさが文字の増えるたびに変わらないよう、
 // 最初から全文を置き、まだ出していない部分は透明にしておく。
 // ツアーの再生中は下に場面の番号と操作の案内 (footer) を出し、クリックで次へ進める
-const CHARS_PER_SECOND = 28; // 日本語を読むのと同じくらいの速さ
+import { revealedCount } from './caption-reveal';
 
 export class TourCaption {
   private readonly body = document.createElement('span');
@@ -71,7 +71,7 @@ export class TourCaption {
   }
 
   private readonly tick = (now: number): void => {
-    const count = Math.min(this.characters.length, Math.floor(((now - this.startedAt) / 1000) * CHARS_PER_SECOND));
+    const count = revealedCount(now - this.startedAt, this.characters.length);
     if (count !== this.revealed) {
       this.revealed = count;
       this.render();
