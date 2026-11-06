@@ -1268,6 +1268,7 @@ body.demo-idle * {
   align-self: flex-end;
   width: 280px;
   max-height: 40vh;
+  overflow-x: hidden; /* 縦のスクロールバーが出て幅が狭くなっても、横には動かさない (名前は ... で切る) */
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(178, 178, 178, 0.28) transparent;
@@ -1314,6 +1315,7 @@ body.demo-idle * {
   display: flex;
   align-items: center;
   gap: 4px;
+  min-width: 0;
 }
 
 /* 名前ごと押して再生できるよう、名前と場面の数もボタンの中に置く */
