@@ -1,6 +1,7 @@
 // 地球儀の表示とカメラ操作。モード、地域ビュー、描画の設定をここで扱う
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { bookmarkLift, bookmarkSlot } from './camera-bookmarks';
 import { apertureExposure, apparentScale, BASE_FOCAL_LENGTH, verticalFov } from './camera-lens';
 import { CameraPanel } from './camera-panel';
 import { EARTH_RADIUS_KM } from './camera-readout';
@@ -95,6 +96,7 @@ const CAMERA_FAR = 100;
 const CAMERA_NEAR_MIN = 0.005;
 const REGION_BLEND_SECONDS = 0.5;
 const DEMO_FLY_SECONDS = 6;
+const BOOKMARK_STATUS_MS = 1800; // 視点の保存の知らせを出しておく時間
 // マーカーの地名が占める範囲 (style.css の .marker-label と合わせる)
 const MARKER_BOX_LEFT = 8;
 const MARKER_BOX_HEIGHT = 24;
@@ -221,7 +223,8 @@ function showRuntime(renderer: THREE.WebGLRenderer): void {
   el('credit-runtime').textContent = parts.join('、');
 }
 
-export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
+// onViewChange は、ボタン以外 (保存した視点の呼び出し) で地球ビュー、地域ビュー、太陽系の視点が入れ替わったときに呼ぶ
+export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange: (view: GlobeView) => void) {
   const container = el('app');
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -454,7 +457,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   // 地域ビュー。null の間は地球ビューで、OrbitControls がカメラを動かす
   let regionView: RegionView | null = null;
   // spin と tiltShift は、飛んでいる間に旋回 (Q/E の自動の旋回と A/D) と傾き (W/S) で変えた方角と傾き (度)。
-  // 補間した姿勢に足すので、押していたキーの動きは飛んでいる間から始まり、着いたあともそのまま続く
+  // 補間した姿勢に足すので、押していたキーの動きは飛んでいる間から始まり、着いたあともそのまま続く。
+  // cruise は、着いたら巡航モードにするか (巡航モードで保存した視点へ飛ぶとき)。
+  // lift は、途中で上がる高さ (保存した遠くの視点へ飛ぶとき。真ん中で最も高くなる)
   let regionFlight: {
     from: RegionView;
     to: RegionView;
@@ -463,6 +468,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     leaving: boolean;
     spin: number;
     tiltShift: number;
+    cruise?: boolean;
+    lift?: number;
   } | null = null;
   let demoMotion = false;
   let regionPending: RegionDelta = REGION_STILL; // ドラッグで動かしたうち、まだカメラに反映していない分
@@ -772,12 +779,17 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     }
   }
 
-  // 入力欄や設定画面を操作していないときだけ受け付ける
-  function acceptsKey(event: KeyboardEvent): boolean {
-    if (demoMotion || event.ctrlKey || event.altKey || event.metaKey) return false;
+  // 入力欄や設定画面を操作していないときだけ受け付ける。デモの間も受け付けない
+  function acceptsInput(event: KeyboardEvent): boolean {
+    if (demoMotion) return false;
     if (document.querySelector('dialog[open]')) return false;
     const target = event.target instanceof Element ? event.target : null;
     return !target?.closest('input, select, textarea, [contenteditable="true"]');
+  }
+
+  // カメラを動かすキー。Ctrl などを押しているときはアプリやブラウザの操作なので受け付けない
+  function acceptsKey(event: KeyboardEvent): boolean {
+    return !event.ctrlKey && !event.altKey && !event.metaKey && acceptsInput(event);
   }
 
   // 地域ビューにいて、飛んでいる途中でないときだけ受け付ける
@@ -917,6 +929,111 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
     slideKeys.clear();
   });
 
+  // カメラの視点の保存と呼び出し。Ctrl+数字で今の視点を保存し、数字で保存した視点へ飛ぶ (Unreal Engine のブックマークと同じ)。
+  // 保存するのはカメラの姿勢だけで、焦点距離や表示モード、時刻は変えない。飛んでいる途中に同じ数字を押すとすぐに着く
+  let cameraBookmarks: Record<string, CameraBookmark> = {};
+  let bookmarkFlight: { slot: number; motion: object } | null = null; // 呼び出しで始めた飛行 (flight か regionFlight)
+  let bookmarkSave: Promise<unknown> = Promise.resolve(); // 保存は順番に行い、最後の操作が必ず残るようにする
+  const bookmarkStatus = el('bookmark-status');
+  let bookmarkStatusTimer = 0;
+
+  function showBookmarkStatus(text: string, warn = false): void {
+    bookmarkStatus.textContent = text;
+    bookmarkStatus.classList.toggle('warn', warn);
+    bookmarkStatus.hidden = false;
+    window.clearTimeout(bookmarkStatusTimer);
+    bookmarkStatusTimer = window.setTimeout(() => {
+      bookmarkStatus.hidden = true;
+    }, BOOKMARK_STATUS_MS);
+  }
+
+  // 今の視点。太陽系の視点は地球の場面の外なので保存しない
+  function currentBookmark(): CameraBookmark | null {
+    if (solar.active) return null;
+    if (regionView) {
+      const { lat, lon, heading, tilt, distance } = regionView;
+      return { view: 'region', lat, lon, heading, tilt, distance, cruise: freeFlight };
+    }
+    const { lat, lon } = lonLatOf(camera.position.toArray());
+    return { view: 'globe', lat, lon, distance: cameraAltitude(), heading: 0, tilt: 0, cruise: false };
+  }
+
+  function saveBookmark(slot: number): void {
+    const mark = currentBookmark();
+    if (!mark) {
+      showBookmarkStatus('太陽系の視点は保存できません', true);
+      return;
+    }
+    cameraBookmarks = { ...cameraBookmarks, [slot]: mark };
+    showBookmarkStatus(`視点 ${slot} を保存しました`);
+    bookmarkSave = bookmarkSave
+      .then(() => window.weatherApi.setCameraBookmark(slot, mark))
+      .catch((err) => {
+        console.error('camera bookmark save failed', err);
+        showBookmarkStatus(`視点 ${slot} を保存できませんでした`, true);
+      });
+  }
+
+  function recallBookmark(slot: number): void {
+    const mark = cameraBookmarks[slot];
+    if (!mark) {
+      showBookmarkStatus(`視点 ${slot} は保存されていません`, true);
+      return;
+    }
+    const moving = regionFlight ?? flight;
+    if (moving && bookmarkFlight?.slot === slot && bookmarkFlight.motion === moving) {
+      // 飛んでいる途中にもう一度押したら、次のフレームで着かせる
+      if (regionFlight) regionFlight.elapsed = regionFlight.seconds;
+      else if (flight) flight.elapsed = FLY_SECONDS;
+      return;
+    }
+    if (mark.view === 'region' && mode === 'wind') {
+      showBookmarkStatus('風速モードでは地域ビューの視点へ移れません', true);
+      return;
+    }
+    if (solar.active) {
+      // 太陽系からは地球ビューへ戻ってから飛ぶ。引き終える前や戻っている途中は受け付けない
+      if (!solar.orbiting) return;
+      onViewChange('globe');
+      exitSolar(() => recallBookmark(slot));
+      return;
+    }
+    // 保存したとおりの姿勢に着くよう、自動の旋回や回転、巡航は止める
+    stopCruise();
+    globeZoomGoal = null;
+    if (mark.view === 'region' || regionView) {
+      const from = regionView ?? beginRegion();
+      // 地域ビューの行き先は保存した姿勢。地球ビューへは、真上から見た姿勢で引き渡す (leaveRegion と同じ)
+      const pose: RegionView = mark.view === 'region'
+        ? { lat: mark.lat, lon: mark.lon, heading: mark.heading, tilt: mark.tilt, distance: mark.distance }
+        : { lat: mark.lat, lon: mark.lon, heading: 0, tilt: 0, distance: mark.distance };
+      // 巡航モードは旋回モードの距離の範囲を越えて上り下りできるので、範囲に収めない
+      const to = mark.view === 'region' && !mark.cruise ? clampRegionView(pose) : pose;
+      // 遠くへは途中で高く上がり、時間も少し長くかける (地球の裏側で 2 倍)
+      const separation = separationDegrees(from, to);
+      flyRegion(to, mark.view === 'globe', FLY_SECONDS * (1 + separation / 180));
+      if (regionFlight) {
+        regionFlight.cruise = mark.cruise;
+        regionFlight.lift = bookmarkLift(separation);
+      }
+      onViewChange(mark.view);
+    } else {
+      flyTo(lonLatToVector3(mark.lon, mark.lat, GLOBE_RADIUS + mark.distance));
+    }
+    const started = regionFlight ?? flight;
+    bookmarkFlight = started ? { slot, motion: started } : null;
+  }
+
+  window.addEventListener('keydown', (event) => {
+    const slot = bookmarkSlot(event.code);
+    if (slot === null || event.altKey || event.metaKey || event.shiftKey || !acceptsInput(event)) return;
+    releaseButtonFocus(event);
+    event.preventDefault(); // Ctrl+0 などのブラウザの操作 (拡大率) にも渡さない
+    if (event.repeat) return;
+    if (event.ctrlKey) saveBookmark(slot);
+    else recallBookmark(slot);
+  });
+
   // 巡航で進め、旋回の分だけ画面を傾ける。ドラッグしている間は進めない
   // 段の値から速さを求める。0〜1 段の間は 1 段目の速さへ比例させ、止まるところでも途切れないようにする
   function cruiseRate(throttle: number): number {
@@ -995,16 +1112,18 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
         const { tilt } = regionFlight.to;
         regionFlight.tiltShift = THREE.MathUtils.clamp(tilt + regionFlight.tiltShift + arm.tilt, 0, REGION_MAX_TILT) - tilt;
       }
-      const view = interpolateRegionView(regionFlight.from, regionFlight.to, easeInOut(t));
+      const eased = easeInOut(t);
+      const view = interpolateRegionView(regionFlight.from, regionFlight.to, eased);
       // 地球ビューへ離れるときは距離が地域ビューの範囲を越えるので、clampRegionView は使わない
       regionView = {
         ...view,
+        distance: view.distance + (regionFlight.lift ?? 0) * Math.sin(Math.PI * eased),
         heading: wrapDegrees(view.heading + regionFlight.spin),
         tilt: THREE.MathUtils.clamp(view.tilt + regionFlight.tiltShift, 0, REGION_MAX_TILT),
       };
       regionDistanceGoal = clampRegionDistance(regionView.distance);
       if (regionFlight.elapsed >= regionFlight.seconds) {
-        const { leaving } = regionFlight;
+        const { leaving, cruise } = regionFlight;
         regionFlight = null;
         if (leaving) {
           applyRegionPose(regionView);
@@ -1014,6 +1133,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
           controls.enabled = true;
           return;
         }
+        if (cruise) setCameraStyle(true);
       }
     } else if (freeFlight) {
       ({ view: regionView, pending: regionPending } = followRegionDrag(regionView, regionPending, dt, 'camera'));
@@ -1654,6 +1774,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void) {
   return {
     applyGraphics,
     changeMode,
+    setCameraBookmarks(marks: Record<string, CameraBookmark>): void {
+      cameraBookmarks = { ...marks };
+    },
     setViewTime(at: Date | null): void {
       viewTime = at;
       updateSky();

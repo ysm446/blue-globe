@@ -92,7 +92,7 @@
 
     <div id="demo-caption" hidden></div>
     <div id="top-center">
-      <div id="view-hint">左ドラッグで回転、右ドラッグで移動、ホイールで拡大縮小、WASD で回転と傾き、Q/E で自動旋回、V で巡航モード、矢印キーで次の都市へ</div>
+      <div id="view-hint">左ドラッグで回転、右ドラッグで移動、ホイールで拡大縮小、WASD で回転と傾き、Q/E で自動旋回、V で巡航モード、矢印キーで次の都市へ、Ctrl+数字で視点を保存、数字で呼び出し</div>
       <div id="demo-hint" role="status" hidden>地球のクリックかキー操作で終了</div>
       <div id="heading-tape" aria-hidden="true"></div>
     </div>
@@ -162,6 +162,7 @@
     <!-- 下の中央。地域ビューの高解像度の画像の読み込み状況と、風速の凡例、データを取得できないときの知らせ。
          データの出典と時刻は設定画面の「情報」に出す -->
     <div id="bottom-center">
+      <div id="bookmark-status" role="status" hidden></div>
       <div id="view-status" role="status" hidden></div>
       <div id="layer-info" hidden>
         <div class="legend-bar" id="legend-bar"></div>

@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('weatherApi', {
   setGraphics: (graphics: unknown) => ipcRenderer.invoke('graphics:set', graphics),
   getGraphicsDefaults: () => ipcRenderer.invoke('graphics:defaults'),
   setPanels: (panels: unknown) => ipcRenderer.invoke('panels:set', panels),
+  setCameraBookmark: (slot: number, bookmark: unknown) => ipcRenderer.invoke('camera-bookmark:set', slot, bookmark),
   getTexture: (name: string) => ipcRenderer.invoke('texture:get', name),
   getEarthTile: (layer: string, col: number, row: number) => ipcRenderer.invoke('earth-tile:get', layer, col, row),
   getNews: (at?: string) => ipcRenderer.invoke('news:get', at),

@@ -218,6 +218,29 @@ class SettingsApiTest(unittest.TestCase):
             {"hourly": True, "weekly": False, "details": True, "camera": False},
         )
 
+    BOOKMARK = {"view": "region", "lat": 35.5, "lon": 139.7, "distance": 0.2, "heading": 30, "tilt": 50, "cruise": False}
+
+    def test_camera_bookmarks_default_to_empty(self):
+        self.assertEqual(self.client.get("/settings").json()["camera_bookmarks"], {})
+
+    def test_camera_bookmarks_keep_other_slots(self):
+        globe = {"view": "globe", "lat": 10, "lon": -20, "distance": 2.3, "heading": 0, "tilt": 0, "cruise": False}
+        self.assertEqual(self.client.put("/settings/camera-bookmarks/3", json=self.BOOKMARK).status_code, 200)
+        self.assertEqual(self.client.put("/settings/camera-bookmarks/0", json=globe).status_code, 200)
+        self.assertEqual(self.client.get("/settings").json()["camera_bookmarks"], {"3": self.BOOKMARK, "0": globe})
+
+    def test_camera_bookmark_overwrites_same_slot(self):
+        self.client.put("/settings/camera-bookmarks/3", json=self.BOOKMARK)
+        moved = {**self.BOOKMARK, "lat": -12.0}
+        self.client.put("/settings/camera-bookmarks/3", json=moved)
+        self.assertEqual(self.client.get("/settings").json()["camera_bookmarks"], {"3": moved})
+
+    def test_invalid_camera_bookmarks_are_rejected(self):
+        self.assertEqual(self.client.put("/settings/camera-bookmarks/10", json=self.BOOKMARK).status_code, 422)
+        bad = {**self.BOOKMARK, "view": "solar"}
+        self.assertEqual(self.client.put("/settings/camera-bookmarks/1", json=bad).status_code, 422)
+        self.assertEqual(self.client.get("/settings").json()["camera_bookmarks"], {})
+
     def test_other_settings_keep_graphics(self):
         self.client.put("/settings/graphics", json=self.GRAPHICS)
         self.client.put("/settings/mode", json={"mode": "wind"})

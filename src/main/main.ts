@@ -265,6 +265,9 @@ ipcMain.handle('graphics:defaults', () => backendRequest('/settings/graphics/def
 ipcMain.handle('panels:set', (_event, panels: unknown) =>
   backendRequest('/settings/panels', jsonPut(panels)),
 );
+ipcMain.handle('camera-bookmark:set', (_event, slot: number, bookmark: unknown) =>
+  backendRequest(`/settings/camera-bookmarks/${Number(slot)}`, jsonPut(bookmark)),
+);
 // FPS の表示に出す VRAM の量。表示している間だけ読む (アプリを閉じるときは before-quit で止める)
 ipcMain.handle('vram:watch', (event, enabled: boolean) => {
   if (!enabled) {

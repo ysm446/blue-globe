@@ -7,11 +7,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from . import clouds, news, sources
-from .config import DEFAULT_SETTINGS, load_settings, update_settings
+from .config import DEFAULT_SETTINGS, load_settings, update_camera_bookmark, update_settings
 
 
 def _watch_parent() -> None:
@@ -66,6 +66,19 @@ class PanelsUpdate(BaseModel):
     weekly: bool
     details: bool
     camera: bool
+
+
+class CameraBookmark(BaseModel):
+    """保存したカメラの視点。globe は地球ビュー (北が上で地球の中心を向く)、region は地域ビュー。"""
+
+    view: Literal["globe", "region"]
+    lat: float = Field(ge=-90, le=90)
+    lon: float
+    # 地球ビューはカメラの地表からの高さ、地域ビューは中心の地点からカメラまでの距離 (地球の半径が 1)
+    distance: float = Field(gt=0)
+    heading: float  # 見ている方角。0 が北。地球ビューでは 0
+    tilt: float = Field(ge=0, le=90)  # 0 が真下。地球ビューでは 0
+    cruise: bool  # 地域ビューの巡航モード
 
 
 class AudioFileUpdate(BaseModel):
@@ -144,6 +157,11 @@ def put_graphics(update: GraphicsUpdate) -> dict:
 @app.put("/settings/panels")
 def put_panels(update: PanelsUpdate) -> dict:
     return update_settings({"panels": update.model_dump()})
+
+
+@app.put("/settings/camera-bookmarks/{slot}")
+def put_camera_bookmark(bookmark: CameraBookmark, slot: int = Path(ge=0, le=9)) -> dict:
+    return update_camera_bookmark(slot, bookmark.model_dump())
 
 
 @app.put("/settings/audio-file")

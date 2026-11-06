@@ -117,7 +117,7 @@ async function init(): Promise<void> {
   initNewsView();
   initScreenshotToast();
   const { applyPanels, showPanels } = initPanelFolds();
-  const globe = initGlobe(selectCity);
+  const globe = initGlobe(selectCity, (next) => showView(next));
   window.__blueGlobeDebug.renderHourly = renderHourly;
   const mapLayers = initMapLayers(globe);
   let mode: MapMode = 'normal';
@@ -329,6 +329,7 @@ async function init(): Promise<void> {
     setClockPlace(settings.location);
     if (settings.graphics) applyGraphics(settings.graphics);
     if (settings.panels) applyPanels(settings.panels);
+    globe.setCameraBookmarks(settings.camera_bookmarks ?? {});
     music.apply(settings);
     applyMode(settings.mode ?? 'normal');
     if (settings.location) {

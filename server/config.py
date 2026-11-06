@@ -57,6 +57,8 @@ DEFAULT_SETTINGS = {
     "panels": {"hourly": True, "weekly": True, "details": True, "camera": False},
     "audio_file": None,  # 設定画面で選んだ音源のパス
     "audio_volume": 0.5,  # スライダーの位置 (0〜1)
+    # Ctrl+数字で保存したカメラの視点。キーは数字の文字 ("0"〜"9")。中身は api.py の CameraBookmark
+    "camera_bookmarks": {},
 }
 
 
@@ -94,5 +96,14 @@ def update_settings(changes: dict) -> dict:
     """
     with _settings_lock:
         settings = {**load_settings(), **changes}
+        save_settings(settings)
+        return settings
+
+
+def update_camera_bookmark(slot: int, bookmark: dict) -> dict:
+    """カメラの視点を 1 つ保存する。他の番号の視点は残す。"""
+    with _settings_lock:
+        settings = load_settings()
+        settings["camera_bookmarks"] = {**settings["camera_bookmarks"], str(slot): bookmark}
         save_settings(settings)
         return settings

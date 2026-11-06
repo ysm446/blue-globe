@@ -80,6 +80,17 @@ interface PanelSettings {
   camera: boolean; // 右上のカメラのパネル。開いている間だけ計算する
 }
 
+// Ctrl+数字で保存したカメラの視点 (server/api.py の CameraBookmark)
+interface CameraBookmark {
+  view: 'globe' | 'region'; // globe は地球ビュー (北が上で地球の中心を向く)、region は地域ビュー
+  lat: number;
+  lon: number;
+  distance: number; // 地球ビューはカメラの地表からの高さ、地域ビューは中心の地点からカメラまでの距離 (地球の半径が 1)
+  heading: number; // 地球ビューでは 0
+  tilt: number; // 地球ビューでは 0
+  cruise: boolean; // 地域ビューの巡航モード
+}
+
 interface AppSettings {
   location: WeatherLocation | null;
   mode?: MapMode;
@@ -87,6 +98,7 @@ interface AppSettings {
   panels?: PanelSettings;
   audio_file?: string | null; // 設定画面で選んだ音源のパス
   audio_volume?: number; // スライダーの位置 (0〜1)
+  camera_bookmarks?: Record<string, CameraBookmark>; // キーは数字の文字 ("0"〜"9")
 }
 
 interface NewsReport {
@@ -133,6 +145,7 @@ interface Window {
     setMode(mode: MapMode): Promise<unknown>;
     setGraphics(graphics: GraphicsSettings): Promise<AppSettings>;
     setPanels(panels: PanelSettings): Promise<AppSettings>;
+    setCameraBookmark(slot: number, bookmark: CameraBookmark): Promise<AppSettings>;
     getGraphicsDefaults(): Promise<GraphicsSettings>;
     getTexture(name: EarthTextureName): Promise<Uint8Array>;
     getEarthTile(layer: EarthTileLayer, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null

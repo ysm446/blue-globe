@@ -109,6 +109,7 @@ a:hover {
 #detail-panel,
 #view-hint,
 #view-status,
+#bookmark-status,
 #demo-hint,
 #fps-counter,
 #top-right button,
@@ -461,6 +462,7 @@ body.solar #camera-panel {
 
 #view-hint,
 #view-status,
+#bookmark-status,
 #demo-hint {
   padding: 4px 12px;
   color: var(--text-2);
@@ -470,7 +472,8 @@ body.solar #camera-panel {
   border-radius: 8px;
 }
 
-#view-status.warn {
+#view-status.warn,
+#bookmark-status.warn {
   color: var(--warn);
 }
 
@@ -1232,7 +1235,8 @@ body.hide-camera-panel #camera-panel {
   pointer-events: none;
 }
 
-#bottom-center #view-status {
+#bottom-center #view-status,
+#bottom-center #bookmark-status {
   font-size: 12px;
   white-space: nowrap;
 }
