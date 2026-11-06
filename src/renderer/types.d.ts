@@ -47,6 +47,7 @@ interface GraphicsSettings {
   globe_size: number; // 被写界深度で地球を見立てる地球儀の直径 (m。0.3〜32)
   show_fps: boolean;
   show_map_lines: boolean; // 海岸線と国境線 (通常・天気モード。風速モードでは常に描く)
+  border_opacity: number; // 国境線の濃さの倍率。1 が既定 (0〜3)
   show_city_labels: boolean; // 地球儀の上の都市のラベル
   show_planet_labels: boolean; // 惑星の点の横の名前
   show_constellations: boolean; // 星座の線

@@ -53,6 +53,9 @@ const COLORS = {
   land: '#31445e',
   graticule: '#ffffff',
   coastline: '#e4eeff',
+  border: '#8593a8', // 風速モード
+  // 写実的な地球の上の国境線。風速モードの灰色がかった青は、明るい砂漠や平野の上で地面と同じ明るさになって見えない
+  earthBorder: '#e4eeff',
   halo: '#4a7fc9',
   background: '#0a0e14',
   stars: '#5a6a82',
@@ -66,9 +69,13 @@ const TRAIL_FADE = 0.953;
 const PARTICLE_BRIGHTNESS = 0.7; // 海岸線が風に埋もれないよう控えめにする
 const OVERLAY_OPACITY = 0.2;
 const COASTLINE_OPACITY = 0.9; // 風速モード
-const EARTH_COASTLINE_OPACITY = 0.1; // 写実的な地球の上では控えめにする
 const BORDER_OPACITY = 0.3;
-const EARTH_BORDER_OPACITY = 0.04;
+// 写実的な地球の上では控えめにする。地域ビューでは線がまばらな 1 本になり、明るく細かい地表の画像に埋もれるので濃くする。
+// 地球ビューと地域ビューの間は、視点の切り替え (regionBlend) に合わせてつなぐ
+const EARTH_COASTLINE_OPACITY = 0.1;
+const REGION_COASTLINE_OPACITY = 0.2;
+const EARTH_BORDER_OPACITY = 0.1;
+const REGION_BORDER_OPACITY = 0.25;
 const SKY_UPDATE_MS = 60_000; // 太陽も星も 1 分で 0.25° しか動かない
 
 const REFERENCE_HZ = 120; // 粒子の移動量と軌跡の長さ、カメラの慣性はこの更新回数を基準に合わせてある
@@ -328,6 +335,18 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   let cpuParticles: ParticleSystem | null = null;
   let mode: MapMode = 'normal';
   let showMapLines = true;
+  let borderStrength = 1; // 国境線の濃さの倍率 (設定)
+  // 地域ビューへの切り替えの進み具合 (0 が地球ビュー、1 が地域ビュー)。起動時の setMode で線の濃さに使うので、ここで宣言する
+  let regionBlend = 0;
+
+  function syncLineOpacity(): void {
+    const wind = mode === 'wind';
+    const lerp = THREE.MathUtils.lerp;
+    coastlines.setOpacity(wind ? COASTLINE_OPACITY : lerp(EARTH_COASTLINE_OPACITY, REGION_COASTLINE_OPACITY, regionBlend));
+    const border = wind ? BORDER_OPACITY : lerp(EARTH_BORDER_OPACITY, REGION_BORDER_OPACITY, regionBlend);
+    borders.setColor(wind ? COLORS.border : COLORS.earthBorder);
+    borders.setOpacity(Math.min(1, border * borderStrength));
+  }
 
   // 風速モードは線がないと風の場所が分からないので、設定にかかわらず描く。太陽系では描かない
   function syncMapLines(): void {
@@ -379,8 +398,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     sky.group.visible = !wind;
     windStars.visible = wind;
     scene.background = solar.active ? null : wind ? flatBackground : spaceBackground;
-    coastlines.setOpacity(wind ? COASTLINE_OPACITY : EARTH_COASTLINE_OPACITY);
-    borders.setOpacity(wind ? BORDER_OPACITY : EARTH_BORDER_OPACITY);
+    syncLineOpacity();
     syncMapLines();
   }
   setMode(mode);
@@ -477,7 +495,6 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   let regionPending: RegionDelta = REGION_STILL; // ドラッグで動かしたうち、まだカメラに反映していない分
   let regionDistanceGoal = REGION_DISTANCE;
   let globeZoomGoal: number | null = null; // 地球ビューでホイールで決めた、地球の中心からの距離。近づき終えたら null
-  let regionBlend = 0;
   let regionDrag: { button: number; x: number; y: number } | null = null;
   const pointerRay = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
@@ -1267,6 +1284,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     const goal = regionView && !regionFlight?.leaving ? 1 : 0;
     regionBlend += (goal - regionBlend) * (1 - Math.exp(-dt / REGION_BLEND_SECONDS));
     earth.setRegionBlend(regionBlend, apparentAltitude(), earthDetailAmount());
+    syncLineOpacity();
     if (regionView) {
       lonLatToVector3(regionView.lon, regionView.lat, EARTH_SURFACE_RADIUS, shadowFocus);
       earth.setVolumeShadowFocus(shadowFocus, regionView.distance * lensScale);
@@ -1646,6 +1664,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     else if (regionView && !regionFlight?.leaving) startRegionDetail();
     syncTerrainShading();
     showMapLines = graphics.show_map_lines;
+    borderStrength = graphics.border_opacity;
+    syncLineOpacity();
     syncMapLines();
     cityLabelsEnabled = graphics.show_city_labels;
     planetLabelsEnabled = graphics.show_planet_labels;
@@ -1796,6 +1816,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     renderer,
     demoTimeScale: 1,
     mapLinesVisible: () => [coastlines.group.visible, borders.group.visible],
+    coastlines,
+    borders,
     stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),
     peekAt(body: 'sun' | 'moon' | 'dayside' | 'sunrise'): void {
       flight = null;

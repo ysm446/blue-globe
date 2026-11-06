@@ -275,6 +275,7 @@ export function initSettingsDialog(
     region_bloom: percentSlider('region-bloom'),
     city_glow: percentSlider('city-glow'),
     glint_strength: percentSlider('glint-strength'),
+    border_opacity: percentSlider('border-opacity'),
     // 0.25 刻み
     terrain_shading: graphicsSlider('terrain-shading', (position) => position / 4, (value) => Math.round(value * 4), (value) =>
       value === 0 ? 'なし' : `×${value.toFixed(value * 2 === Math.round(value * 2) ? 1 : 2)}`,

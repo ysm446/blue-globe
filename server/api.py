@@ -101,6 +101,7 @@ class GraphicsUpdate(BaseModel):
     globe_size: float = Field(ge=0.3, le=32)
     show_fps: bool
     show_map_lines: bool
+    border_opacity: float = Field(ge=0, le=3)
     show_city_labels: bool
     show_planet_labels: bool
     show_constellations: bool

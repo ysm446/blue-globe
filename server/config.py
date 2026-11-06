@@ -24,6 +24,7 @@ DEFAULT_SETTINGS = {
         "globe_size": 1.0,  # 被写界深度で地球を見立てる地球儀の直径 (m)
         "show_fps": False,
         "show_map_lines": True,
+        "border_opacity": 1.0,  # 国境線の濃さの倍率。1 が既定
         "show_city_labels": True,
         "show_planet_labels": True,
         "show_constellations": False,  # 星座の線

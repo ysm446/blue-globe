@@ -78,6 +78,7 @@ class SettingsApiTest(unittest.TestCase):
         "globe_size": 2.5,
         "show_fps": True,
         "show_map_lines": False,
+        "border_opacity": 2.0,
         "show_city_labels": False,
         "show_planet_labels": False,
         "show_constellations": True,
@@ -116,6 +117,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["render_scale"], 100)
         self.assertTrue(graphics["bloom"])
         self.assertTrue(graphics["show_map_lines"])
+        self.assertEqual(graphics["border_opacity"], 1.0)
         self.assertEqual(graphics["cloud_shadow"], 0.55)
         self.assertTrue(graphics["region_detail"])
         self.assertTrue(graphics["region_relief"])
