@@ -70,7 +70,7 @@ export function initDemo(
       globe.setMarker(place);
       showCity(place);
     }
-    timer = window.setTimeout(runScene, scene.seconds * 1000 * window.__blueGlobeDebug.demoTimeScale);
+    timer = window.setTimeout(runScene, scene.seconds * 1000 * window.__weatherGlobeDebug.demoTimeScale);
   }
 
   function wake(): void {

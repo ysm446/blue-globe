@@ -42,8 +42,8 @@ async function launch(root: string, dataDir: string): Promise<void> {
       env: {
         ...process.env,
         PYTHONUTF8: '1',
-        BLUE_GLOBE_WATCH_STDIN: '1',
-        BLUE_GLOBE_DATA_DIR: dataDir,
+        WEATHER_GLOBE_WATCH_STDIN: '1',
+        WEATHER_GLOBE_DATA_DIR: dataDir,
       },
     },
   );

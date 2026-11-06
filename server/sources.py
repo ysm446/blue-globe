@@ -5,7 +5,7 @@ import unicodedata
 import httpx
 
 TIMEOUT_SECONDS = 20
-HEADERS = {"User-Agent": "blue-globe"}
+HEADERS = {"User-Agent": "weather-globe"}
 
 PREFECTURE_RE = re.compile(r"^(北海道|東京都|京都府|大阪府|.{2,3}県)(.+)$")
 

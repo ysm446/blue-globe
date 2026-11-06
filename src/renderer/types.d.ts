@@ -139,7 +139,7 @@ interface NewsReport {
 }
 
 interface Window {
-  __blueGlobeDebug: { demoTimeScale: number; [key: string]: unknown }; // 動作検証用
+  __weatherGlobeDebug: { demoTimeScale: number; [key: string]: unknown }; // 動作検証用
   weatherApi: {
     getWind(at?: string): Promise<WindResult>;
     getClouds(at?: string): Promise<CloudResult | null>;
