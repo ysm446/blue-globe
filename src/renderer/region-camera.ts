@@ -18,7 +18,7 @@ export interface RegionDelta {
 
 export const REGION_TILT = 50;
 export const REGION_DISTANCE = 0.24;
-const MIN_DISTANCE = 0.1;
+const MIN_DISTANCE = 0.07; // 約 450km。ツアーで山に寄れるよう 2026-11-06 に 0.1 から下げた。0.04 では地表の画像 (約 500m/画素) の粗さが目立った
 const MAX_DISTANCE = 1;
 export const REGION_MAX_TILT = 72;
 const MAX_TILT = REGION_MAX_TILT;

@@ -23,6 +23,7 @@ import { stepFade } from './fade';
 import { Highlights, type HighlightSpec } from './highlights';
 import { CountryLabels } from './country-labels';
 import { TourCaption } from './tour-caption';
+import { TourPlayer, type TourScene } from './tour';
 import { bearingDegrees, easeInOut, separationDegrees, wrapDegrees, type LonLat } from './math';
 import { SpeedOverlay } from './overlay';
 import { ParticleSystem } from './particles';
@@ -309,6 +310,40 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   // ツアーのハイライト (川をなぞる線、山脈などの範囲)。今は検証用フックからだけ使う
   const highlights = new Highlights(el('highlight-labels'));
   const tourCaption = new TourCaption(el('tour-caption'));
+
+  // 示しているハイライトが画面に収まるよう、カメラを寄せる・引く (地域ビューの間だけ)。方角と傾きは省くと今のまま。
+  // orbit を渡すと、着いてから中心のまわりを回る (旋回の段)
+  function frameHighlights(options: { heading?: number; tilt?: number; seconds?: number; orbit?: number } = {}): RegionView | null {
+    const points = highlights.framePoints();
+    if (!regionView || points.length === 0) return null;
+    const to = frameRegionView(points, {
+      heading: options.heading ?? regionView.heading,
+      tilt: options.tilt ?? regionView.tilt,
+      fovY: camera.fov,
+      aspect: camera.aspect,
+    });
+    // 求めたとおりの姿勢に着くよう、視点の呼び出しと同じく自動の旋回や回転、巡航は止める
+    stopCruise();
+    // 遠くへは視点の呼び出しと同じく、途中で高く上がり、時間も少し長くかける
+    const separation = separationDegrees(regionView, to);
+    flyRegion(to, false, options.seconds ?? FRAME_SECONDS * (1 + separation / 180));
+    if (regionFlight) regionFlight.lift = bookmarkLift(separation);
+    orbitAfterFlight = THREE.MathUtils.clamp(options.orbit ?? 0, -ORBIT_LEVELS, ORBIT_LEVELS);
+    return to;
+  }
+
+  const tour = new TourPlayer(tourCaption, {
+    async showHighlights(specs) {
+      highlights.clear();
+      for (const spec of specs) await highlights.show(spec, true);
+    },
+    clearHighlights: () => highlights.clear(),
+    frame: (cameraOptions) => frameHighlights(cameraOptions),
+    stopMotion: () => {
+      orbitAfterFlight = 0;
+      stopCruise();
+    },
+  });
   scene.add(highlights.group);
 
   const windUniforms = createWindUniforms();
@@ -720,6 +755,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   const armTiltMotion: HeldMotion = { ease: 0, rate: 0 };
   // 旋回の段 (-ORBIT_LEVELS〜ORBIT_LEVELS。正が右回り) と、なめらかにしたあとの値
   let orbitLevel = 0;
+  let orbitAfterFlight = 0; // 飛行が終わったら設定する旋回の段 (ツアーの場面)
   let orbitThrottle = 0;
   const viewHint = el('view-hint');
   const viewHintText = viewHint.textContent ?? '';
@@ -1188,6 +1224,9 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
       if (regionFlight.elapsed >= regionFlight.seconds) {
         const { leaving, cruise } = regionFlight;
         regionFlight = null;
+        // ツアーの場面で旋回を指定しているときは、着いてから回り始める
+        if (!leaving && orbitAfterFlight !== 0) orbitLevel = orbitAfterFlight;
+        orbitAfterFlight = 0;
         if (leaving) {
           applyRegionPose(regionView);
           regionView = null;
@@ -1842,22 +1881,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     borders,
     highlight: (spec: HighlightSpec, append = false) => highlights.show(spec, append),
     clearHighlights: () => highlights.clear(),
-    // 示しているハイライトが画面に収まるよう、カメラを寄せる・引く (地域ビューの間だけ)。方角と傾きは省くと今のまま
-    frameHighlights(options: { heading?: number; tilt?: number; seconds?: number } = {}): RegionView | null {
-      const points = highlights.framePoints();
-      if (!regionView || points.length === 0) return null;
-      const to = frameRegionView(points, {
-        heading: options.heading ?? regionView.heading,
-        tilt: options.tilt ?? regionView.tilt,
-        fovY: camera.fov,
-        aspect: camera.aspect,
-      });
-      // 遠くへは視点の呼び出しと同じく、途中で高く上がり、時間も少し長くかける
-      const separation = separationDegrees(regionView, to);
-      flyRegion(to, false, options.seconds ?? FRAME_SECONDS * (1 + separation / 180));
-      if (regionFlight) regionFlight.lift = bookmarkLift(separation);
-      return to;
-    },
+    frameHighlights,
+    highlights,
+    playTour: (scenes: TourScene[]) => tour.start(scenes),
+    stopTour: () => tour.stop(),
+    tour: () => tour.position,
     caption: (text: string, seconds?: number) => tourCaption.show(text, seconds),
     clearCaption: () => tourCaption.clear(),
     stats: () => ({ renderedFrames, particleSteps, canvasWidth: renderer.domElement.width }),

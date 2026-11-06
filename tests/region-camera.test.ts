@@ -83,7 +83,7 @@ test('北を向くとカメラは中心より南に、東を向くと西にあ�
 
 test('移動の範囲を超えない', () => {
   const clamped = clampRegionView({ lat: 95, lon: 190, heading: 200, tilt: 90, distance: 0.01 });
-  assert.deepEqual(clamped, { lat: 80, lon: -170, heading: -160, tilt: 72, distance: 0.1 });
+  assert.deepEqual(clamped, { lat: 80, lon: -170, heading: -160, tilt: 72, distance: 0.07 });
   assert.equal(clampRegionView({ ...TOKYO, distance: 9 }).distance, 1);
 });
 
@@ -288,7 +288,7 @@ test('見せたい点が全部入る距離に寄せ、狭い範囲ほど近く�
   const large = frameRegionView([{ lat: 43, lon: -2 }, { lat: 52, lon: 15 }, { lat: 45, lon: 25 }], options);
   assert.ok(small.distance < large.distance, `${small.distance} < ${large.distance}`);
   assert.ok(Math.abs(small.lat - 35.65) < 0.1 && Math.abs(small.lon - 139.7) < 0.1);
-  assert.equal(small.distance, 0.1); // 狭すぎる範囲は一番近い距離
+  assert.ok(small.distance < 0.1, String(small.distance)); // 東京のまわりの狭い範囲は、以前の一番近い距離より寄る
   assert.equal(large.heading, 0);
   assert.equal(large.tilt, 40);
 });

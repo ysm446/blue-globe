@@ -22,14 +22,37 @@ import {
 const LINE_RADIUS = 1.0009;
 const FILL_RADIUS = 1.0006;
 const MAX_SEGMENT_DEG = 0.5; // 長い線分は地表に沿うように分ける
-const MAX_TRIANGLE_DEG = 0.6; // 塗りの三角形も地表に沿うように分ける
+const MAX_TRIANGLE_DEG = 0.25; // 塗りの三角形も地表に沿うように分ける。内側へのグラデーションがなめらかになる細かさ
 const RIVER_WIDTH_PX = 5; // 描画の画素 (高 DPI ではそのぶん細く見える)
 const OUTLINE_WIDTH_PX = 3.5;
-const RIVER_COLOR = new THREE.Color(0.45, 0.85, 1.0).multiplyScalar(1.8); // HDR。白飛びしない程度に光らせる
-const AREA_COLOR = new THREE.Color(1.0, 0.72, 0.32);
-const AREA_LINE_COLOR = AREA_COLOR.clone().multiplyScalar(1.6);
-const AREA_FILL_OPACITY = 0.16;
-const LINE_GLOW = 1.6; // 色を指定した線と縁取りを光らせる倍率 (HDR)
+// ハイライトの色。彩度を少し落とし、明るさをそろえた色。名前で選べる (CSS の色も渡せる)。
+// 鮮やかな色を強く光らせると、色の成分が頭打ちになって色相がずれ (橙が黄色に、赤が橙に)、どぎつく見えるので避ける
+export const HIGHLIGHT_PALETTE = {
+  sky: '#8ec5ff', // 空色。川の既定
+  teal: '#6fd3c4', // 青緑
+  gold: '#e6b862', // 砂金
+  coral: '#f0917e', // 珊瑚
+  violet: '#b7a5ff', // すみれ。範囲の既定
+  leaf: '#a4d48c', // 若葉
+  snow: '#e9eef6', // 白に近い色。点の既定
+} as const;
+export type HighlightColorName = keyof typeof HIGHLIGHT_PALETTE;
+
+function resolveColor(color: string | undefined, fallback: string): string {
+  if (!color) return fallback;
+  return (HIGHLIGHT_PALETTE as Record<string, string>)[color] ?? color;
+}
+
+const LINE_GLOW = 1.15; // 線と縁取りを光らせる倍率 (HDR)。上げすぎると色相がずれる
+const RIVER_GLOW = 1.8; // 川は水面が光るように強めに光らせる (空色は色相がずれにくい)
+const RIVER_HEAD = 2.1; // 川をなぞる先端の明るさ (シェーダーの 1.2 倍と掛けて約 2.5 倍)
+const AREA_FILL_OPACITY = 0.42; // 範囲の塗りの、輪郭のすぐ内側の濃さ。内側ほど薄くなる
+const AREA_FILL_FLOOR = 0.06; // 範囲の中央の濃さ (輪郭のすぐ内側に対する割合)
+const AREA_GRADIENT_SHARE = 0.22; // グラデーションの幅。範囲の中央から輪郭までの距離に対する割合
+const AREA_GRADIENT_MIN_KM = 12;
+const AREA_GRADIENT_MAX_KM = 90; // 大きな範囲 (砂漠など) でも縁が光って見えるよう、幅に上限を設ける
+// ラベルの文字は線と同じ色を少し淡くする (白と混ぜる)
+const labelColor = (css: string): string => `color-mix(in srgb, ${css} 72%, white)`;
 const DASH_COUNT = 36; // 破線の、線全体での切れ目の数
 const ARROW_SIZE_PX = 9; // 矢印の大きさ (描画の画素。先端から根元まで)
 const ARROW_COUNT = 6; // 線の途中に置く矢印の数 (終点の矢印は別)
@@ -61,7 +84,7 @@ export type HighlightSpec = HighlightStyle &
     | { type: 'area'; name: string }
     | { type: 'line'; points: [number, number][]; name?: string } // [lat, lon] の並び
     | { type: 'polygon'; points: [number, number][]; name?: string }
-    | { type: 'point'; name?: string; lat?: number; lon?: number } // 名前で探すか、座標で置く
+    | { type: 'point'; name?: string; lat?: number; lon?: number; elevation?: number } // 名前で探すか、座標で置く。elevation は標高 (m)
   );
 
 export interface HighlightInfo {
@@ -110,9 +133,13 @@ varying float vSide;
 void main() {
   if (vProgress > uReveal) discard;
   if (uDashes > 0.0 && fract(vProgress * uDashes) > 0.6) discard;
-  float edge = 1.0 - smoothstep(0.3, 1.0, abs(vSide));
+  float side = abs(vSide);
+  float edge = 1.0 - smoothstep(0.15, 1.0, side);
+  // 中心は白に寄せて明るさを保ち、縁は色のまま薄くする。光る管のような質感にする
+  float peak = max(max(uColor.r, uColor.g), uColor.b);
+  vec3 color = mix(uColor, vec3(peak), 0.25 * (1.0 - smoothstep(0.0, 0.55, side)));
   float head = uHead * exp(-(uReveal - vProgress) * 40.0) * (1.0 - step(0.999, uReveal));
-  gl_FragColor = vec4(uColor * (1.0 + head * 2.5), edge * uOpacity);
+  gl_FragColor = vec4(color * (1.0 + head * 1.2), edge * uOpacity);
 }
 `;
 
@@ -145,12 +172,16 @@ uniform float uReveal;
 varying float vProgress;
 void main() {
   if (vProgress > uReveal) discard;
-  gl_FragColor = vec4(uColor * 1.3, uOpacity);
+  gl_FragColor = vec4(uColor, uOpacity);
 }
 `;
 
+// 範囲の塗り。輪郭が一番濃く、内側へ行くほど薄くなる (輪郭から内側へ広がる光)。aEdge は輪郭までの距離 (km)
 const FILL_VS = /* glsl */ `
+attribute float aEdge;
+varying float vEdge;
 void main() {
+  vEdge = aEdge;
   gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }
 `;
@@ -158,8 +189,14 @@ void main() {
 const FILL_FS = /* glsl */ `
 uniform vec3 uColor;
 uniform float uOpacity;
+uniform float uWidth; // グラデーションの幅 (km)
+varying float vEdge;
 void main() {
-  gl_FragColor = vec4(uColor, uOpacity);
+  // 補間でわずかに負の距離になる画素があり、そこで exp が大きくなりすぎて明るい四角が出た (幅を狭くすると画面全体が無限大で黒くなった)。
+  // 距離を 0 以上、明るさを 1 以下に抑える
+  float glow = clamp(exp(-max(vEdge, 0.0) / max(uWidth, 1.0)), 0.0, 1.0);
+  float alpha = uOpacity * (${AREA_FILL_FLOOR.toFixed(2)} + ${(1 - AREA_FILL_FLOOR).toFixed(2)} * glow);
+  gl_FragColor = vec4(uColor * (1.0 + glow * 0.6), alpha);
 }
 `;
 
@@ -279,12 +316,42 @@ function progressAlong(coords: number[]): number[] {
 }
 
 // 多角形 (輪の並び。1 つ目が外周) を三角形に分け、地表に沿うように細かくして球に貼る
-function buildFill(polygons: number[][][]): THREE.BufferGeometry {
+// 頂点ごとに輪郭までの距離 (km) も求め、グラデーションの幅を範囲の大きさから決めて返す
+function buildFill(polygons: number[][][]): { geometry: THREE.BufferGeometry; width: number } {
   const positions: number[] = [];
+  const edges: number[] = [];
   const v = new THREE.Vector3();
+  let segments: [THREE.Vector2, THREE.Vector2][] = [];
+  let farthest = 0;
+  // 点から輪郭 (外周と穴の辺) までの一番近い距離。経度は緯度に合わせて縮める
+  const edgeDistance = (lon: number, lat: number): number => {
+    const k = Math.cos((lat * Math.PI) / 180);
+    let best = Infinity;
+    for (const [a, b] of segments) {
+      const ax = (a.x - lon) * k;
+      const ay = a.y - lat;
+      const bx = (b.x - lon) * k;
+      const by = b.y - lat;
+      const dx = bx - ax;
+      const dy = by - ay;
+      const t = Math.max(0, Math.min(1, -(ax * dx + ay * dy) / (dx * dx + dy * dy || 1e-12)));
+      const d = Math.hypot(ax + dx * t, ay + dy * t);
+      if (d < best) best = d;
+    }
+    return best * 111.2;
+  };
+  const cache = new Map<string, number>();
   const push = (lon: number, lat: number): void => {
     lonLatToVector3(lon, lat, FILL_RADIUS, v);
     positions.push(v.x, v.y, v.z);
+    const key = `${lon.toFixed(5)},${lat.toFixed(5)}`;
+    let d = cache.get(key);
+    if (d === undefined) {
+      d = edgeDistance(lon, lat);
+      cache.set(key, d);
+    }
+    edges.push(d);
+    if (d > farthest) farthest = d;
   };
   const subdivide = (a: THREE.Vector2, b: THREE.Vector2, c: THREE.Vector2, depth: number): void => {
     const longest = Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a));
@@ -315,11 +382,14 @@ function buildFill(polygons: number[][][]): THREE.BufferGeometry {
     const contour = toPoints(rings[0]);
     const holes = rings.slice(1).map(toPoints);
     const all = [contour, ...holes].flat();
+    segments = [contour, ...holes].flatMap((ring) => ring.map((point, i): [THREE.Vector2, THREE.Vector2] => [point, ring[(i + 1) % ring.length]]));
+    cache.clear();
     for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(contour, holes)) subdivide(all[i], all[j], all[k], 0);
   }
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  return geometry;
+  geometry.setAttribute('aEdge', new THREE.Float32BufferAttribute(edges, 1));
+  return { geometry, width: Math.min(AREA_GRADIENT_MAX_KM, Math.max(AREA_GRADIENT_MIN_KM, farthest * AREA_GRADIENT_SHARE)) };
 }
 
 // ラベル。画面に入っていて地球の手前にあり、ほかのラベルと重ならない候補の点のうち、画面の中心に一番近い点に置く。
@@ -341,6 +411,7 @@ interface Label {
   dot: HTMLElement | null; // 点のハイライトの印
   dotTransform: string;
   dotBox: LabelBox | null; // 印が占める範囲。自分の名前は重なりの判定から外す
+  country?: string; // 国名のラベルの国 (ADM0_A3)。複数のハイライトが同じ国を出すときは 1 つだけ出す
   frame: boolean; // カメラを寄せるときに収める点か (国名は国の中央にあり対象から遠いことがあるので外す)
 }
 
@@ -474,7 +545,7 @@ export class Highlights {
       const element = document.createElement('span');
       element.className = `highlight-label ${kind}`;
       element.textContent = text;
-      if (spec.color) element.style.color = spec.color;
+      element.style.color = labelColor(css);
       element.style.opacity = '0';
       this.labelContainer.append(element);
       const align = kind === 'river' ? 'above' : 'center';
@@ -484,7 +555,7 @@ export class Highlights {
     const addPointLabel = (text: string, elevation: number | null, lon: number, lat: number): void => {
       const dot = document.createElement('span');
       dot.className = 'highlight-dot';
-      if (spec.color) dot.style.setProperty('--dot-color', spec.color);
+      dot.style.setProperty('--dot-color', css);
       dot.style.opacity = '0';
       this.labelContainer.append(dot);
       const element = document.createElement('span');
@@ -525,7 +596,7 @@ export class Highlights {
         element.style.opacity = '0';
         this.labelContainer.append(element);
         const point = lonLatToVector3(country.x, country.y, LINE_RADIUS);
-        item.labels.push({ element, points: [point], progress: [first], preferFirst: true, fixed: true, align: 'center', current: -1, offset: 0, transform: '', width: 0, height: 0, dot: null, dotTransform: '', dotBox: null, frame: false });
+        item.labels.push({ element, points: [point], progress: [first], preferFirst: true, fixed: true, align: 'center', current: -1, offset: 0, transform: '', width: 0, height: 0, dot: null, dotTransform: '', dotBox: null, frame: false, country: code });
       }
       return listed;
     };
@@ -557,11 +628,18 @@ export class Highlights {
       for (let i = 0; i < count; i += stride) points.push(lonLatToVector3(outer[i * 2], outer[i * 2 + 1], LINE_RADIUS));
       return points;
     };
-    // 色の指定。線と縁取りは光らせ、ラベルの文字は指定の色をそのまま使う
-    const custom = spec.color ? new THREE.Color(spec.color) : null;
-    const lineColor = custom ? custom.clone().multiplyScalar(LINE_GLOW) : RIVER_COLOR;
-    const areaColor = custom ?? AREA_COLOR;
-    const areaLineColor = custom ? custom.clone().multiplyScalar(LINE_GLOW) : AREA_LINE_COLOR;
+    // 色の指定 (パレットの名前か CSS の色)。省くと、線と川は空色、範囲はすみれ、点は白
+    const fallback =
+      spec.type === 'area' || spec.type === 'polygon'
+        ? HIGHLIGHT_PALETTE.violet
+        : spec.type === 'point'
+          ? HIGHLIGHT_PALETTE.snow
+          : HIGHLIGHT_PALETTE.sky;
+    const css = resolveColor(spec.color, fallback);
+    const base = new THREE.Color(css);
+    const lineColor = base.clone().multiplyScalar(spec.type === 'river' ? RIVER_GLOW : LINE_GLOW);
+    const areaColor = base;
+    const areaLineColor = lineColor;
     const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number, arrows = false): void => {
       const material = ribbonMaterial(color, width, head, spec.dashed);
       item.group.add(new THREE.Mesh(buildRibbon(lines), material));
@@ -585,14 +663,19 @@ export class Highlights {
     };
     const addArea = (polygons: number[][][]): void => {
       const fill = new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: areaColor }, uOpacity: { value: 0 } },
+        uniforms: { uColor: { value: areaColor }, uOpacity: { value: 0 }, uWidth: { value: 1 } },
         vertexShader: FILL_VS,
         fragmentShader: FILL_FS,
         transparent: true,
-        depthWrite: false,
+        // 点を間引いた輪郭がわずかに交差すると三角形が重なり、半透明が何重にも足されて明るい四角が出た。
+        // 塗りはどこも同じ高さなので、奥行きを書き込み、同じ深さの 2 枚目以降は描かない (Less で同じ深さは通らない)
+        depthWrite: true,
+        depthFunc: THREE.LessDepth,
         side: THREE.DoubleSide,
       });
-      item.group.add(new THREE.Mesh(buildFill(polygons), fill));
+      const built = buildFill(polygons);
+      fill.uniforms.uWidth.value = built.width;
+      item.group.add(new THREE.Mesh(built.geometry, fill));
       item.fill = fill;
       const rings = polygons.flat().map((ring) => {
         const coords = unwrapLongitudes(ring);
@@ -617,7 +700,7 @@ export class Highlights {
         const progress = along.map((t) => Math.min(1, (line[0] + t * length) / Math.max(river.L, 1)));
         return { coords, progress };
       });
-      addRibbon(lines, lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1, spec.arrows ?? false);
+      addRibbon(lines, lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, RIVER_HEAD, spec.arrows ?? false);
       const candidates = lineCandidates(lines);
       addLabel(spec.label ?? river.n, 'river', candidates.points, candidates.progress, false);
       item.revealSeconds = RIVER_REVEAL_SECONDS;
@@ -640,7 +723,8 @@ export class Highlights {
       const lon = spec.lon ?? found?.x;
       if (lat === undefined || lon === undefined) return null;
       const text = spec.label ?? (found ? found.ja || found.n : spec.name ?? '');
-      addPointLabel(text, found?.e ?? null, lon, lat);
+      const elevation = spec.elevation ?? found?.e ?? null;
+      addPointLabel(text, elevation, lon, lat);
       const countries = addCountries((found?.k ?? []).map((code) => [code, 0]));
       const info: HighlightInfo = {
         name: found?.n ?? spec.name ?? '',
@@ -649,7 +733,7 @@ export class Highlights {
         bounds: { south: lat, north: lat, west: lon, east: lon },
         countries,
       };
-      if (found?.e) info.elevationM = found.e;
+      if (elevation) info.elevationM = elevation;
       return { item, info };
     }
     if (spec.points.length < 2) return null;
@@ -730,11 +814,14 @@ export class Highlights {
         label.dot.style.opacity = point ? item.labelOpacity.toFixed(3) : '0';
       }
     }
+    const countries = new Set<string>();
     for (const fixedPass of [true, false]) {
       for (const item of this.items) {
         for (const label of item.labels) {
           if (label.fixed !== fixedPass) continue;
-          const box = item.labelOpacity > 0.01 ? this.chooseBox(label, camera, item.labelReveal, placed) : null;
+          const duplicate = label.country !== undefined && countries.has(label.country);
+          const box = item.labelOpacity > 0.01 && !duplicate ? this.chooseBox(label, camera, item.labelReveal, placed) : null;
+          if (box && label.country) countries.add(label.country);
           if (box) {
             placed.push(box);
             result.push(box);
