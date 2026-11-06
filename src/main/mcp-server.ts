@@ -136,8 +136,10 @@ function createServer(): McpServer {
     'play_tour',
     {
       description:
-        'ツアーを始める。場面ごとにハイライト、字幕、カメラ、時刻を指定する。見る人が字幕をクリックすると次の場面へ進み、最後で最初に戻る (Esc で終わる)。',
+        'ツアーを始める。場面ごとにハイライト、字幕、カメラ、時刻を指定する。見る人が字幕をクリックすると次の場面へ進み、最後で最初に戻る (Esc で終わる)。再生中のツアーは画面のツアーのパネルで保存でき、保存したツアーはいつでもパネルから再生できる。',
       inputSchema: {
+        title: z.string().max(80).optional().describe('ツアーの名前 (「世界の長い川」など)。パネルの一覧に出る'),
+        save: z.boolean().optional().describe('true で始めると同時に保存する (見る人が保存を頼んだとき)。省くと保存しない'),
         scenes: z
           .array(
             z.object({

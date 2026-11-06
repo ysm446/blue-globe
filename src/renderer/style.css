@@ -115,6 +115,7 @@ a:hover {
 #top-right button,
 #weather-status,
 #camera-panel,
+#tour-panel,
 .forecast-panel,
 #layer-info,
 #screenshot-toast,
@@ -135,6 +136,7 @@ a:hover {
 #demo-hint,
 #weather-status,
 #camera-panel,
+#tour-panel,
 .forecast-panel,
 #layer-info,
 #music-popup,
@@ -551,8 +553,10 @@ body.solar #sun-marks {
   display: none;
 }
 
-/* 太陽系ではカメラの高さや向きは意味がないので、パネルごと隠す (隠れている間は計算しない) */
-body.solar #camera-panel {
+/* 太陽系ではカメラの高さや向きは意味がないので、パネルごと隠す (隠れている間は計算しない)。
+   ツアーも地球の上で見せるものなので、太陽系では出さない */
+body.solar #camera-panel,
+body.solar #tour-panel {
   display: none;
 }
 
@@ -1183,8 +1187,144 @@ body.demo-idle * {
   opacity: 1;
 }
 
+/* 保存したツアーの一覧。カメラのパネルの下に置く */
+#tour-panel {
+  flex: none;
+  order: 1;
+  align-self: flex-end;
+  width: 280px;
+  max-height: 40vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(178, 178, 178, 0.28) transparent;
+  padding: 10px 16px;
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+#tour-panel:has(> .panel-fold:not([open])) {
+  width: max-content;
+  padding-block: 6px;
+}
+
+#tour-save {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+#tour-save[hidden] {
+  display: none;
+}
+
+#tour-save input {
+  min-width: 0;
+  min-height: 30px;
+  font-size: 13px;
+}
+
+#tour-save button {
+  flex: none;
+  font-size: 13px;
+}
+
+#tour-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tour-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* 名前ごと押して再生できるよう、名前と場面の数もボタンの中に置く */
+.tour-play {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 8px;
+  text-align: left;
+  font-size: 13px;
+  background: transparent;
+  border-color: transparent;
+}
+
+.tour-play svg {
+  flex: none;
+  color: var(--text-2);
+}
+
+.tour-item[aria-current] .tour-play {
+  background: rgba(178, 178, 178, 0.14);
+}
+
+.tour-item[aria-current] .tour-play svg {
+  color: var(--text);
+}
+
+.tour-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tour-count {
+  flex: none;
+  color: var(--text-3);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.tour-delete {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  padding: 0;
+  color: var(--text-3);
+  background: transparent;
+  border-color: transparent;
+}
+
+.tour-delete:hover:not(:disabled) {
+  color: var(--text);
+}
+
+/* 1 回押したら、もう 1 回押すと消えることを色で知らせる */
+.tour-delete.confirm,
+.tour-delete.confirm:hover:not(:disabled) {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+.tour-note {
+  margin: 4px 0 0;
+  color: var(--text-3);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+#tour-empty[hidden],
+#tour-status:empty {
+  display: none;
+}
+
+#tour-status.warn {
+  color: var(--warn);
+}
+
 /* デモの間は、他の案内と同じく出さない */
-body.demo #camera-panel {
+body.demo #camera-panel,
+body.demo #tour-panel {
   display: none;
 }
 
@@ -1192,7 +1332,8 @@ body.demo #camera-panel {
 body.hide-hourly-panel .forecast-panel:has(> #fold-hourly),
 body.hide-weekly-panel .forecast-panel:has(> #fold-weekly),
 body.hide-details-panel #detail-panel,
-body.hide-camera-panel #camera-panel {
+body.hide-camera-panel #camera-panel,
+body.hide-tour-panel #tour-panel {
   display: none;
 }
 
@@ -1893,7 +2034,8 @@ body.panels-right #forecasts {
   }
 
   #weather-status,
-  #camera-panel {
+  #camera-panel,
+  #tour-panel {
     align-self: flex-start;
   }
 

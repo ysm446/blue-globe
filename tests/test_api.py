@@ -17,7 +17,7 @@ class SettingsApiTest(unittest.TestCase):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         root = Path(tmp.name)
-        for name, value in {"DATA_DIR": root, "SETTINGS_FILE": root / "settings.json"}.items():
+        for name, value in {"DATA_DIR": root, "SETTINGS_FILE": root / "settings.json", "TOURS_FILE": root / "tours.json"}.items():
             patcher = mock.patch.object(config, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -110,6 +110,7 @@ class SettingsApiTest(unittest.TestCase):
         "show_weekly_panel": True,
         "show_details_panel": False,
         "show_camera_panel": False,
+        "show_tour_panel": False,
     }
 
     def test_graphics_defaults(self):
@@ -197,6 +198,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertTrue(graphics["moonlight"])
         self.assertEqual(graphics["glint_strength"], 1.3)
         self.assertTrue(graphics["show_camera_panel"])
+        self.assertTrue(graphics["show_tour_panel"])
         self.assertEqual(graphics["focal_length"], 24)
         self.assertTrue(graphics["depth_of_field"])
         self.assertEqual(graphics["f_number"], 4.0)
@@ -212,11 +214,11 @@ class SettingsApiTest(unittest.TestCase):
         # カメラのパネルだけは既定で閉じている
         self.assertEqual(
             self.client.get("/settings").json()["panels"],
-            {"hourly": True, "weekly": True, "details": True, "camera": False},
+            {"hourly": True, "weekly": True, "details": True, "camera": False, "tours": True},
         )
 
     def test_panels_are_saved(self):
-        panels = {"hourly": False, "weekly": False, "details": False, "camera": True}
+        panels = {"hourly": False, "weekly": False, "details": False, "camera": True, "tours": False}
         self.assertEqual(self.client.put("/settings/panels", json=panels).status_code, 200)
         self.assertEqual(self.client.get("/settings").json()["panels"], panels)
 
@@ -227,8 +229,54 @@ class SettingsApiTest(unittest.TestCase):
         config.save_settings({"location": None, "panels": {"weekly": False}})
         self.assertEqual(
             self.client.get("/settings").json()["panels"],
-            {"hourly": True, "weekly": False, "details": True, "camera": False},
+            {"hourly": True, "weekly": False, "details": True, "camera": False, "tours": True},
         )
+
+    def test_panels_without_tours_are_accepted(self):
+        panels = {"hourly": True, "weekly": True, "details": True, "camera": False}
+        self.assertEqual(self.client.put("/settings/panels", json=panels).status_code, 200)
+        self.assertTrue(self.client.get("/settings").json()["panels"]["tours"])
+
+    TOUR = {
+        "id": "rivers-1",
+        "title": "世界の長い川",
+        "scenes": [{"highlights": [{"type": "river", "name": "Nile"}], "caption": "ナイル川"}],
+        "saved_at": "2026-11-06T23:30:00Z",
+    }
+
+    def test_tours_default_to_empty(self):
+        self.assertEqual(self.client.get("/tours").json(), [])
+
+    def test_tours_are_saved_in_order(self):
+        second = {**self.TOUR, "id": "peaks-1", "title": "世界の高い山"}
+        self.assertEqual(self.client.put("/tours/rivers-1", json=self.TOUR).status_code, 200)
+        self.assertEqual(self.client.put("/tours/peaks-1", json=second).status_code, 200)
+        self.assertEqual([t["title"] for t in self.client.get("/tours").json()], ["世界の長い川", "世界の高い山"])
+
+    def test_saving_same_tour_replaces_it(self):
+        self.client.put("/tours/rivers-1", json=self.TOUR)
+        self.client.put("/tours/rivers-1", json={**self.TOUR, "title": "長い川"})
+        tours = self.client.get("/tours").json()
+        self.assertEqual(len(tours), 1)
+        self.assertEqual(tours[0]["title"], "長い川")
+
+    def test_tours_are_deleted(self):
+        self.client.put("/tours/rivers-1", json=self.TOUR)
+        self.assertEqual(self.client.delete("/tours/rivers-1").status_code, 200)
+        self.assertEqual(self.client.get("/tours").json(), [])
+        self.assertEqual(self.client.delete("/tours/rivers-1").status_code, 404)
+
+    def test_invalid_tours_are_rejected(self):
+        self.assertEqual(self.client.put("/tours/other", json=self.TOUR).status_code, 400)
+        self.assertEqual(self.client.put("/tours/rivers-1", json={**self.TOUR, "scenes": []}).status_code, 422)
+        self.assertEqual(self.client.put("/tours/rivers-1", json={**self.TOUR, "title": ""}).status_code, 422)
+        bad_id = {**self.TOUR, "id": "a/b"}
+        self.assertNotEqual(self.client.put("/tours/a%2Fb", json=bad_id).status_code, 200)
+        self.assertEqual(self.client.get("/tours").json(), [])
+
+    def test_tours_do_not_touch_settings(self):
+        self.client.put("/tours/rivers-1", json=self.TOUR)
+        self.assertNotIn("tours", self.client.get("/settings").json())
 
     BOOKMARK = {"view": "region", "lat": 35.5, "lon": 139.7, "distance": 0.2, "heading": 30, "tilt": 50, "cruise": False}
 

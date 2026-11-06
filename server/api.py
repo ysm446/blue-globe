@@ -11,7 +11,7 @@ from fastapi import FastAPI, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 
 from . import clouds, news, sources
-from .config import DEFAULT_SETTINGS, load_settings, update_camera_bookmark, update_settings
+from .config import DEFAULT_SETTINGS, delete_tour, load_settings, load_tours, put_tour, update_camera_bookmark, update_settings
 
 
 def _watch_parent() -> None:
@@ -66,6 +66,7 @@ class PanelsUpdate(BaseModel):
     weekly: bool
     details: bool
     camera: bool
+    tours: bool = True  # ツアーのパネル。以前の画面から送られても受け付けるよう、省いたときは開いている
 
 
 class CameraBookmark(BaseModel):
@@ -133,6 +134,7 @@ class GraphicsUpdate(BaseModel):
     show_weekly_panel: bool
     show_details_panel: bool
     show_camera_panel: bool
+    show_tour_panel: bool = True  # 以前の画面から送られても受け付けるよう、省いたときは出す
 
 
 @app.get("/health")
@@ -168,6 +170,35 @@ def put_panels(update: PanelsUpdate) -> dict:
 @app.put("/settings/camera-bookmarks/{slot}")
 def put_camera_bookmark(bookmark: CameraBookmark, slot: int = Path(ge=0, le=9)) -> dict:
     return update_camera_bookmark(slot, bookmark.model_dump())
+
+
+class SavedTour(BaseModel):
+    """保存したツアー。scenes は画面の tour.ts の TourScene の並びで、形は MCP サーバーが確かめる。"""
+
+    id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
+    title: str = Field(min_length=1, max_length=80)
+    scenes: list[dict] = Field(min_length=1, max_length=200)
+    saved_at: datetime
+
+
+@app.get("/tours")
+def get_tours() -> list[dict]:
+    return load_tours()
+
+
+@app.put("/tours/{tour_id}")
+def put_saved_tour(tour: SavedTour, tour_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,64}$")) -> list[dict]:
+    if tour.id != tour_id:
+        raise HTTPException(400, "id が URL と合いません")
+    return put_tour(tour.model_dump(mode="json"))
+
+
+@app.delete("/tours/{tour_id}")
+def delete_saved_tour(tour_id: str = Path(pattern=r"^[A-Za-z0-9_-]{1,64}$")) -> list[dict]:
+    tours = delete_tour(tour_id)
+    if tours is None:
+        raise HTTPException(404, "そのツアーは見つかりません")
+    return tours
 
 
 @app.put("/settings/audio-file")

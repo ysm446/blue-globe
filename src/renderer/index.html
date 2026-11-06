@@ -127,6 +127,19 @@
         </div>
       </details>
     </section>
+
+    <section id="tour-panel">
+      <details id="fold-tours" class="panel-fold" open>
+        <summary>ツアー</summary>
+        <form id="tour-save" hidden>
+          <input id="tour-save-title" type="text" aria-label="ツアーの名前" placeholder="ツアーの名前" />
+          <button type="submit">保存</button>
+        </form>
+        <ul id="tour-list"></ul>
+        <p id="tour-empty" class="tour-note">保存したツアーはありません。MCP から再生したツアーを、ここで保存できます</p>
+        <p id="tour-status" class="tour-note" role="status"></p>
+      </details>
+    </section>
     </div>
 
     <div id="forecasts" hidden>
@@ -298,6 +311,10 @@
         <div class="check-line">
           <label class="check-row" data-help="右上のカメラのパネルを出します。オフにすると見出しごと隠します。既定: オン"><input id="camera-panel-toggle" type="checkbox" />カメラのパネルを表示</label>
           <button class="reset-button" data-reset="show_camera_panel" type="button" aria-label="カメラのパネルの表示を既定に戻す" title="既定に戻す"></button>
+        </div>
+        <div class="check-line">
+          <label class="check-row" data-help="右上の、保存したツアーのパネルを出します。オフにすると見出しごと隠します。既定: オン"><input id="tour-panel-toggle" type="checkbox" />ツアーのパネルを表示</label>
+          <button class="reset-button" data-reset="show_tour_panel" type="button" aria-label="ツアーのパネルの表示を既定に戻す" title="既定に戻す"></button>
         </div>
         <h3 class="settings-subhead">操作</h3>
         <div class="field-grid">

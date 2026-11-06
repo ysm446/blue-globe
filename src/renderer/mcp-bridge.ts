@@ -1,6 +1,7 @@
 // MCP サーバー (メインプロセス) から届いたツールの処理を、画面の操作に橋渡しする
 import type { HighlightSpec } from './highlights';
 import type { TourScene } from './tour';
+import type { TourPanel } from './tour-panel';
 import { localHourToDate } from './tour-time';
 
 type Remote = {
@@ -11,7 +12,7 @@ type Remote = {
   frameHighlights(options: { heading?: number; tilt?: number; orbit?: number }): unknown;
   caption(text: string, seconds?: number): void;
   clearCaption(): void;
-  playTour(scenes: TourScene[]): void;
+  playTour(scenes: TourScene[], title?: string): void;
   stopTour(): void;
   setTourTime(at: Date | null): void;
   setMapLines(visible: boolean): void;
@@ -20,7 +21,7 @@ type Remote = {
 
 type Args = Record<string, unknown>;
 
-export function initMcpBridge(remote: Remote, setMode: (mode: MapMode) => void): void {
+export function initMcpBridge(remote: Remote, setMode: (mode: MapMode) => void, tours: TourPanel): void {
   const handlers: Record<string, (args: Args) => unknown> = {
     get_view: () => remote.getView(),
     fly_to: (a) => {
@@ -57,10 +58,18 @@ export function initMcpBridge(remote: Remote, setMode: (mode: MapMode) => void):
       remote.clearCaption();
       return 'ok';
     },
-    play_tour: (a) => {
+    play_tour: async (a) => {
       const scenes = a.scenes as TourScene[];
-      remote.playTour(scenes);
-      return `ツアーを始めました (${scenes.length} 場面)。見る人が字幕をクリックすると次へ進みます`;
+      const title = typeof a.title === 'string' ? a.title : undefined;
+      remote.playTour(scenes, title);
+      const started = `ツアーを始めました (${scenes.length} 場面)。見る人が字幕をクリックすると次へ進みます`;
+      if (!a.save) return started;
+      try {
+        const saved = await tours.saveCurrent(title);
+        return `${started}。「${saved.title}」としてツアーのパネルに保存しました`;
+      } catch (error) {
+        return `${started}。保存はできませんでした (${error instanceof Error ? error.message : String(error)})`;
+      }
     },
     stop_tour: () => {
       remote.stopTour();

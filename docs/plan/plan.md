@@ -1,7 +1,7 @@
 # plan — 実装方針と優先順位
 
 作成日時: 2026-07-24 22:14
-更新日時: 2026-11-06 23:06
+更新日時: 2026-11-07 00:01
 
 ## 構成
 
@@ -20,6 +20,7 @@
 | `camera-lens.ts` | 焦点距離から画角を求める計算、被写界深度の錯乱円の計算 |
 | `depth-of-field.ts` | 被写界深度の処理(`hdr.ts` の中でブルームの前に掛ける) |
 | `camera-panel.ts` | 右上のカメラのパネル(値の計算と書式は `camera-readout.ts`) |
+| `tour-panel.ts` | 右上のツアーのパネル。保存したツアーの再生と削除、再生中のツアーの保存(名前と id は `tour-library.ts`、保存は `data/tours.json`) |
 | `planets.ts` | 惑星の方向と明るさ、太陽を中心とした位置と軌道の計算(名前のラベルは `planet-labels.ts`) |
 | `solar-system.ts` | 太陽系の場面(切り替えの動きの計算は `solar-flight.ts`) |
 | `map-layers.ts` | 雲と風のデータの取得、凡例、設定画面の「表示中のデータ」 |

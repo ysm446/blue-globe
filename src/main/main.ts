@@ -285,6 +285,14 @@ ipcMain.handle('panels:set', (_event, panels: unknown) =>
 ipcMain.handle('camera-bookmark:set', (_event, slot: number, bookmark: unknown) =>
   backendRequest(`/settings/camera-bookmarks/${Number(slot)}`, jsonPut(bookmark)),
 );
+// 保存したツアー (data/tours.json)
+ipcMain.handle('tours:list', () => backendRequest('/tours'));
+ipcMain.handle('tours:save', (_event, tour: { id: string }) =>
+  backendRequest(`/tours/${encodeURIComponent(String(tour.id))}`, jsonPut(tour)),
+);
+ipcMain.handle('tours:delete', (_event, id: string) =>
+  backendRequest(`/tours/${encodeURIComponent(String(id))}`, { method: 'DELETE' }),
+);
 // FPS の表示に出す VRAM の量。表示している間だけ読む (アプリを閉じるときは before-quit で止める)
 ipcMain.handle('vram:watch', (event, enabled: boolean) => {
   if (!enabled) {

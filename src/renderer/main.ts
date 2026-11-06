@@ -9,6 +9,7 @@ import { initMusicPlayer } from './music-player';
 import { hideNews, initNewsView, renderHourly, renderNews, setClockOffset, setClockTime, showClockPlace } from './news-view';
 import { initSettingsDialog } from './settings-dialog';
 import { initTimeControl } from './time-control';
+import { initTourPanel } from './tour-panel';
 import { applyUiFont } from './ui-font';
 
 const NEWS_REFRESH_MS = 15 * 60_000; // Open-Meteo の現在値は 15 分刻み
@@ -59,6 +60,7 @@ const PANEL_VISIBILITY: Record<keyof PanelSettings, [className: string, setting:
   weekly: ['hide-weekly-panel', 'show_weekly_panel'],
   details: ['hide-details-panel', 'show_details_panel'],
   camera: ['hide-camera-panel', 'show_camera_panel'],
+  tours: ['hide-tour-panel', 'show_tour_panel'],
 };
 
 // パネルの開閉と、設定での表示・非表示。閉じた状態は次に起動したときも残す
@@ -68,12 +70,14 @@ function initPanelFolds() {
     weekly: el<HTMLDetailsElement>('fold-weekly'),
     details: el<HTMLDetailsElement>('fold-details'),
     camera: el<HTMLDetailsElement>('fold-camera'),
+    tours: el<HTMLDetailsElement>('fold-tours'),
   };
   const read = (): PanelSettings => ({
     hourly: folds.hourly.open,
     weekly: folds.weekly.open,
     details: folds.details.open,
     camera: folds.camera.open,
+    tours: folds.tours.open,
   });
   const isShown = (key: keyof PanelSettings): boolean =>
     !document.body.classList.contains(PANEL_VISIBILITY[key][0]);
@@ -104,6 +108,7 @@ function initPanelFolds() {
       folds.weekly.open = panels.weekly;
       folds.details.open = panels.details;
       folds.camera.open = panels.camera;
+      folds.tours.open = panels.tours ?? true;
     },
     showPanels(graphics: GraphicsSettings): void {
       for (const [className, setting] of Object.values(PANEL_VISIBILITY)) {
@@ -172,12 +177,17 @@ async function init(): Promise<void> {
     });
   }
   applyMode('normal');
+  const tourPanel = initTourPanel(globe.tour);
   // MCP サーバーからの操作。表示モードはボタンと同じく切り替えて保存する
-  initMcpBridge(globe.remote, (next) => {
-    if (next === mode) return;
-    applyMode(next);
-    window.weatherApi.setMode(next).catch((err) => console.error('mode save failed', err));
-  });
+  initMcpBridge(
+    globe.remote,
+    (next) => {
+      if (next === mode) return;
+      applyMode(next);
+      window.weatherApi.setMode(next).catch((err) => console.error('mode save failed', err));
+    },
+    tourPanel,
+  );
 
   const status = el('weather-status');
   const refreshBtn = el<HTMLButtonElement>('refresh');

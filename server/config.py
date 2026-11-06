@@ -8,6 +8,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # 動作検証時に実際の設定を汚さないよう、環境変数で差し替えられる
 DATA_DIR = Path(os.environ.get("WEATHER_GLOBE_DATA_DIR", ROOT / "data"))
 SETTINGS_FILE = DATA_DIR / "settings.json"
+# 保存したツアー。台本は大きくなることがあるので、設定とは別のファイルにする
+TOURS_FILE = DATA_DIR / "tours.json"
 
 DEFAULT_SETTINGS = {
     "location": None,
@@ -58,9 +60,10 @@ DEFAULT_SETTINGS = {
         "show_weekly_panel": True,
         "show_details_panel": True,
         "show_camera_panel": True,
+        "show_tour_panel": True,
     },
     # True で開いている。カメラのパネルは計器のようなものなので、既定では閉じておく
-    "panels": {"hourly": True, "weekly": True, "details": True, "camera": False},
+    "panels": {"hourly": True, "weekly": True, "details": True, "camera": False, "tours": True},
     "audio_file": None,  # 設定画面で選んだ音源のパス
     "audio_volume": 0.5,  # スライダーの位置 (0〜1)
     # Ctrl+数字で保存したカメラの視点。キーは数字の文字 ("0"〜"9")。中身は api.py の CameraBookmark
@@ -113,3 +116,44 @@ def update_camera_bookmark(slot: int, bookmark: dict) -> dict:
         settings["camera_bookmarks"] = {**settings["camera_bookmarks"], str(slot): bookmark}
         save_settings(settings)
         return settings
+
+
+_tours_lock = threading.Lock()
+
+
+def load_tours() -> list[dict]:
+    """保存したツアー。保存した順 (新しいものが後ろ)。"""
+    try:
+        tours = json.loads(TOURS_FILE.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    return tours if isinstance(tours, list) else []
+
+
+def _save_tours(tours: list[dict]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    atomic_write(TOURS_FILE, json.dumps(tours, ensure_ascii=False, indent=2).encode("utf-8"))
+
+
+def put_tour(tour: dict) -> list[dict]:
+    """ツアーを保存する。同じ id があれば置き換え、場所はそのままにする。"""
+    with _tours_lock:
+        tours = load_tours()
+        index = next((i for i, t in enumerate(tours) if t.get("id") == tour["id"]), None)
+        if index is None:
+            tours.append(tour)
+        else:
+            tours[index] = tour
+        _save_tours(tours)
+        return tours
+
+
+def delete_tour(tour_id: str) -> list[dict] | None:
+    """ツアーを消す。見つからなければ None。"""
+    with _tours_lock:
+        tours = load_tours()
+        rest = [t for t in tours if t.get("id") != tour_id]
+        if len(rest) == len(tours):
+            return None
+        _save_tours(rest)
+        return rest

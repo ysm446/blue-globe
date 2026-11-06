@@ -281,6 +281,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   controls.minDistance = MIN_DIST;
   controls.maxDistance = MAX_DIST;
   controls.enableZoom = false; // ホイールは目標の距離だけを変え、そこへなめらかに近づける (globeZoomGoal)
+  // OrbitControls はマウスが動くたびに内部で update() を呼び、そのたびに減衰が 1 回分進む。
+  // そのままではドラッグ中だけカメラが早く追いつき、地域ビューのような遅れが出ないので、
+  // 内部からの呼び出しでは何もせず、毎フレームの updateFlight の orbitUpdate だけで進める
+  const orbitUpdate = controls.update.bind(controls);
+  controls.update = () => false;
   renderer.domElement.classList.add('globe-canvas');
 
   // 風速モードの地球。写実的な地球の読み込みが終わるまでの代わりにも使う
@@ -1487,7 +1492,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
       controls.target.set(0, 0, 0);
       controls.enabled = true;
       controls.autoRotate = demoMotion;
-      controls.update();
+      orbitUpdate();
       syncSolarScene();
       done?.();
     });
@@ -1571,7 +1576,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
       controls.rotateSpeed = THREE.MathUtils.clamp(apparentAltitude() * 0.32, 0.05, 0.6);
       // 慣性はフレームごとに減衰するので、FPS によらず同じ時間で止まるように換算する
       controls.dampingFactor = 1 - Math.pow(1 - DAMPING_AT_REFERENCE, dt * REFERENCE_HZ);
-      controls.update(dt); // 自動回転の速さを FPS によらず同じにする
+      orbitUpdate(dt); // 自動回転の速さを FPS によらず同じにする
       return;
     }
     flight.elapsed = Math.min(FLY_SECONDS, flight.elapsed + dt);
@@ -1922,7 +1927,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     clearHighlights: () => highlights.clear(),
     frameHighlights,
     highlights,
-    playTour: (scenes: TourScene[]) => tour.start(scenes),
+    playTour: (scenes: TourScene[], title?: string) => tour.start(scenes, { title }),
     stopTour: () => tour.stop(),
     tour: () => tour.position,
     caption: (text: string, seconds?: number) => tourCaption.show(text, seconds),
@@ -1987,7 +1992,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     frameHighlights,
     caption: (text: string, seconds?: number) => tourCaption.show(text, seconds),
     clearCaption: () => tourCaption.clear(),
-    playTour: (scenes: TourScene[]) => tour.start(scenes),
+    playTour: (scenes: TourScene[], title?: string) => tour.start(scenes, { title }),
     stopTour: () => tour.stop(),
     setTourTime,
     setMapLines(visible: boolean): void {
@@ -2004,6 +2009,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
 
   return {
     remote,
+    tour,
     applyGraphics,
     changeMode,
     setCameraBookmarks(marks: Record<string, CameraBookmark>): void {

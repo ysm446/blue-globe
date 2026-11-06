@@ -264,6 +264,7 @@ export function initSettingsDialog(
     show_weekly_panel: el<HTMLInputElement>('weekly-panel-toggle'),
     show_details_panel: el<HTMLInputElement>('details-panel-toggle'),
     show_camera_panel: el<HTMLInputElement>('camera-panel-toggle'),
+    show_tour_panel: el<HTMLInputElement>('tour-panel-toggle'),
   };
   const sliders = {
     // 対数にして、1 目盛りごとに同じ比率で変わるようにする

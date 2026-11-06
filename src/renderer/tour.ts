@@ -33,8 +33,18 @@ export interface TourHost {
 
 const ADVANCE_INTERVAL_MS = 600;
 
+// 再生中のツアー。savedId は保存したツアーから再生したときのその id (保存していなければ null)
+export interface PlayingTour {
+  title: string | null;
+  scenes: TourScene[];
+  savedId: string | null;
+}
+
 export class TourPlayer {
   private scenes: TourScene[] = [];
+  private title: string | null = null;
+  private savedId: string | null = null;
+  private readonly listeners = new Set<() => void>();
   private index = -1;
   private busy = false;
   private lastAdvance = 0; // 続けて届いたクリック (ダブルクリックなど) で場面を飛ばさないよう、間を空ける
@@ -57,20 +67,50 @@ export class TourPlayer {
     return { index: this.index, total: this.scenes.length };
   }
 
-  start(scenes: TourScene[]): void {
+  // 再生中のツアー。止まっているときは null
+  get current(): PlayingTour | null {
+    return this.active ? { title: this.title, scenes: this.scenes, savedId: this.savedId } : null;
+  }
+
+  // ツアーが始まったとき、終わったとき、保存して savedId が付いたときに呼ぶ
+  onChange(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  start(scenes: TourScene[], options: { title?: string | null; savedId?: string | null } = {}): void {
     if (scenes.length === 0) return;
     this.scenes = scenes;
+    this.title = options.title?.trim() || null;
+    this.savedId = options.savedId ?? null;
     void this.play(0);
+    this.notify();
+  }
+
+  // 再生中のツアーを保存したら、その id と名前を覚える (同じツアーを二重に保存しない)
+  markSaved(id: string, title: string): void {
+    if (!this.active) return;
+    this.savedId = id;
+    this.title = title;
+    this.notify();
   }
 
   stop(): void {
+    const wasActive = this.active;
     this.index = -1;
     this.scenes = [];
+    this.title = null;
+    this.savedId = null;
     this.host.stopMotion();
     this.host.clearHighlights();
     this.host.setTime(null);
     this.caption.setFooter(null);
     this.caption.clear();
+    if (wasActive) this.notify();
+  }
+
+  private notify(): void {
+    for (const listener of this.listeners) listener();
   }
 
   // 文字を出している途中なら残りを出し切り、出し終えていれば次の場面へ (最後なら最初へ) 進む

@@ -80,6 +80,7 @@ interface GraphicsSettings {
   show_weekly_panel: boolean;
   show_details_panel: boolean;
   show_camera_panel: boolean;
+  show_tour_panel: boolean;
 }
 
 interface PanelSettings {
@@ -87,6 +88,15 @@ interface PanelSettings {
   weekly: boolean;
   details: boolean;
   camera: boolean; // 右上のカメラのパネル。開いている間だけ計算する
+  tours: boolean; // 保存したツアーのパネル
+}
+
+// 保存したツアー (server/api.py の SavedTour。data/tours.json)
+interface SavedTour {
+  id: string;
+  title: string;
+  scenes: import('./tour').TourScene[];
+  saved_at: string; // ISO 8601
 }
 
 // Ctrl+数字で保存したカメラの視点 (server/api.py の CameraBookmark)
@@ -155,6 +165,10 @@ interface Window {
     setGraphics(graphics: GraphicsSettings): Promise<AppSettings>;
     setPanels(panels: PanelSettings): Promise<AppSettings>;
     setCameraBookmark(slot: number, bookmark: CameraBookmark): Promise<AppSettings>;
+    // 保存したツアー。どれも保存後の一覧 (保存した順) を返す
+    listTours(): Promise<SavedTour[]>;
+    saveTour(tour: SavedTour): Promise<SavedTour[]>;
+    deleteTour(id: string): Promise<SavedTour[]>;
     getGraphicsDefaults(): Promise<GraphicsSettings>;
     getTexture(name: EarthTextureName): Promise<Uint8Array>;
     // MCP サーバーから届くツールの処理と、その結果の返し方
