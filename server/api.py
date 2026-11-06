@@ -103,6 +103,7 @@ class GraphicsUpdate(BaseModel):
     show_map_lines: bool
     border_opacity: float = Field(ge=0, le=3)
     show_city_labels: bool
+    show_country_labels: bool
     show_planet_labels: bool
     show_constellations: bool
     star_twinkle: bool

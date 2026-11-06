@@ -270,6 +270,37 @@ button.city-label:active {
   color: #ffdca6;
 }
 
+/* 設定の「国名を表示」の国名。地図の国名らしく字間を空け、都市のラベルより控えめにする */
+.country-label {
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  text-shadow: 0 0 3px #000, 0 0 6px rgba(0, 0, 0, 0.8);
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 200ms, visibility 200ms;
+}
+
+.country-label img {
+  height: 10px;
+  width: auto;
+  border-radius: 1px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+}
+
+.country-label.off {
+  visibility: hidden;
+  opacity: 0;
+}
+
 /* 通る国、重なる国。ハイライトの名前より小さくし、国旗を添える */
 .highlight-label.country {
   display: flex;

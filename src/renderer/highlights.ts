@@ -228,6 +228,7 @@ interface Item {
   ribbons: { material: THREE.ShaderMaterial; seconds: number }[];
   fill: THREE.ShaderMaterial | null;
   labels: Label[];
+  countryCodes: string[]; // 国名を出している国 (ADM0_A3)
   revealSeconds: number;
   clock: number;
   fade: number;
@@ -275,13 +276,18 @@ export class Highlights {
     return built.info;
   }
 
+  // 国名を出している国。設定の「国名を表示」の国名と二重にしないために使う
+  activeCountries(): Set<string> {
+    return new Set(this.items.filter((item) => !item.leaving).flatMap((item) => item.countryCodes));
+  }
+
   // 示しているものをすべて、ふわっと消す
   clear(): void {
     for (const item of this.items) item.leaving = true;
   }
 
   private async build(spec: HighlightSpec): Promise<{ item: Item; info: HighlightInfo } | null> {
-    const item: Item = { group: new THREE.Group(), ribbons: [], fill: null, labels: [], revealSeconds: 1, clock: 0, fade: 0, leaving: false };
+    const item: Item = { group: new THREE.Group(), ribbons: [], fill: null, labels: [], countryCodes: [], revealSeconds: 1, clock: 0, fade: 0, leaving: false };
     const addLabel = (text: string, kind: 'river' | 'area', points: THREE.Vector3[], progress: number[], preferFirst: boolean): void => {
       if (!text || points.length === 0) return;
       const element = document.createElement('span');
@@ -299,6 +305,7 @@ export class Highlights {
         const country = countryList.get(code);
         if (!country) continue;
         listed.push({ code, name: country.n, nameJa: country.ja });
+        item.countryCodes.push(code);
         const element = document.createElement('span');
         element.className = 'highlight-label country';
         if (country.f) {

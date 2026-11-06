@@ -49,6 +49,7 @@ interface GraphicsSettings {
   show_map_lines: boolean; // 海岸線と国境線 (通常・天気モード。風速モードでは常に描く)
   border_opacity: number; // 国境線の濃さの倍率。1 が既定 (0〜3)
   show_city_labels: boolean; // 地球儀の上の都市のラベル
+  show_country_labels: boolean; // 地球儀の上の国名と国旗
   show_planet_labels: boolean; // 惑星の点の横の名前
   show_constellations: boolean; // 星座の線
   star_twinkle: boolean; // 星の明るさをゆっくり揺らす

@@ -15,6 +15,7 @@ interface CityLabel {
   height: number;
   transform: string;
   shown: boolean;
+  box: LabelBox | null; // 最後に置いた位置
 }
 
 export type WorldToScreen = (world: THREE.Vector3) => { x: number; y: number } | null;
@@ -45,6 +46,7 @@ export class CityLabels {
         height: 0,
         transform: '',
         shown: false,
+        box: null,
       };
     });
   }
@@ -64,6 +66,12 @@ export class CityLabels {
     return this.labels.filter((label) => label.shown).map((label) => label.place);
   }
 
+  // 今画面に出ているラベルの範囲。国名をこれに重ねないために使う
+  shownBoxes(): LabelBox[] {
+    if (this.container.hidden) return [];
+    return this.labels.filter((label) => label.shown && label.box).map((label) => label.box as LabelBox);
+  }
+
   // 毎フレーム呼ぶ。blocked はラベルを重ねない範囲、altitude はレンズの分を換算したカメラの高さ
   update(toScreen: WorldToScreen, blocked: LabelBox[], altitude: number): void {
     if (this.container.hidden) return;
@@ -81,6 +89,7 @@ export class CityLabels {
     const shown = placeLabels(boxes, blocked);
     this.labels.forEach((label, index) => {
       const box = boxes[index];
+      label.box = box;
       if (box) {
         const transform = `translate(${box.x}px, ${box.y}px)`;
         if (transform !== label.transform) {

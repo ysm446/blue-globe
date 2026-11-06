@@ -80,6 +80,7 @@ class SettingsApiTest(unittest.TestCase):
         "show_map_lines": False,
         "border_opacity": 2.0,
         "show_city_labels": False,
+        "show_country_labels": True,
         "show_planet_labels": False,
         "show_constellations": True,
         "star_twinkle": False,
@@ -182,6 +183,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["space_tint"], 1.0)
         self.assertTrue(graphics["show_map_lines"])
         self.assertTrue(graphics["show_city_labels"])
+        self.assertFalse(graphics["show_country_labels"])
         self.assertTrue(graphics["show_planet_labels"])
         self.assertFalse(graphics["show_constellations"])
         self.assertTrue(graphics["star_twinkle"])

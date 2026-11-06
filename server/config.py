@@ -26,6 +26,7 @@ DEFAULT_SETTINGS = {
         "show_map_lines": True,
         "border_opacity": 1.0,  # 国境線の濃さの倍率。1 が既定
         "show_city_labels": True,
+        "show_country_labels": False,  # 地球儀の上の国名と国旗
         "show_planet_labels": True,
         "show_constellations": False,  # 星座の線
         "star_twinkle": True,  # 星の明るさをゆっくり揺らす

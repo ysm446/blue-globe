@@ -21,6 +21,7 @@ import { HdrPipeline } from './hdr';
 import { HeadingTape, type TapeMarker } from './heading-tape';
 import { stepFade } from './fade';
 import { Highlights, type HighlightSpec } from './highlights';
+import { CountryLabels } from './country-labels';
 import { bearingDegrees, easeInOut, separationDegrees, wrapDegrees, type LonLat } from './math';
 import { SpeedOverlay } from './overlay';
 import { ParticleSystem } from './particles';
@@ -479,6 +480,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   let selectedCity: DemoPlace | null = null; // ラベルで選んだ都市。地域ビューの行き先になる
   const cityLabels = new CityLabels(el('city-labels'), MAP_CITIES, EARTH_SURFACE_RADIUS, onSelectCity);
   let cityLabelsEnabled = false;
+  let countryLabelsEnabled = false;
+  const countryLabels = new CountryLabels(el('country-labels'), EARTH_SURFACE_RADIUS);
   const cameraPanel = new CameraPanel(camera, GLOBE_RADIUS);
   const planetLabels = new PlanetLabels(el('planet-labels'), sky.planets.map((planet) => planet.name), GLOBE_RADIUS);
   let planetLabelsEnabled = false;
@@ -1346,6 +1349,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   // デモの間は出さない。デモは行き先の都市だけをマーカーで見せる
   function syncCityLabels(): void {
     cityLabels.setVisible(cityLabelsEnabled && !demoMotion && !solar.active);
+    countryLabels.setVisible(countryLabelsEnabled && !demoMotion && !solar.active);
   }
 
   function focusLocation(location: WeatherLocation): void {
@@ -1565,6 +1569,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
       ? [{ x: point.x - MARKER_BOX_LEFT, y: point.y - MARKER_BOX_HEIGHT / 2, width: MARKER_BOX_LEFT + MARKER_LABEL_OFFSET + markerLabelWidth, height: MARKER_BOX_HEIGHT }]
       : [];
     cityLabels.update(toScreen, markerBox, apparentAltitude());
+    countryLabels.update(toScreen, [...markerBox, ...cityLabels.shownBoxes()], apparentAltitude(), highlights.activeCountries());
   }
 
   window.addEventListener('resize', () => {
@@ -1676,6 +1681,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     borderStrength = graphics.border_opacity;
     syncLineOpacity();
     cityLabelsEnabled = graphics.show_city_labels;
+    countryLabelsEnabled = graphics.show_country_labels;
     planetLabelsEnabled = graphics.show_planet_labels;
     syncCityLabels();
     if (fpsCounter.hidden === graphics.show_fps) {
