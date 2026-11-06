@@ -76,6 +76,8 @@ const AREA_FILL_FLOOR = 0.04; // 範囲の中央の濃さ (輪郭のすぐ内側
 const AREA_GRADIENT_SHARE = 0.22; // グラデーションの幅。範囲の中央から輪郭までの距離に対する割合
 const AREA_GRADIENT_MIN_KM = 12;
 const AREA_GRADIENT_MAX_KM = 90; // 大きな範囲 (砂漠など) でも縁が光って見えるよう、幅に上限を設ける
+const AREA_SPREAD_SECONDS = 1.4; // 縁取りを描き終えてから、内側のグラデーションが縁から内へ広がる時間
+const AREA_SPREAD_START = 0.08; // 広がり始めのグラデーションの幅 (本来の幅に対する割合)
 // ラベルの文字は線と同じ色を少し淡くする (白と混ぜる)
 const labelColor = (css: string): string => `color-mix(in srgb, ${css} 72%, white)`;
 const DASH_COUNT = 36; // 破線の、線全体での切れ目の数
@@ -258,12 +260,15 @@ const FILL_FS = /* glsl */ `
 uniform vec3 uColor;
 uniform float uOpacity;
 uniform float uWidth; // グラデーションの幅 (km)
+uniform float uSpread; // 縁から内へ広がる進み具合 (0〜1)。縁取りを描き終えてから進める
 varying float vEdge;
 void main() {
   // 補間でわずかに負の距離になる画素があり、そこで exp が大きくなりすぎて明るい四角が出た (幅を狭くすると画面全体が無限大で黒くなった)。
   // 距離を 0 以上、明るさを 1 以下に抑える
-  float glow = clamp(exp(-max(vEdge, 0.0) / max(uWidth, 1.0)), 0.0, 1.0);
-  float alpha = uOpacity * (${AREA_FILL_FLOOR.toFixed(2)} + ${(1 - AREA_FILL_FLOOR).toFixed(2)} * glow);
+  float width = uWidth * mix(${AREA_SPREAD_START.toFixed(2)}, 1.0, uSpread);
+  float glow = clamp(exp(-max(vEdge, 0.0) / max(width, 1.0)), 0.0, 1.0);
+  // 中央の淡い塗りは広がりに合わせて出し、広がり始めは縁のすぐ内側も少しずつ濃くする
+  float alpha = uOpacity * smoothstep(0.0, 0.35, uSpread) * (${AREA_FILL_FLOOR.toFixed(2)} * uSpread + ${(1 - AREA_FILL_FLOOR).toFixed(2)} * glow);
   gl_FragColor = vec4(uColor * (1.0 + glow * 0.25), alpha);
 }
 `;
@@ -741,7 +746,7 @@ export class Highlights {
     };
     const addArea = (polygons: number[][][]): void => {
       const fill = new THREE.ShaderMaterial({
-        uniforms: { uColor: { value: areaColor }, uOpacity: { value: 0 }, uWidth: { value: 1 } },
+        uniforms: { uColor: { value: areaColor }, uOpacity: { value: 0 }, uWidth: { value: 1 }, uSpread: { value: 0 } },
         vertexShader: FILL_VS,
         fragmentShader: FILL_FS,
         transparent: true,
@@ -847,7 +852,11 @@ export class Highlights {
         u.uOpacity.value = opacity;
         u.uResolution.value.copy(this.resolution);
       }
-      if (item.fill) item.fill.uniforms.uOpacity.value = opacity * AREA_FILL_OPACITY;
+      if (item.fill) {
+        item.fill.uniforms.uOpacity.value = opacity * AREA_FILL_OPACITY;
+        // 縁取りを描き終えてから、内側のグラデーションを縁から内へ広げる
+        item.fill.uniforms.uSpread.value = easeInOut(THREE.MathUtils.clamp((item.clock - OUTLINE_REVEAL_SECONDS) / AREA_SPREAD_SECONDS, 0, 1));
+      }
       item.labelOpacity = visible ? opacity : 0;
       item.labelReveal = easeInOut(Math.min(1, item.clock / item.revealSeconds));
     }
