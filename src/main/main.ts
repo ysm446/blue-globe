@@ -8,6 +8,7 @@ import { nearestStepStamp, parsePastTime } from './gfs-time';
 import { fetchGfsCloud, fetchGfsWind } from './nomads';
 import { backendRequest, startBackend, stopBackend } from './backend';
 import { startVramMonitor, stopVramMonitor } from './vram-monitor';
+import { createTerrainSource } from './terrain-tiles';
 
 const GFS_MAX_AGE_MS = 3 * 3600_000; // GFS 1.0° は 3 時間刻み
 const GFS_FETCH_TIMEOUT_MS = 30_000;
@@ -212,6 +213,16 @@ const TILE_SOURCES: Record<string, string> = {
   night: 'VIIRS_Black_Marble/default/2016-01-01/500m/7/{row}/{col}.png',
   water: 'MODIS_Water_Mask/default/250m/7/{row}/{col}.png', // レベル 7 は他の面と同じ 160×80 枚
 };
+
+// 地域ビューの地形の傾きの画像 (1 画素 2 バイト)。標高のタイルを取得できないときは null を返す
+let terrainSource: ReturnType<typeof createTerrainSource> | null = null;
+ipcMain.handle('terrain-slope:get', async (_event, col: number, row: number) => {
+  if (!Number.isInteger(col) || !Number.isInteger(row) || col < 0 || col >= 160 || row < 0 || row >= 80) {
+    throw new Error(`unknown tile: ${col} ${row}`);
+  }
+  terrainSource ??= createTerrainSource(path.join(dataDir(), 'earth-tiles', 'terrain'), writeFileAtomic);
+  return terrainSource.getSlopeTile(col, row);
+});
 
 // 取得できないときは null を返す。画面は今の画像のまま表示を続ける
 ipcMain.handle('earth-tile:get', async (_event, layer: string, col: number, row: number) => {

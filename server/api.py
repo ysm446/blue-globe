@@ -114,6 +114,7 @@ class GraphicsUpdate(BaseModel):
     glint_strength: float = Field(ge=0, le=3)
     region_detail: bool
     region_relief: bool
+    terrain_shading: float = Field(ge=0, le=4)
     volume_clouds: bool
     cloud_resolution: Literal[50, 75, 100]
     cloud_edge_detail: float = Field(ge=0, le=1)

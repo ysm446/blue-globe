@@ -91,6 +91,7 @@ class SettingsApiTest(unittest.TestCase):
         "glint_strength": 2.0,
         "region_detail": False,
         "region_relief": False,
+        "terrain_shading": 3.0,
         "volume_clouds": False,
         "cloud_resolution": 100,
         "cloud_edge_detail": 0.2,
@@ -118,6 +119,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["cloud_shadow"], 0.55)
         self.assertTrue(graphics["region_detail"])
         self.assertTrue(graphics["region_relief"])
+        self.assertEqual(graphics["terrain_shading"], 2.0)
         self.assertEqual(graphics["region_bloom"], 0.5)
         self.assertEqual(graphics["glint_strength"], 1.3)
 

@@ -529,16 +529,33 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   let regionDetail: RegionDetail | null = null;
   let regionDetailEnabled = true;
   let regionRelief = true; // 地表に地形の陰影が焼き込まれた画像を使う
+  let terrainShading = 0; // 太陽の向きで付ける地形の陰の強さ (高さの誇張の倍率)
   let regionBloom = 1;
   const viewStatus = el('view-status');
+
+  // 太陽の向きで付ける地形の陰は、陰影のない画像を選んでいるときだけ使う。焼き込まれた陰と二重にならないようにするため
+  function terrainShadingActive(): boolean {
+    return !regionRelief && terrainShading > 0;
+  }
+
+  function syncTerrainShading(): void {
+    const active = terrainShadingActive();
+    earth.setTerrainRelief(active ? terrainShading : 0);
+    if (!regionDetail) return;
+    regionDetail.setSlopeEnabled(active);
+    earth.setRegionDetail(regionDetail); // 傾きの画像を作り直したり解放したりするので渡し直す
+  }
 
   function startRegionDetail(): void {
     if (!regionDetailEnabled) return;
     if (!regionDetail && RegionDetail.isSupported(renderer)) {
       regionDetail = new RegionDetail(renderer, (layer, col, row) =>
-        window.weatherApi.getEarthTile(layer === 'day' && !regionRelief ? 'day-plain' : layer, col, row),
+        layer === 'slope'
+          ? window.weatherApi.getTerrainSlope(col, row)
+          : window.weatherApi.getEarthTile(layer === 'day' && !regionRelief ? 'day-plain' : layer, col, row),
       );
       if (baseTextures) regionDetail.setBase(baseTextures);
+      regionDetail.setSlopeEnabled(terrainShadingActive());
       earth.setRegionDetail(regionDetail);
     }
   }
@@ -1623,9 +1640,11 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
       regionRelief = graphics.region_relief;
       regionDetail?.reload('day');
     }
+    terrainShading = graphics.terrain_shading;
     // オンにしたときの地球ビューの分は、次のフレームで高さを見て読み込む
     if (!regionDetailEnabled) stopRegionDetail();
     else if (regionView && !regionFlight?.leaving) startRegionDetail();
+    syncTerrainShading();
     showMapLines = graphics.show_map_lines;
     syncMapLines();
     cityLabelsEnabled = graphics.show_city_labels;

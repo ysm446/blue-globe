@@ -60,6 +60,7 @@ interface GraphicsSettings {
   moonlight: boolean; // 夜側の雲と地表を、月の位置と満ち欠けに合わせて照らす
   region_detail: boolean; // 地域ビューで高解像度の画像を取得して使う
   region_relief: boolean; // 地域ビューの地表に、地形の陰影が焼き込まれた画像を使う
+  terrain_shading: number; // 陰影のない画像のときに、太陽の向きで付ける地形の陰の強さ (高さの誇張の倍率。0〜4。0 で付けない)
   volume_clouds: boolean; // 近づいたときに雲を立体で描く
   cloud_resolution: number; // 立体の雲を描く解像度 (画面に対する %。50, 75, 100)
   cloud_edge_detail: number; // 立体の雲の縁の細かさ (0〜1)
@@ -153,6 +154,8 @@ interface Window {
     setCameraBookmark(slot: number, bookmark: CameraBookmark): Promise<AppSettings>;
     getGraphicsDefaults(): Promise<GraphicsSettings>;
     getTexture(name: EarthTextureName): Promise<Uint8Array>;
+    // 地形の傾きの画像。1 画素 2 バイト (東向き、北向き) で 256×256。取得できないときは null
+    getTerrainSlope(col: number, row: number): Promise<Uint8Array | null>;
     getEarthTile(layer: EarthTileSource, col: number, row: number): Promise<Uint8Array | null>; // 取得できないときは null
     getNews(at?: string): Promise<NewsReport>;
     getPlaceNews(name: string, latitude: number, longitude: number, at?: string): Promise<NewsReport>;

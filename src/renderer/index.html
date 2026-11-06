@@ -325,6 +325,14 @@
           <label class="check-row" data-help="高解像度の画像に、地形の陰影が焼き込まれたもの(NASA Blue Marble Shaded Relief)を使います。陰は北西から光を当てた固定のもので、太陽の向きとは関係ありません。オフにすると陰影のない画像(Blue Marble Next Generation)を使います。どちらも一度取得した分は保存し、切り替えても消しません。既定: オン"><input id="region-relief-toggle" type="checkbox" />高解像度の画像に地形の陰影を付ける</label>
           <button class="reset-button" data-reset="region_relief" type="button" aria-label="地形の陰影を既定に戻す" title="既定に戻す"></button>
         </div>
+        <div class="field-grid">
+          <label for="terrain-shading" data-help="陰影のない画像のときに、標高(AWS Terrain Tiles)から求めた傾きで、太陽の向きに合わせて地形に陰を付けます。高さを何倍に強調するかの倍率で、0 で付けません。標高のタイルを取得して保存します。地形の陰影を付ける設定がオンのときは使いません。既定: ×2.0">太陽の向きで付ける地形の陰</label>
+          <div class="range-row">
+            <input id="terrain-shading" type="range" min="0" max="16" step="1" />
+            <output id="terrain-shading-value" for="terrain-shading"></output>
+          </div>
+          <button class="reset-button" data-reset="terrain_shading" type="button" aria-label="太陽の向きで付ける地形の陰を既定に戻す" title="既定に戻す"></button>
+        </div>
         <h3 class="settings-subhead">デバッグ</h3>
         <div class="check-line">
           <label class="check-row" data-help="動作確認用。地表のメッシュ(三角形の分割)の上に黒い線を重ねます。雲がある所では、線は雲の下に隠れます。既定: オフ"><input id="wireframe-toggle" type="checkbox" />ワイヤーフレーム(地表のメッシュを線で表示)</label>
@@ -486,6 +494,7 @@
         雲: NOAA GMGSI(衛星の全球合成画像)と NOAA GFS をもとに加工したもので、元データそのものではありません。近づいたときの立体の雲は、高さと細かい形を見た目のために作っています<br />
         星と星座の線: Hipparcos カタログ、d3-celestial<br />
         地表: NASA Blue Marble Next Generation(地球ビュー、陰影なしの設定)、Blue Marble Shaded Relief and Bathymetry(陰影ありの設定)。NASA GIBS の固定の合成画像<br />
+        標高(地形の陰): AWS Terrain Tiles(Mapzen。SRTM、GMTED2010、ETOPO1 などから作られたもの)<br />
         地域ビューの街明かり: NASA Black Marble(2016 年。GIBS)<br />
         We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS),
         part of NASA's Earth Science Data and Information System (ESDIS).

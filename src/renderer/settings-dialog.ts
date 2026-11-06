@@ -275,6 +275,10 @@ export function initSettingsDialog(
     region_bloom: percentSlider('region-bloom'),
     city_glow: percentSlider('city-glow'),
     glint_strength: percentSlider('glint-strength'),
+    // 0.25 刻み
+    terrain_shading: graphicsSlider('terrain-shading', (position) => position / 4, (value) => Math.round(value * 4), (value) =>
+      value === 0 ? 'なし' : `×${value.toFixed(value * 2 === Math.round(value * 2) ? 1 : 2)}`,
+    ),
     focal_length: graphicsSlider('focal-length', (position) => position, (value) => value, (value) => `${Number.isInteger(value) ? value : value.toFixed(1)}mm`),
     exposure_compensation: graphicsSlider('exposure-compensation', (position) => position, (value) => value, (value) => `${value > 0 ? '+' : ''}${value} EV`),
     f_number: graphicsSlider('f-number', (position) => F_NUMBERS[position], nearestFNumber, (value) => `F${value}`),
@@ -319,11 +323,14 @@ export function initSettingsDialog(
     return graphics;
   }
 
-  // チェックを外すと効かなくなるスライダーは、押せないようにする
-  const dependentSliders: Array<[HTMLInputElement, HTMLInputElement]> = [[toggles.bloom, sliders.region_bloom.input]];
+  // チェックを外すと (3 番目が true のものは、チェックを入れると) 効かなくなるスライダーは、押せないようにする
+  const dependentSliders: Array<[HTMLInputElement, HTMLInputElement, boolean?]> = [
+    [toggles.bloom, sliders.region_bloom.input],
+    [toggles.region_relief, sliders.terrain_shading.input, true], // 焼き込まれた陰影と二重にしない
+  ];
 
   function syncDependentSliders(): void {
-    for (const [toggle, slider] of dependentSliders) slider.disabled = !toggle.checked;
+    for (const [toggle, slider, whenUnchecked] of dependentSliders) slider.disabled = whenUnchecked ? toggle.checked : !toggle.checked;
   }
   for (const [toggle] of dependentSliders) toggle.addEventListener('change', syncDependentSliders);
 

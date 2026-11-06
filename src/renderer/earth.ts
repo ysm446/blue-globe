@@ -12,6 +12,7 @@ import { createWireOverlay } from './globe';
 import { easeInOut } from './math';
 import type { RegionDetail } from './region-detail';
 import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
+import { SLOPE_RANGE } from '../main/terrain';
 import { BAKED_SHADOW_GLSL, CLOUD_UV_GLSL, flatCloudAltitude, VolumeClouds, type CloudStyle } from './volume-clouds';
 
 export const CLOUD_ALTITUDE = 0.008; // 実際より高い。視差が見える程度に誇張している
@@ -39,6 +40,9 @@ const VOLUME_FULL_ALTITUDE = 0.6;
 const VOLUME_START_ALTITUDE = 0.85;
 const SHADOW_ON_HAZE = 0.8; // 立体の雲の影が大気の青を暗くする割合
 const SHADOW_LIFT = 0.006; // 立体の雲の影をずらすために足す高さ (約 38km)
+// 地形の陰。太陽に背を向けた斜面にも空の光が当たるので、真っ黒にはしない
+const TERRAIN_AMBIENT = 0.25;
+const TERRAIN_MAX_BRIGHTEN = 2.5; // 太陽が低いときに、太陽に向いた斜面が平らな所の何倍まで明るくなるか
 const CITY_LIGHT_EXTINCTION = 3; // 雲が街明かりを遮る強さ。厚い雲 (濃さ 1) で約 5% まで弱まる
 // 街明かりの暈。低い大気で散った光が、街のまわりをふんわり明るくする。
 // 街明かりの画像には氷や雪の淡い明るさも写っているので、街明かりだけを取り出した縮小画像を先に作り、その縮小段階を引いてぼかす
@@ -106,6 +110,8 @@ uniform sampler2D uDetailDay;
 uniform sampler2D uDetailNight;
 uniform sampler2D uDetailWater;
 uniform sampler2D uDetailMask;
+uniform sampler2D uDetailSlope;
+uniform float uTerrainRelief;
 uniform vec2 uDetailCenter;
 uniform float uBakedShadowMix;
 uniform float uCityGlow;
@@ -140,6 +146,8 @@ void main() {
   vec3 day = texture2D(uDay, vUv).rgb;
   float night = texture2D(uNight, vUv).r;
   float waterMask = texture2D(uWater, vUv).r;
+  vec2 terrainSlope = vec2(0.0); // 地形の傾き (東向き、北向き。高さ / 水平距離)
+  float terrainMix = 0.0;
   if (uRegion > 0.0 && uHasDetail > 0.5) {
     // タイルの列と行で表した座標。列は範囲の中心から連続させ、日付変更線で途切れないようにする
     float lon = atan(n.z, -n.x) * 57.29577951 - 180.0;
@@ -158,7 +166,14 @@ void main() {
     // 1 画素の広さ (タイル数) に合わせて手前から薄くする
     float blur = max(length(dx), length(dy)) * ${WINDOW_TILES.toFixed(1)};
     float inside = smoothstep(half_, half_ - 0.5 - 2.0 * blur, max(fromCenter.x, fromCenter.y));
-    vec3 mask = texture2D(uDetailMask, detailUv).rgb * inside * uRegion;
+    vec4 maskAll = texture2D(uDetailMask, detailUv) * inside * uRegion;
+    vec3 mask = maskAll.rgb;
+    if (uTerrainRelief > 0.0 && maskAll.a > 0.0) {
+      // 平方根で詰めてある (terrain.ts の encodeSlope)
+      vec2 encoded = textureGrad(uDetailSlope, detailUv, dx, dy).rg * 2.0 - 1.0;
+      terrainSlope = sign(encoded) * encoded * encoded * ${SLOPE_RANGE.toFixed(1)};
+      terrainMix = maskAll.a;
+    }
     day = mix(day, textureGrad(uDetailDay, detailUv, dx, dy).rgb, mask.r);
     night = mix(night, textureGrad(uDetailNight, detailUv, dx, dy).r, mask.g);
     waterMask = mix(waterMask, textureGrad(uDetailWater, detailUv, dx, dy).r, mask.b);
@@ -205,7 +220,19 @@ void main() {
 
   // 境目の近くでは雲と同じく太陽の色を赤くする。雲だけ橙で地表が昼の色のままだと釣り合わない
   vec3 sunColor = cloudSunColor(ndl);
-  vec3 color = day * 1.5 * light * sunColor * (1.0 - shadow);
+  // 地形の陰。標高から求めた傾きで面の向きを傾け、太陽に向いた斜面を明るく、背を向けた斜面を暗くする。
+  // 平らな所の明るさは変えず、平らな所に対する比で掛ける。太陽が低いほど斜面の差が大きくなる
+  float terrainShade = 1.0;
+  if (terrainMix > 0.0) {
+    vec3 east = vec3(n.z, 0.0, -n.x);
+    east /= max(length(east), 1e-4); // 極の近くは傾きの画像が平らなので、向きが定まらなくてもよい
+    vec3 north = cross(n, east);
+    vec3 surface = normalize(n - uTerrainRelief * (terrainSlope.x * east + terrainSlope.y * north));
+    float ratio = clamp((dot(surface, uSunDir) - ndl) / max(ndl, 0.05) + 1.0, 0.0, ${TERRAIN_MAX_BRIGHTEN.toFixed(1)});
+    float shaded = ${TERRAIN_AMBIENT.toFixed(2)} + ${(1 - TERRAIN_AMBIENT).toFixed(2)} * ratio;
+    terrainShade = mix(1.0, shaded, terrainMix * (1.0 - ocean));
+  }
+  vec3 color = day * 1.5 * light * sunColor * (1.0 - shadow) * terrainShade;
 
   // 太陽の映り込み (水域だけ)。波の傾きの分布 (Cox-Munk) と、水面の反射率 (Fresnel) から求める
   vec3 halfway = normalize(uSunDir + view);
@@ -429,6 +456,8 @@ export class RealisticEarth {
         uDetailNight: { value: null },
         uDetailWater: { value: null },
         uDetailMask: { value: null },
+        uDetailSlope: { value: null },
+        uTerrainRelief: { value: 0 },
         uDetailCenter: { value: new THREE.Vector2() },
         uBakedShadowMix: { value: 0 },
         uCityGlow: { value: 1 },
@@ -616,6 +645,11 @@ export class RealisticEarth {
     this.material.uniforms.uCityGlow.value = strength;
   }
 
+  // 地形の陰の強さ (高さの誇張の倍率)。0 で陰を付けない。地域ビューの傾きの画像があるところだけに効く
+  setTerrainRelief(exaggeration: number): void {
+    this.material.uniforms.uTerrainRelief.value = exaggeration;
+  }
+
   setCloudShadow(strength: number): void {
     this.material.uniforms.uShadowStrength.value = strength;
   }
@@ -627,6 +661,7 @@ export class RealisticEarth {
     uniforms.uDetailNight.value = detail?.atlases.night ?? null;
     uniforms.uDetailWater.value = detail?.atlases.water ?? null;
     uniforms.uDetailMask.value = detail?.mask ?? null;
+    uniforms.uDetailSlope.value = detail?.slopeAtlas ?? null;
     if (detail) uniforms.uDetailCenter.value = detail.center;
   }
 

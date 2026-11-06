@@ -37,6 +37,7 @@ DEFAULT_SETTINGS = {
         "glint_strength": 1.3,  # 1 が地球の写真に合わせた強さ
         "region_detail": True,
         "region_relief": True,  # 地域ビューの地表に、地形の陰影が焼き込まれた画像を使う
+        "terrain_shading": 2.0,  # 陰影のない画像のときに、太陽の向きで付ける地形の陰の強さ (高さの誇張の倍率)
         "volume_clouds": True,
         # 立体の雲の見た目。volume-clouds.ts の CloudStyle を参照
         "cloud_resolution": 50,
