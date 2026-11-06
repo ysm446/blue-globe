@@ -247,7 +247,7 @@ async function init(): Promise<void> {
     }
   }
 
-  // ラベルで選んだ都市の天気。設定地点は変えず、「ホームへ戻る」で元に戻す
+  // ラベルで選んだ都市の天気。設定地点は変えず、左上の地点を押すと (ホームへ戻る) 元に戻す
   let selectedCity: DemoPlace | null = null;
   let cityRequest = 0;
   async function loadCity(place: DemoPlace): Promise<void> {
@@ -342,11 +342,22 @@ async function init(): Promise<void> {
     else void settingsDialog.open();
   });
   el('open-settings').addEventListener('click', () => void settingsDialog.open());
-  el('return-home').addEventListener('click', () => {
+  // 左上の地点と天気を押すとホームへ戻る
+  function returnHome(): void {
     if (view === 'solar') showView('globe');
     showHome();
     globe.setMarker();
     globe.returnToLocation();
+  }
+  const clock = el('clock');
+  clock.addEventListener('click', () => {
+    clock.blur(); // フォーカスが残ると W/A/S/D などが効かないことがある
+    returnHome();
+  });
+  clock.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    returnHome();
   });
   initDemo(
     globe,

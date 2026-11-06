@@ -104,7 +104,7 @@ a:hover {
 #mode-switch,
 #view-switch,
 #camera-style,
-#return-home,
+#display-toggle,
 #time-panel,
 #detail-panel,
 #view-hint,
@@ -131,7 +131,7 @@ a:hover {
 #mode-switch,
 #view-switch,
 #camera-style,
-#return-home,
+#display-toggle,
 #top-right button,
 #demo-hint,
 #weather-status,
@@ -478,10 +478,13 @@ button.city-label:active {
   display: none;
 }
 
-#return-home,
 #display-toggle {
   background: var(--panel);
   border-color: transparent;
+}
+
+#display-toggle:hover:not([aria-expanded='true']) {
+  background: var(--panel-strong);
 }
 
 #display-toggle[aria-expanded='true'] {
@@ -790,16 +793,22 @@ body.solar #tour-panel {
   border-radius: 4px;
 }
 
-#return-home:hover {
-  background: var(--panel-strong);
-}
-
+/* 地点と今の天気。押すとホームへ戻る (都市を選んでいるときは地点の天気に戻り、カメラも地点へ戻る) */
 #clock {
   display: flex;
   padding: 10px 16px 8px;
   background: var(--panel);
   border-radius: 8px;
-  pointer-events: none;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+#clock:hover {
+  background: var(--panel-strong);
+}
+
+#clock:active {
+  background: rgba(64, 64, 64, 0.75);
 }
 
 /* 地点が未設定のときは、中身のない枠を出さない */
