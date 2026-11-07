@@ -18,20 +18,27 @@ if not exist .venv\Scripts\uvicorn.exe (
     if errorlevel 1 goto :error
 )
 
-if not exist node_modules (
-    echo [start] node_modules not found. Running npm install...
+rem 依存の追加後やインストールが途中で止まった場合も、不足を補う
+set "dependencies_updated="
+call npm ls --depth=0 >nul 2>&1
+if errorlevel 1 (
+    echo [start] Node packages are missing or outdated. Running npm install...
     call npm install
     if errorlevel 1 goto :error
+    set "dependencies_updated=1"
 )
 
 rem Rebuild when the build output is missing or older than the source (e.g. after git pull)
+if defined dependencies_updated goto :build
 node scripts\needs-build.mjs
-if errorlevel 1 (
-    echo [start] Running npm run build...
-    call npm run build
-    if errorlevel 1 goto :error
-)
+if not errorlevel 1 goto :start
 
+:build
+echo [start] Running npm run build...
+call npm run build
+if errorlevel 1 goto :error
+
+:start
 call npm start
 if errorlevel 1 goto :error
 exit /b 0
