@@ -4,15 +4,21 @@
 const LOG_MIN = -2;
 const LOG_MAX = 5;
 
-// 色の段階。log10(人/km²) ごとの色 (sRGB) と不透明度。最初の段より薄い所は塗らない
+// 色の段階。log10(人/km²) ごとの色 (sRGB) と不透明度。最初の段より薄い所は塗らない。
+// 炎の色 (暗い赤 → 赤 → 橙 → 黄 → 白) で、密な所ほど明るい。低い所を黒で塗ると昼の陸が焼けたように暗くなるので、暗い赤を薄く重ねる
 const STOPS: [number, [number, number, number], number][] = [
-  [-1, [255, 236, 150], 0], // 0.1 人/km²
-  [0, [255, 222, 110], 0.12], // 1
-  [1, [255, 186, 60], 0.3], // 10
-  [2, [250, 120, 30], 0.5], // 100
-  [3, [225, 45, 35], 0.68], // 1000
-  [4, [175, 15, 95], 0.8], // 1 万
+  [-1, [110, 12, 6], 0], // 0.1 人/km²
+  [0, [160, 22, 10], 0.3], // 1
+  [1, [215, 55, 15], 0.5], // 10
+  [2, [245, 125, 25], 0.7], // 100
+  [3, [255, 205, 75], 0.88], // 1000
+  [4, [255, 248, 225], 1], // 1 万
 ];
+// 色の明るさ (線形)。一番密な所は光のにじみのしきい値 (2.6) を超えさせ、都市の中心を光らせる
+const BRIGHTNESS = 0.5;
+const GLOW_FROM_LOG = 3; // ここから明るくし始める (1000 人/km²)
+const GLOW_FULL_LOG = 4.5; // ここで一番明るい (約 3 万人/km²)
+const GLOW_BRIGHTNESS = 3.2;
 
 // 凡例の目盛りに出す密度 (log10)
 export const POPULATION_LEGEND_TICKS = [0, 2, 4];
@@ -53,7 +59,7 @@ float populationLog(vec2 sampled) {
   if (v < 0.5) return -99.0;
   return ${LOG_MIN.toFixed(1)} + (v - 1.0) / 254.0 * ${(LOG_MAX - LOG_MIN).toFixed(1)};
 }
-// ヒートマップの色と不透明度 (a)
+// ヒートマップの色と不透明度 (a)。色は明るさを掛けたもので、密な所は画面の白より明るい
 vec4 populationColor(float logDensity) {
   if (logDensity < -98.0) return vec4(0.0);
   vec4 c = vec4(vec3(${STOPS[0][1].map(toLinear).join(', ')}), ${STOPS[0][2].toFixed(2)});
@@ -63,6 +69,7 @@ ${STOPS.slice(1)
     return `  c = mix(c, vec4(vec3(${rgb.map(toLinear).join(', ')}), ${alpha.toFixed(2)}), smoothstep(${prev.toFixed(1)}, ${log.toFixed(1)}, logDensity));`;
   })
   .join('\n')}
+  c.rgb *= mix(${BRIGHTNESS.toFixed(2)}, ${GLOW_BRIGHTNESS.toFixed(2)}, smoothstep(${GLOW_FROM_LOG.toFixed(1)}, ${GLOW_FULL_LOG.toFixed(1)}, logDensity));
   return c;
 }
 // cellDeg の大きさのマス目での点。lat, lon は度、blurKm は点の縁をぼかす幅 (1 画素の地表の長さ)

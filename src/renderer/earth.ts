@@ -54,7 +54,7 @@ const GLOW_FAR_LOD = 2; // 1 画素が約 160km
 const GLOW_BRIGHTNESS = 0.6; // 設定が 100% のときの明るさ。にじみのしきい値 (2.6) より十分低くし、白く飛ばさない
 const GLOW_MAX_PATH = 2; // 斜めに見るほど大気を長く通って強くにじむ。真上から見たときに対する上限
 const EARTH_RADIUS_KM = 6371;
-const POPULATION_BRIGHTNESS = 0.5; // 人口の分布の色の明るさ (線形)。光のにじみのしきい値より十分低くする
+const POPULATION_DIMS_CITY_LIGHTS = 0.85; // 人口の分布を出している間、街明かりを弱める割合。どちらも橙〜白で見分けにくい
 
 // 街明かりの描画と同じ式で、街明かりの画像から光だけを取り出して縮小する
 const GLOW_MAP_FS = /* glsl */ `
@@ -264,6 +264,7 @@ void main() {
     vec3 throughCloud = normalize(n + view * uCloudAltitude / max(dot(n, view), 0.25));
     lights *= exp(-cloudAt(throughCloud, dFdx(vUv), dFdy(vUv)) * ${CITY_LIGHT_EXTINCTION.toFixed(1)} * uShadowAmount);
   }
+  lights *= 1.0 - uPopulationAmount * ${POPULATION_DIMS_CITY_LIGHTS.toFixed(2)};
   color +=vec3(1.0, 0.6, 0.26) * lights * 4.5; // 画面の白より明るくして、にじませる
 
   // 街明かりの暈。遠くから見て 1 画素が縮小段階より広いときは、その画素の広さに合わせて粗い段を引く
@@ -272,7 +273,8 @@ void main() {
     float pixelLod = log2(max(max(length(dFdx(texels)), length(dFdy(texels))), 1.0));
     float glow = glowAt(vUv, max(0.0, pixelLod + 1.0)) * 0.7 + glowAt(vUv, max(${GLOW_FAR_LOD.toFixed(1)}, pixelLod + 1.0)) * 0.3;
     float path = min(1.0 / max(dot(n, view), 0.01), ${GLOW_MAX_PATH.toFixed(1)});
-    float glowLight = glow * path * uCityGlow * ${GLOW_BRIGHTNESS.toFixed(2)} * (1.0 - dayMask);
+    float glowLight = glow * path * uCityGlow * ${GLOW_BRIGHTNESS.toFixed(2)} * (1.0 - dayMask)
+      * (1.0 - uPopulationAmount * ${POPULATION_DIMS_CITY_LIGHTS.toFixed(2)});
     if (uShadowAmount > 0.0) {
       vec3 throughCloud = normalize(n + view * uCloudAltitude / max(dot(n, view), 0.25));
       glowLight *= exp(-cloudAt(throughCloud, dFdx(vUv), dFdy(vUv)) * ${CITY_LIGHT_EXTINCTION.toFixed(1)} * uShadowAmount);
@@ -312,7 +314,7 @@ void main() {
       float blurKm = max(length(dx), length(dy)) * kmPerUnit;
       heat = populationDots(vUv, pixelKm, blurKm);
     }
-    color = mix(color, heat.rgb * ${POPULATION_BRIGHTNESS.toFixed(2)}, heat.a * uPopulationAmount);
+    color = mix(color, heat.rgb, heat.a * uPopulationAmount);
   }
 
   gl_FragColor = vec4(color, 1.0);
