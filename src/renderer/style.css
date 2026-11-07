@@ -345,6 +345,18 @@ button.city-label:active {
 .terrain-label.lowland { color: rgba(175, 215, 150, 0.9); }
 .terrain-label.cold { color: rgba(185, 215, 230, 0.9); }
 
+/* 川と湖は水色。川は地図帳のように斜めの文字にする */
+.terrain-label.river {
+  color: rgba(135, 195, 255, 0.92);
+  font-style: italic;
+  letter-spacing: 0.15em;
+}
+
+.terrain-label.lake {
+  color: rgba(150, 205, 255, 0.92);
+  letter-spacing: 0.15em;
+}
+
 /* 山の頂。印の中心を頂の位置に合わせる (terrain-labels.ts の PEAK_MARK_HALF) */
 .terrain-label.peak {
   color: rgba(255, 255, 255, 0.85);
