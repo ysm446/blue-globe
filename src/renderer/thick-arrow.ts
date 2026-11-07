@@ -16,7 +16,18 @@ export interface ArrowVertex {
   lat: number;
   progress: number;
   side: number;
+  head: number; // 矢じりの頂点は 1、帯は 0 (破線でも矢じりは区切らない)
+  headAt: number; // この矢印の矢じりの根元の進み具合。破線の区切りをここから逆算し、矢じりのすぐ手前を必ず塗る (矢じりに尾が付く)
+  startAt: number; // この矢印の根元の進み具合 (分けた矢印では 2 本目から 0 より大きい)。破線の根元の端に輪郭を引く
 }
+
+export interface ArrowOptions {
+  // 横へずらす幅 (km)。正は進む向きの右、負は左。根元と先端の近くだけずらし、途中は渡した点を通る。
+  // 同じ所から出る矢印や、同じ所へ向かう矢印の重なりを避ける
+  offsetKm?: number;
+}
+
+const OFFSET_TAPER_RATIO = 4; // ずらす範囲 (根元と先端から、帯の太さの何倍まで)。全体の 35% まで
 
 export interface ThickArrow {
   triangles: [ArrowVertex, ArrowVertex, ArrowVertex][];
@@ -69,7 +80,7 @@ function roundedPath(points: Vec[], step: number, radius: number): Vec[] {
 }
 
 // points は [lon, lat] の並び (経度は日付変更線をまたいでも続くように直したもの)、widthKm は帯の一番太い所の太さ
-export function buildThickArrow(points: [number, number][], widthKm: number): ThickArrow | null {
+export function buildThickArrow(points: [number, number][], widthKm: number, options: ArrowOptions = {}): ThickArrow | null {
   if (points.length < 2 || !(widthKm > 0)) return null;
   const lon0 = points.reduce((sum, [lon]) => sum + lon, 0) / points.length;
   const lat0 = points.reduce((sum, [, lat]) => sum + lat, 0) / points.length;
@@ -83,11 +94,32 @@ export function buildThickArrow(points: [number, number][], widthKm: number): Th
     if (plane.length === 0 || length(sub(point, plane[plane.length - 1])) > 1e-6) plane.push(point);
   }
   if (plane.length < 2) return null;
-  const path = roundedPath(plane, widthKm / SAMPLE_PER_WIDTH, widthKm * CORNER_RADIUS_RATIO);
-  const along = [0];
-  for (let i = 1; i < path.length; i++) along.push(along[i - 1] + length(sub(path[i], path[i - 1])));
+  let path = roundedPath(plane, widthKm / SAMPLE_PER_WIDTH, widthKm * CORNER_RADIUS_RATIO);
+  const measure = (points: Vec[]): number[] => {
+    const out = [0];
+    for (let i = 1; i < points.length; i++) out.push(out[i - 1] + length(sub(points[i], points[i - 1])));
+    return out;
+  };
+  let along = measure(path);
+  if (along[along.length - 1] <= 0) return null;
+  // 根元と先端の近くだけを横へずらす。ずらす量は端で全部、端から taper 離れた所で 0 になるよう、なめらかに減らす
+  const offset = options.offsetKm ?? 0;
+  if (offset !== 0) {
+    const whole = along[along.length - 1];
+    const taper = Math.min(widthKm * OFFSET_TAPER_RATIO, whole * 0.35);
+    const smooth = (x: number): number => {
+      const t = Math.max(0, Math.min(1, x));
+      return t * t * (3 - 2 * t);
+    };
+    path = path.map((point, i) => {
+      const tangent = normalize(sub(path[Math.min(i + 1, path.length - 1)], path[Math.max(i - 1, 0)]));
+      const right: Vec = [tangent[1], -tangent[0]];
+      const nearEnd = Math.min(along[i], whole - along[i]);
+      return add(point, scale(right, offset * (1 - smooth(nearEnd / taper))));
+    });
+    along = measure(path);
+  }
   const total = along[along.length - 1];
-  if (total <= 0) return null;
 
   const headHalf = (widthKm * HEAD_WIDTH_RATIO) / 2;
   const headLength = Math.min(headHalf * 2 * HEAD_LENGTH_RATIO, total * HEAD_MAX_SHARE);
@@ -119,9 +151,9 @@ export function buildThickArrow(points: [number, number][], widthKm: number): Th
     const t = (d - along[i - 1]) / Math.max(along[i] - along[i - 1], 1e-9);
     return { point: add(path[i - 1], scale(sub(path[i], path[i - 1]), t)), tangent: normalize(sub(path[i], path[i - 1])) };
   };
-  const vertex = (point: Vec, distance: number, side: number): ArrowVertex => {
+  const vertex = (point: Vec, distance: number, side: number, head = 0): ArrowVertex => {
     const [lon, lat] = toLonLat(point);
-    return { lon, lat, progress: distance / total, side };
+    return { lon, lat, progress: distance / total, side, head, headAt: shaftEnd / total, startAt: 0 };
   };
 
   // 帯の左右の縁。根元から矢じりの根元まで同じ太さ
@@ -149,10 +181,10 @@ export function buildThickArrow(points: [number, number][], widthKm: number): Th
   }
 
   // 矢じり。根元の左右の角と先端。中心の点も置き、帯の中央と同じように左右の値が 0 になるようにする
-  const headLeft = vertex(add(base.point, scale(baseNormal, headHalf)), shaftEnd, 1);
-  const headRight = vertex(add(base.point, scale(baseNormal, -headHalf)), shaftEnd, -1);
-  const headCenter = vertex(base.point, shaftEnd, 0);
-  const tipVertex = vertex(tip, total, 0);
+  const headLeft = vertex(add(base.point, scale(baseNormal, headHalf)), shaftEnd, 1, 1);
+  const headRight = vertex(add(base.point, scale(baseNormal, -headHalf)), shaftEnd, -1, 1);
+  const headCenter = vertex(base.point, shaftEnd, 0, 1);
+  const tipVertex = vertex(tip, total, 0, 1);
   triangles.push([headLeft, headCenter, tipVertex], [headCenter, headRight, tipVertex]);
   center.push(tipVertex);
   return {
@@ -218,7 +250,7 @@ export function splitAtSharpTurns(points: [number, number][], maxTurnDeg = SPLIT
 
 // 急に曲がる所で分けた矢印。進み具合 (progress) は全体を通した値にし、1 本目が伸びきってから 2 本目が伸びるようにする。
 // 2 本目からは、前の矢じりと重ならないよう根元を少し先から始める
-export function buildSplitArrow(points: [number, number][], widthKm: number): { pieces: ThickArrow[]; lengthKm: number } | null {
+export function buildSplitArrow(points: [number, number][], widthKm: number, options: ArrowOptions = {}): { pieces: ThickArrow[]; lengthKm: number } | null {
   const gapKm = widthKm * SPLIT_GAP_RATIO;
   const built: ThickArrow[] = [];
   splitAtSharpTurns(points).forEach((piece, index) => {
@@ -230,7 +262,7 @@ export function buildSplitArrow(points: [number, number][], widthKm: number): { 
       const t = Math.min(gapKm, segmentKm * 0.3) / Math.max(segmentKm, 1e-9);
       start = [[a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], ...piece.slice(1)];
     }
-    const arrow = buildThickArrow(start, widthKm);
+    const arrow = buildThickArrow(start, widthKm, options);
     if (arrow) built.push(arrow);
   });
   if (built.length === 0) return null;
@@ -245,7 +277,7 @@ export function buildSplitArrow(points: [number, number][], widthKm: number): { 
     const remap = (v: ArrowVertex): ArrowVertex => {
       let out = mapped.get(v);
       if (!out) {
-        out = { ...v, progress: base + v.progress * share };
+        out = { ...v, progress: base + v.progress * share, headAt: base + v.headAt * share, startAt: base };
         mapped.set(v, out);
       }
       return out;
@@ -258,4 +290,11 @@ export function buildSplitArrow(points: [number, number][], widthKm: number): { 
     };
   });
   return { pieces, lengthKm: total };
+}
+
+// 破線の、全体を通した区切りの数。塗りと隙間の 1 組を帯の太さの 3 倍にし、太さによらず同じ調子の破線にする
+// (塗り 60%、隙間 40%。線の破線と同じ割合)。はじめは 4.5 倍にしたが、区切りが長く、塊が並んでいるように見えた
+export function arrowDashCount(widthKm: number, lengthKm: number): number {
+  if (!(widthKm > 0) || !(lengthKm > 0)) return 0;
+  return Math.max(1, lengthKm / (widthKm * 3));
 }

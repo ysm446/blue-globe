@@ -93,6 +93,12 @@ const highlightSpec = z.discriminatedUnion('type', [
       .boolean()
       .optional()
       .describe('根元をグラデーションで消す。前の場面から続いている道の一部や、出発点のはっきりしない流れ (伝播、移動) に使う。はっきりした出発点から始まるときは付けない'),
+    offset: z
+      .number()
+      .min(-500)
+      .max(500)
+      .optional()
+      .describe('根元と先端を横へずらす幅 (km)。正は進む向きの右、負は左。途中は渡した点を通る。同じ所から出る・同じ所へ向かう矢印の重なりを避けるときに、帯の太さほどずらす'),
     opaque: z
       .boolean()
       .optional()

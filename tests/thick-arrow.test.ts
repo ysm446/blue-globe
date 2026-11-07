@@ -1,7 +1,7 @@
 // 太さのある矢印の形の検証。実行: node --test tests/thick-arrow.test.ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { arrowFadeShare, buildSplitArrow, buildThickArrow, defaultArrowWidthKm, splitAtSharpTurns } from '../src/renderer/thick-arrow.ts';
+import { arrowDashCount, arrowFadeShare, buildSplitArrow, buildThickArrow, defaultArrowWidthKm, splitAtSharpTurns } from '../src/renderer/thick-arrow.ts';
 
 const KM = 111.2;
 
@@ -108,4 +108,36 @@ test('分けた矢印は、1 本目が伸びきってから 2 本目が伸びる
   // 2 本目の根元は、折り返しの点から少し離れている
   const tail = second.center[0];
   assert.ok(tail.lon < 10 - 0.05, `根元の経度: ${tail.lon}`);
+});
+
+test('横へずらすときは、根元と先端だけずらし、途中は渡した道筋を通る', () => {
+  // 東へ進む矢印。右は南
+  const arrow = buildThickArrow([[0, 0], [10, 0]], 20, { offsetKm: 30 })!;
+  const tail = arrow.center[0];
+  assert.ok(Math.abs(tail.lat * KM + 30) < 1, `根元の緯度: ${tail.lat * KM} km`);
+  const middle = arrow.center.find((v) => v.lon > 4.9 && v.lon < 5.1)!;
+  assert.ok(Math.abs(middle.lat) < 1e-6, `途中の緯度: ${middle.lat}`);
+  const tip = arrow.center[arrow.center.length - 1];
+  assert.ok(Math.abs(tip.lat * KM + 30) < 1, `先端の緯度: ${tip.lat * KM} km`);
+  // 負の値は左 (北)
+  const left = buildThickArrow([[0, 0], [10, 0]], 20, { offsetKm: -30 })!;
+  assert.ok(left.center[0].lat > 0);
+});
+
+test('矢じりの頂点には印が付き、破線の区切りは帯の太さに比例する', () => {
+  const arrow = buildThickArrow([[0, 0], [10, 0]], 20)!;
+  const headCount = arrow.triangles.flat().filter((v) => v.head === 1).length;
+  assert.equal(headCount, 6);
+  assert.ok(Math.abs(arrowDashCount(20, 600) - 10) < 1e-9);
+  assert.equal(arrowDashCount(20, 10), 1);
+});
+
+test('どの頂点も、自分の矢印の矢じりの根元の進み具合を持つ', () => {
+  const split = buildSplitArrow([[0, 0], [10, 0], [0, 1]], 40)!;
+  for (const piece of split.pieces) {
+    const n = piece.outline.left.length;
+    const headBase = piece.outline.left[n - 2].progress; // 矢じりの角
+    for (const v of piece.triangles.flat()) assert.ok(Math.abs(v.headAt - headBase) < 1e-9);
+  }
+  assert.ok(split.pieces[0].outline.left[0].headAt < split.pieces[1].outline.left[0].headAt);
 });
