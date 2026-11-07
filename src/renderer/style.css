@@ -304,6 +304,71 @@ button.city-label:active {
   opacity: 0;
 }
 
+/* 地形の名前。都市名や国名と見分けられるよう、地図帳のように字間を広げ、地形の種類で色を分ける。重要な地形ほど大きい */
+.terrain-label {
+  position: fixed;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  line-height: 15px;
+  letter-spacing: 0.3em;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  text-shadow: 0 0 3px #000, 0 0 6px rgba(0, 0, 0, 0.8);
+  transition: opacity 200ms, visibility 200ms;
+}
+
+.terrain-label.rank-1 {
+  font-size: 14px;
+  line-height: 18px;
+  letter-spacing: 0.45em;
+}
+
+.terrain-label.rank-2 {
+  font-size: 13px;
+  line-height: 17px;
+  letter-spacing: 0.4em;
+}
+
+.terrain-label.rank-3 {
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.terrain-label.desert { color: rgba(240, 205, 140, 0.9); }
+.terrain-label.mountain { color: rgba(225, 175, 135, 0.9); }
+.terrain-label.plateau { color: rgba(220, 195, 160, 0.9); }
+.terrain-label.lowland { color: rgba(175, 215, 150, 0.9); }
+.terrain-label.cold { color: rgba(185, 215, 230, 0.9); }
+
+/* 山の頂。印の中心を頂の位置に合わせる (terrain-labels.ts の PEAK_MARK_HALF) */
+.terrain-label.peak {
+  color: rgba(255, 255, 255, 0.85);
+  letter-spacing: 0.05em;
+}
+
+.terrain-label .peak-mark {
+  width: 10px;
+  color: rgba(225, 175, 135, 0.95);
+  font-size: 9px;
+  text-align: center;
+  letter-spacing: 0;
+}
+
+.terrain-label .peak-elevation {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 10px;
+}
+
+.terrain-label.off {
+  visibility: hidden;
+  opacity: 0;
+}
+
 /* 点のハイライト (山頂、滝など) の名前と標高。印の右に置き、重なるときは highlights.ts がずらす */
 .highlight-label.point {
   display: flex;

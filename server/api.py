@@ -139,6 +139,7 @@ class GraphicsUpdate(BaseModel):
     show_scale_bar: bool = True  # 同上
     show_population: bool = False  # 以前の画面から送られても受け付けるよう、省いたときは出さない
     population_style: Literal["heatmap", "dots", "dots_flat"] = "dots"  # 同上
+    show_terrain_labels: bool = False  # 同上
 
 
 @app.get("/health")

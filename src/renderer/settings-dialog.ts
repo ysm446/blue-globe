@@ -251,6 +251,7 @@ export function initSettingsDialog(
     show_map_lines: el<HTMLInputElement>('map-lines-toggle'),
     show_city_labels: el<HTMLInputElement>('city-labels-toggle'),
     show_country_labels: el<HTMLInputElement>('country-labels-toggle'),
+    show_terrain_labels: el<HTMLInputElement>('terrain-labels-toggle'),
     show_population: el<HTMLInputElement>('population-toggle'),
     show_planet_labels: el<HTMLInputElement>('planet-labels-toggle'),
     show_constellations: el<HTMLInputElement>('constellations-toggle'),

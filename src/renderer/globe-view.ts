@@ -23,6 +23,7 @@ import { HeadingTape, type TapeMarker } from './heading-tape';
 import { stepFade } from './fade';
 import { Highlights, type HighlightSpec } from './highlights';
 import { CountryLabels } from './country-labels';
+import { TerrainLabels } from './terrain-labels';
 import { TourCaption } from './tour-caption';
 import { TourPlayer, type TourScene } from './tour';
 import { bearingDegrees, easeInOut, separationDegrees, wrapDegrees, type LonLat } from './math';
@@ -563,6 +564,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   let cityLabelsEnabled = false;
   let countryLabelsEnabled = false;
   const countryLabels = new CountryLabels(el('country-labels'), EARTH_SURFACE_RADIUS);
+  let terrainLabelsEnabled = false;
+  const terrainLabels = new TerrainLabels(el('terrain-labels'), EARTH_SURFACE_RADIUS);
   const cameraPanel = new CameraPanel(camera, GLOBE_RADIUS);
   const scaleBar = new ScaleBar(camera, GLOBE_RADIUS);
   let scaleBarEnabled = true; // 設定の show_scale_bar
@@ -1445,6 +1448,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   function syncCityLabels(): void {
     cityLabels.setVisible(cityLabelsEnabled && !demoMotion && !solar.active);
     countryLabels.setVisible(countryLabelsEnabled && !demoMotion && !solar.active);
+    terrainLabels.setVisible(terrainLabelsEnabled && !demoMotion && !solar.active);
   }
 
   function focusLocation(location: WeatherLocation): void {
@@ -1664,10 +1668,12 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     const markerBox = point
       ? [{ x: point.x - MARKER_BOX_LEFT, y: point.y - MARKER_BOX_HEIGHT / 2, width: MARKER_BOX_LEFT + MARKER_LABEL_OFFSET + markerLabelWidth, height: MARKER_BOX_HEIGHT }]
       : [];
-    // ツアーのハイライトのラベルを先に置き、都市のラベル、国名の順にそれを避けて置く
+    // ツアーのハイライトのラベルを先に置き、都市のラベル、国名、地形の名前の順にそれを避けて置く
     const highlightBoxes = highlights.layoutLabels(camera, markerBox);
     cityLabels.update(toScreen, [...markerBox, ...highlightBoxes], apparentAltitude());
-    countryLabels.update(toScreen, [...markerBox, ...highlightBoxes, ...cityLabels.shownBoxes()], apparentAltitude(), highlights.activeCountries());
+    const cityBoxes = cityLabels.shownBoxes();
+    countryLabels.update(toScreen, [...markerBox, ...highlightBoxes, ...cityBoxes], apparentAltitude(), highlights.activeCountries());
+    terrainLabels.update(toScreen, [...markerBox, ...highlightBoxes, ...cityBoxes, ...countryLabels.shownBoxes()], apparentAltitude());
   }
 
   window.addEventListener('resize', () => {
@@ -1780,6 +1786,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     syncLineOpacity();
     cityLabelsEnabled = graphics.show_city_labels;
     countryLabelsEnabled = graphics.show_country_labels;
+    terrainLabelsEnabled = graphics.show_terrain_labels;
     planetLabelsEnabled = graphics.show_planet_labels;
     headingTapeEnabled = graphics.show_heading_tape;
     scaleBarEnabled = graphics.show_scale_bar;
