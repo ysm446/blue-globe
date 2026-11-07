@@ -245,6 +245,8 @@ export function initSettingsDialog(
     bloom: el<HTMLInputElement>('bloom-toggle'),
     auto_exposure: el<HTMLInputElement>('exposure-toggle'),
     show_fps: el<HTMLInputElement>('fps-toggle'),
+    show_heading_tape: el<HTMLInputElement>('heading-tape-toggle'),
+    show_scale_bar: el<HTMLInputElement>('scale-bar-toggle'),
     show_map_lines: el<HTMLInputElement>('map-lines-toggle'),
     show_city_labels: el<HTMLInputElement>('city-labels-toggle'),
     show_country_labels: el<HTMLInputElement>('country-labels-toggle'),

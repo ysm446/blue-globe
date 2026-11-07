@@ -135,6 +135,8 @@ class GraphicsUpdate(BaseModel):
     show_details_panel: bool
     show_camera_panel: bool
     show_tour_panel: bool = True  # 以前の画面から送られても受け付けるよう、省いたときは出す
+    show_heading_tape: bool = True  # 同上
+    show_scale_bar: bool = True  # 同上
 
 
 @app.get("/health")

@@ -111,6 +111,8 @@ class SettingsApiTest(unittest.TestCase):
         "show_details_panel": False,
         "show_camera_panel": False,
         "show_tour_panel": False,
+        "show_heading_tape": False,
+        "show_scale_bar": False,
     }
 
     def test_graphics_defaults(self):
@@ -199,6 +201,8 @@ class SettingsApiTest(unittest.TestCase):
         self.assertEqual(graphics["glint_strength"], 1.3)
         self.assertTrue(graphics["show_camera_panel"])
         self.assertTrue(graphics["show_tour_panel"])
+        self.assertTrue(graphics["show_heading_tape"])
+        self.assertTrue(graphics["show_scale_bar"])
         self.assertEqual(graphics["focal_length"], 24)
         self.assertTrue(graphics["depth_of_field"])
         self.assertEqual(graphics["f_number"], 4.0)

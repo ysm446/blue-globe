@@ -81,6 +81,8 @@ interface GraphicsSettings {
   show_details_panel: boolean;
   show_camera_panel: boolean;
   show_tour_panel: boolean;
+  show_heading_tape: boolean; // 地域ビューで動いている間に出す上の方位テープ
+  show_scale_bar: boolean; // 右下の縮尺のバー
 }
 
 interface PanelSettings {

@@ -1,7 +1,14 @@
 // 右下の「表示」ボタンと、押すと開く表示の切り替えのメニュー。設定の「表示」と同じ値を切り替えて保存する
 import { el } from './dom';
 
-type DisplayKey = 'show_map_lines' | 'show_country_labels' | 'show_city_labels' | 'show_planet_labels' | 'show_constellations';
+type DisplayKey =
+  | 'show_map_lines'
+  | 'show_country_labels'
+  | 'show_city_labels'
+  | 'show_planet_labels'
+  | 'show_constellations'
+  | 'show_heading_tape'
+  | 'show_scale_bar';
 
 interface DisplayItem {
   key: DisplayKey;
@@ -20,6 +27,8 @@ const ITEMS: DisplayItem[] = [
   { key: 'show_city_labels', label: '都市名', inactive: (_mode, view) => (view === 'solar' ? '太陽系では出ません' : null) },
   { key: 'show_planet_labels', label: '惑星の名前', inactive: (mode) => (mode === 'wind' ? '風速モードでは出ません' : null) },
   { key: 'show_constellations', label: '星座の線', inactive: (mode) => (mode === 'wind' ? '風速モードでは出ません' : null) },
+  { key: 'show_heading_tape', label: '方位のメーター', inactive: (_mode, view) => (view === 'region' ? null : '地域ビューで動いている間だけ出ます') },
+  { key: 'show_scale_bar', label: '縮尺のバー', inactive: (_mode, view) => (view === 'solar' ? '太陽系では出ません' : null) },
 ];
 
 const MENU_GAP = 8; // ボタンとメニューの間 (px)

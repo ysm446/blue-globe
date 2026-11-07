@@ -61,6 +61,8 @@ DEFAULT_SETTINGS = {
         "show_details_panel": True,
         "show_camera_panel": True,
         "show_tour_panel": True,
+        "show_heading_tape": True,  # 地域ビューの上の方位テープ
+        "show_scale_bar": True,  # 右下の縮尺のバー
     },
     # True で開いている。カメラのパネルは計器のようなものなので、既定では閉じておく
     "panels": {"hourly": True, "weekly": True, "details": True, "camera": False, "tours": True},

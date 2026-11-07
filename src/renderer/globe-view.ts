@@ -564,6 +564,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   const countryLabels = new CountryLabels(el('country-labels'), EARTH_SURFACE_RADIUS);
   const cameraPanel = new CameraPanel(camera, GLOBE_RADIUS);
   const scaleBar = new ScaleBar(camera, GLOBE_RADIUS);
+  let scaleBarEnabled = true; // 設定の show_scale_bar
   const planetLabels = new PlanetLabels(el('planet-labels'), sky.planets.map((planet) => planet.name), GLOBE_RADIUS);
   let planetLabelsEnabled = false;
 
@@ -1607,13 +1608,14 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   }
 
   const headingTape = new HeadingTape();
+  let headingTapeEnabled = true; // 設定の show_heading_tape
   let tapeLast: { lat: number; lon: number; heading: number } | null = null;
   let tapeIdle = Number.POSITIVE_INFINITY; // 動きが止まってからの秒数
 
   // 巡航、旋回、ドラッグで中心か方角が変わっている間だけ出す。拡大縮小だけでは出さない。
   // 地点へ飛ぶ途中は動いたとみなさない (地域ビューへ入るたびに出ないように)。出ていれば飛ぶ間も出したままにする
   function updateHeadingTape(dt: number): void {
-    const view = regionView && !solar.active && !demoMotion && !regionFlight?.leaving ? regionView : null;
+    const view = headingTapeEnabled && regionView && !solar.active && !demoMotion && !regionFlight?.leaving ? regionView : null;
     if (!view) {
       tapeLast = null;
       tapeIdle = Number.POSITIVE_INFINITY;
@@ -1770,6 +1772,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     cityLabelsEnabled = graphics.show_city_labels;
     countryLabelsEnabled = graphics.show_country_labels;
     planetLabelsEnabled = graphics.show_planet_labels;
+    headingTapeEnabled = graphics.show_heading_tape;
+    scaleBarEnabled = graphics.show_scale_bar;
     syncCityLabels();
     if (fpsCounter.hidden === graphics.show_fps) {
       fpsCounter.hidden = !graphics.show_fps;
@@ -1892,7 +1896,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
       focalLength,
       exposure: mode !== 'wind' && earthReady ? brightness : null,
     });
-    scaleBar.update(!solar.active);
+    scaleBar.update(scaleBarEnabled && !solar.active);
     if (measureGpu) {
       gpuTimer.end();
       for (const ms of gpuTimer.collect()) {
