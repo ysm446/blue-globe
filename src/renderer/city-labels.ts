@@ -5,14 +5,14 @@ import type { DemoPlace } from './demo';
 import { lonLatToVector3 } from './globe';
 import { placeLabels, type LabelBox } from './label-layout';
 
-const DOT_OFFSET = 8; // ラベルの左端から点の中心まで (style.css の .city-label と合わせる)
-
 interface CityLabel {
   place: MapCity;
   element: HTMLButtonElement;
   world: THREE.Vector3;
   width: number; // 文字の幅は変わらないので、最初に測って使い回す
   height: number;
+  dotX: number; // ラベルの左上から点の中心まで。点は文字のベースラインに合わせて置くので、箱の中央とは限らない
+  dotY: number;
   transform: string;
   shown: boolean;
   box: LabelBox | null; // 最後に置いた位置
@@ -34,7 +34,9 @@ export class CityLabels {
       const element = document.createElement('button');
       element.type = 'button';
       element.className = 'city-label off';
-      element.textContent = place.name;
+      const dot = document.createElement('span');
+      dot.className = 'city-dot';
+      element.append(dot, place.name);
       element.title = `${place.name}の天気を表示`;
       element.addEventListener('click', () => onSelect(place));
       container.append(element);
@@ -44,6 +46,8 @@ export class CityLabels {
         world: lonLatToVector3(place.lon, place.lat, radius),
         width: 0,
         height: 0,
+        dotX: 0,
+        dotY: 0,
         transform: '',
         shown: false,
         box: null,
@@ -83,8 +87,11 @@ export class CityLabels {
       if (label.width === 0) {
         label.width = label.element.offsetWidth;
         label.height = label.element.offsetHeight;
+        const dot = label.element.firstElementChild as HTMLElement;
+        label.dotX = dot.offsetLeft + dot.offsetWidth / 2;
+        label.dotY = dot.offsetTop + dot.offsetHeight / 2;
       }
-      return { x: point.x - DOT_OFFSET, y: point.y - label.height / 2, width: label.width, height: label.height };
+      return { x: point.x - label.dotX, y: point.y - label.dotY, width: label.width, height: label.height };
     });
     const shown = placeLabels(boxes, blocked);
     this.labels.forEach((label, index) => {

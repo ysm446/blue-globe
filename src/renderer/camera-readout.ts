@@ -80,3 +80,41 @@ export function formatExposure(exposure: number | null): string {
   const ev = Math.round(Math.log2(exposure) * 10) / 10;
   return `${ev > 0 ? '+' : ''}${ev === 0 ? '0.0' : ev.toFixed(1)} EV`;
 }
+
+// 位置から向き direction (単位ベクトルでなくてよい) へ伸ばした線が、球に最初に当たる点。当たらなければ null
+export function hitSphere(position: Vec3, direction: Vec3, radius: number): Vec3 | null {
+  const dir = normalize(direction);
+  const along = dot(position, dir);
+  const gap = along * along - dot(position, position) + radius * radius;
+  if (gap < 0) return null;
+  const t = -along - Math.sqrt(gap);
+  return t > 0 ? add(position, scale(dir, t)) : null;
+}
+
+// 縮尺のバー。画面の中心をはさむ 2 本の視線が地表に当たる点の、地表に沿った距離 (km)。どちらかが地表を外れたら null
+export function groundSpanKm(position: Vec3, a: Vec3, b: Vec3, radius: number): number | null {
+  const hitA = hitSphere(position, a, radius);
+  const hitB = hitSphere(position, b, radius);
+  return hitA && hitB ? groundDistanceKm(hitA, hitB) : null;
+}
+
+// 地球の縁が画面に入らないほど寄っているか。縁が見えると中心と端で縮尺が大きく違うので、そのときはバーを出さない
+export function globeFillsView(distance: number, radius: number, tanHalfFovY: number, width: number, height: number): boolean {
+  if (distance <= radius) return true;
+  const apparentPx = (Math.tan(Math.asin(radius / distance)) / tanHalfFovY) * (height / 2);
+  return apparentPx > Math.hypot(width, height) / 2;
+}
+
+// 1・2・5 × 10 のべき乗のうち、maxPx に収まるいちばん長い距離と、その画面上の長さ
+export function niceScale(kmPerPx: number, maxPx: number): { km: number; px: number } {
+  const raw = kmPerPx * maxPx;
+  const exponent = Math.floor(Math.log10(raw));
+  const base = 10 ** exponent;
+  const step = [5, 2, 1].find((s) => s * base <= raw * (1 + 1e-9)) ?? 1;
+  const km = exponent < 0 ? Number((step * base).toFixed(-exponent)) : step * base;
+  return { km, px: km / kmPerPx };
+}
+
+export function formatScaleDistance(km: number): string {
+  return km >= 1 ? `${grouped(km, 0)} km` : `${Math.round(km * 1000)} m`;
+}

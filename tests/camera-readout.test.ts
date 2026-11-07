@@ -8,8 +8,13 @@ import {
   formatHeading,
   formatLatitude,
   formatLongitude,
+  formatScaleDistance,
   formatSpeed,
+  globeFillsView,
   groundDistanceKm,
+  groundSpanKm,
+  hitSphere,
+  niceScale,
   viewReadout,
 } from '../src/renderer/camera-readout.ts';
 import { DEG, type Vec3 } from '../src/renderer/math.ts';
@@ -87,4 +92,40 @@ test('数字の書式', () => {
   assert.equal(formatExposure(0.3), '-1.7 EV');
   assert.equal(formatExposure(0.99), '0.0 EV');
   assert.equal(formatExposure(null), '—');
+});
+
+test('縮尺のバーは 1・2・5 刻みの距離を選び、最長の長さに収める', () => {
+  for (const [kmPerPx, km] of [
+    [1, 100],
+    [3, 200],
+    [4.5, 500],
+    [0.009, 1],
+    [0.004, 0.2],
+    [0.0012, 0.1],
+  ] as const) {
+    const bar = niceScale(kmPerPx, 120);
+    near(bar.km, km);
+    assert.ok(bar.px <= 120 + 1e-9 && bar.px >= 48 - 1e-9, `${bar.px}px`);
+  }
+  assert.equal(formatScaleDistance(1000), '1,000 km');
+  assert.equal(formatScaleDistance(0.2), '200 m');
+});
+
+test('中心をはさむ 2 本の視線から、地表に沿った距離を測れる', () => {
+  // 赤道の上空 (高さ半径 1 つ分) から真下を見て、左右に同じ角度だけ開く
+  const position: Vec3 = [0, 0, 2];
+  const spread = 0.01;
+  const km = groundSpanKm(position, [-spread, 0, -1], [spread, 0, -1], 1);
+  assert.ok(km !== null);
+  // 当たる点は x = ±(2 - 1) * spread にほぼ等しい (近い 2 点なので、ほぼ平面)
+  near(km, 2 * spread * EARTH_RADIUS_KM, 0.5);
+  assert.equal(groundSpanKm(position, [0, 1, 0], [0, -1, 0], 1), null); // 横を向くと地表に当たらない
+  assert.equal(hitSphere([0, 0, 2], [0, 0, 1], 1), null); // 後ろ向き
+});
+
+test('地球の縁が画面に入るほど引くと、縮尺のバーを出さない', () => {
+  const tanHalf = Math.tan(15 * DEG);
+  assert.equal(globeFillsView(4, 1, tanHalf, 1600, 900), false); // 地球全体が見える
+  assert.equal(globeFillsView(1.05, 1, tanHalf, 1600, 900), true); // 地表のすぐ上
+  assert.equal(globeFillsView(0.99, 1, tanHalf, 1600, 900), true);
 });

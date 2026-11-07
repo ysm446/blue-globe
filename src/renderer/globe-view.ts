@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { bookmarkLift, bookmarkSlot } from './camera-bookmarks';
 import { apertureExposure, apparentScale, BASE_FOCAL_LENGTH, verticalFov } from './camera-lens';
 import { CameraPanel } from './camera-panel';
+import { ScaleBar } from './scale-bar';
 import { EARTH_RADIUS_KM } from './camera-readout';
 import { pickCityInDirection, type HopDirection } from './city-hop';
 import { CityLabels } from './city-labels';
@@ -562,6 +563,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   let countryLabelsEnabled = false;
   const countryLabels = new CountryLabels(el('country-labels'), EARTH_SURFACE_RADIUS);
   const cameraPanel = new CameraPanel(camera, GLOBE_RADIUS);
+  const scaleBar = new ScaleBar(camera, GLOBE_RADIUS);
   const planetLabels = new PlanetLabels(el('planet-labels'), sky.planets.map((planet) => planet.name), GLOBE_RADIUS);
   let planetLabelsEnabled = false;
 
@@ -1890,6 +1892,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
       focalLength,
       exposure: mode !== 'wind' && earthReady ? brightness : null,
     });
+    scaleBar.update(!solar.active);
     if (measureGpu) {
       gpuTimer.end();
       for (const ms of gpuTimer.collect()) {

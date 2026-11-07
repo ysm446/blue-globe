@@ -105,6 +105,7 @@ a:hover {
 #view-switch,
 #camera-style,
 #display-toggle,
+#scale-bar,
 #time-panel,
 #detail-panel,
 #view-hint,
@@ -132,6 +133,7 @@ a:hover {
 #view-switch,
 #camera-style,
 #display-toggle,
+#scale-bar,
 #top-right button,
 #demo-hint,
 #weather-status,
@@ -212,9 +214,9 @@ a:hover {
   top: 0;
   left: 0;
   display: flex;
-  align-items: center;
+  align-items: baseline; /* 点は文字のベースラインを基準に置く (.city-dot) */
   gap: 5px;
-  padding: 2px 6px 2px 5px; /* 点の中心が左端から 8px。city-labels.ts の DOT_OFFSET と合わせる */
+  padding: 2px 6px 2px 5px;
   color: #fff;
   font-size: 12px;
   line-height: 16px;
@@ -228,8 +230,12 @@ a:hover {
   transition: opacity 150ms, visibility 150ms;
 }
 
-.city-label::before {
-  content: '';
+/* 点の縦位置。行の高さの中央に置くと、フォントの上下の余白の違いで文字より上に見える。
+   かなと漢字の見た目の中心はベースラインから約 0.36em 上なので、そこへ点の中心 (高さの半分 3px) を合わせる。
+   位置は city-labels.ts で測って地点に合わせるので、ここを変えても地点からずれない */
+.city-dot {
+  position: relative;
+  bottom: calc(0.36em - 3px);
   flex: none;
   width: 6px;
   height: 6px;
@@ -245,7 +251,7 @@ button.city-label:active {
   background: none;
 }
 
-.city-label:hover::before {
+.city-label:hover .city-dot {
   transform: scale(1.6);
 }
 
@@ -476,6 +482,40 @@ button.city-label:active {
 /* display: flex が hidden 属性より強いので、隠すときは明示する */
 #camera-style[hidden] {
   display: none;
+}
+
+/* 縮尺のバー。操作部と同じ高さのガラスに、距離と両端に目盛りのある線を縦に並べる */
+#scale-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  box-sizing: border-box;
+  min-width: 72px;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--panel);
+  border-radius: 8px;
+  cursor: default; /* 押せるものではない。title で「画面の中心での縮尺」と出すため、マウスは受ける */
+}
+
+#scale-bar[hidden] {
+  display: none;
+}
+
+#scale-bar-label {
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+#scale-bar-line {
+  box-sizing: border-box;
+  height: 6px;
+  border: 1.5px solid var(--accent);
+  border-top: none;
 }
 
 #display-toggle {
