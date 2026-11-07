@@ -85,6 +85,13 @@ const highlightSpec = z.discriminatedUnion('type', [
     ...style,
   }),
   z.object({ type: z.literal('line'), points: z.array(latLon).min(2).describe('[緯度, 経度] の並び'), name: z.string().optional(), ...style }),
+  z.object({
+    type: z.literal('arrow'),
+    points: z.array(latLon).min(2).describe('[緯度, 経度] の並び。根元から先端へ。点を通るなめらかな曲線にする'),
+    width: z.number().min(1).max(2000).optional().describe('太さ (km)。省くと長さの 3.5% (10〜150km)'),
+    name: z.string().optional(),
+    ...style,
+  }),
   z.object({ type: z.literal('polygon'), points: z.array(latLon).min(3).describe('[緯度, 経度] の並び (輪郭)'), name: z.string().optional(), ...style }),
 ]);
 const camera = {
@@ -112,7 +119,7 @@ function createServer(): McpServer {
     'highlight',
     {
       description:
-        '地図に重ねて示す。川をなぞる (river)、山脈・砂漠などの範囲 (area)、山頂などの点 (point)、座標の線 (line) と多角形 (polygon)。結果に名前、範囲、通る国などを返す。append が false (既定) なら前のハイライトは消える。示したあとは frame_highlights でカメラを寄せる。',
+        '地図に重ねて示す。川をなぞる (river)、山脈・砂漠などの範囲 (area)、山頂などの点 (point)、座標の線 (line)、太さのある矢印 (arrow。進軍や移動の大きな流れ) と多角形 (polygon)。結果に名前、範囲、通る国などを返す。append が false (既定) なら前のハイライトは消える。示したあとは frame_highlights でカメラを寄せる。',
       inputSchema: { spec: highlightSpec, append: z.boolean().optional() },
     },
     relay('highlight'),
