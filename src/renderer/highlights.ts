@@ -17,10 +17,14 @@ import {
   type RegionRecord,
   type RiverRecord,
 } from './highlight-data';
+import { arrowDashCount, arrowFadeShare, buildSplitArrow, defaultArrowWidthKm, type ArrowVertex } from './thick-arrow';
 
 // 地表からの高さ。海岸線 (地域ビューで 1.0007) と同じくらいにし、塗りは線より下に置く
 const LINE_RADIUS = 1.0009;
 const FILL_RADIUS = 1.0006;
+const ARROW_RADIUS = 1.00075; // 太さのある矢印の塗り。範囲の塗りより上、線より下
+// 太さのある矢印の縁取り。塗りのすぐ上 (約 200m)。線と同じ高さ (約 1km 上) にすると、傾けて見たときに縁取りが画面の上へずれた
+const ARROW_OUTLINE_RADIUS = 1.000785;
 const MAX_SEGMENT_DEG = 0.5; // 長い線分は地表に沿うように分ける
 const MAX_TRIANGLE_DEG = 0.25; // 塗りの三角形も地表に沿うように分ける。内側へのグラデーションがなめらかになる細かさ
 const RIVER_WIDTH_PX = 5; // 描画の画素 (高 DPI ではそのぶん細く見える)
@@ -92,6 +96,14 @@ const TWINKLE_SPEED = 0.8; // 揺れが移り変わる速さ (1 秒あたり)
 const TWINKLE_BASE = 0.65; // 縁は細く、雪などの明るい地面に埋もれやすいので、暗い所をはっきり下げる
 const TWINKLE_PEAK = 0.8; // 一番明るい所は約 1.45 倍
 const ARROW_SIZE_PX = 9; // 矢印の大きさ (描画の画素。先端から根元まで)
+// 太さのある矢印。半透明の塗りに、縁を少し濃くしたもの。縁取りは線と同じ光る帯で描く。
+// はじめは中央 0.3 の薄い塗りで、乾いた大地や砂漠の上では地面に溶けて見づらかったので濃くした。
+// 外側に暗い縁 (ケーシング) を足す案も試したが、汚く見えたのでやめた
+const THICK_ARROW_FILL = 0.6; // 中央の濃さ
+const THICK_ARROW_EDGE = 0.15; // 縁で足す濃さ
+const THICK_ARROW_OPAQUE_FILL = 0.9; // opaque を指定したときの濃さ (主役の動きをはっきり見せる)
+const THICK_ARROW_OPAQUE_EDGE = 0.05;
+const THICK_ARROW_REVEAL_SECONDS = 3;
 const ARROW_COUNT = 6; // 線の途中に置く矢印の数 (終点の矢印は別)
 const RIVER_REVEAL_SECONDS = 4;
 const OUTLINE_REVEAL_SECONDS = 1.6;
@@ -120,6 +132,7 @@ export type HighlightSpec = HighlightStyle &
     | { type: 'river'; name: string }
     | { type: 'area'; name: string }
     | { type: 'line'; points: [number, number][]; name?: string } // [lat, lon] の並び
+    | { type: 'arrow'; points: [number, number][]; name?: string; width?: number; fade?: boolean; opaque?: boolean; offset?: number } // 太さのある矢印。width は太さ (km)、fade は根元をグラデーションで消す、opaque は塗りをほぼ不透明にする、offset は根元と先端を横へずらす幅 (km。正は右)
     | { type: 'polygon'; points: [number, number][]; name?: string }
     | { type: 'point'; name?: string; lat?: number; lon?: number; elevation?: number } // 名前で探すか、座標で置く。elevation は標高 (m)
   );
@@ -127,7 +140,7 @@ export type HighlightSpec = HighlightStyle &
 export interface HighlightInfo {
   name: string;
   nameJa?: string;
-  kind: string; // river, line, polygon、または範囲の種類 (Range/mtn, Desert など)
+  kind: string; // river, line, arrow, polygon、または範囲の種類 (Range/mtn, Desert など)
   lengthKm?: number;
   elevationM?: number; // 山頂などの標高
   bounds: Bounds;
@@ -197,18 +210,22 @@ uniform float uOpacity;
 uniform float uReveal;
 uniform float uHead; // なぞっている先端を明るくする強さ
 uniform float uDashes; // 破線の切れ目の数。0 で実線
+uniform float uFade; // 根元から、この進み具合までを透明から濃くする (太さのある矢印の根元を消す)。0 で消さない
+uniform float uHeadAt; // 太さのある矢印の矢じりの根元。破線の区切りをここから逆算する。負なら根元から数える
 varying float vProgress;
 varying float vSide;
 void main() {
   if (vProgress > uReveal) discard;
-  if (uDashes > 0.0 && fract(vProgress * uDashes) > 0.6) discard;
+  float dash = uHeadAt >= 0.0 ? (vProgress - uHeadAt) * uDashes + 0.6 : vProgress * uDashes;
+  if (uDashes > 0.0 && fract(dash) > 0.6) discard;
+  float tail = uFade > 0.0 ? smoothstep(0.0, uFade, vProgress) : 1.0;
   float side = abs(vSide);
   float edge = 1.0 - smoothstep(0.15, 1.0, side);
   // 中心は白に寄せて明るさを保ち、縁は色のまま薄くする。光る管のような質感にする
   float peak = max(max(uColor.r, uColor.g), uColor.b);
   vec3 color = mix(uColor, vec3(peak), 0.25 * (1.0 - smoothstep(0.0, 0.55, side)));
   float head = uHead * exp(-(uReveal - vProgress) * 40.0) * (1.0 - step(0.999, uReveal));
-  gl_FragColor = vec4(color * (1.0 + head * 1.2) * flowGain(vProgress, uReveal), edge * uOpacity);
+  gl_FragColor = vec4(color * (1.0 + head * 1.2) * flowGain(vProgress, uReveal), edge * uOpacity * tail);
 }
 `;
 
@@ -246,6 +263,131 @@ void main() {
 }
 `;
 
+// 太さのある矢印の塗り。根元から uReveal まで描き、帯の縁 (aSide が ±1) を少し濃くする
+const THICK_ARROW_VS = /* glsl */ `
+attribute float aProgress;
+attribute float aSide;
+attribute float aHead;
+attribute float aHeadAt;
+attribute float aStartAt;
+varying float vProgress;
+varying float vSide;
+varying float vHead;
+varying float vHeadAt;
+varying float vStartAt;
+void main() {
+  vProgress = aProgress;
+  vSide = aSide;
+  vHead = aHead;
+  vHeadAt = aHeadAt;
+  vStartAt = aStartAt;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+const THICK_ARROW_FS = /* glsl */ `
+${FLOW_GLSL}
+uniform vec3 uColor;
+uniform float uOpacity;
+uniform float uReveal;
+uniform float uStrength; // 塗りの濃さの倍率 (破線のときは下げる)
+uniform float uFill; // 中央の濃さ
+uniform float uEdge; // 縁で足す濃さ
+uniform float uFade; // 根元から、この進み具合までを透明から濃くする。0 で消さない
+uniform float uDashes; // 破線の、全体を通した区切りの数。0 で実線。矢じりは区切らない
+varying float vProgress;
+varying float vSide;
+varying float vHead;
+varying float vHeadAt;
+varying float vStartAt;
+void main() {
+  if (vProgress > uReveal) discard;
+  // 区切りは矢じりの根元から逆算し、矢じりのすぐ手前を必ず塗る (矢じりに尾が付く)
+  float dash = (vProgress - vHeadAt) * uDashes + 0.6;
+  bool dashed = uDashes > 0.0 && vHead < 0.5;
+  if (dashed && fract(dash) > 0.6) discard;
+  float edge = smoothstep(0.45, 1.0, abs(vSide));
+  float tail = uFade > 0.0 ? smoothstep(0.0, uFade, vProgress) : 1.0;
+  float alpha = uOpacity * uStrength * tail * (uFill + uEdge * edge);
+  vec3 color = uColor * flowGain(vProgress, uReveal);
+  // 破線の四角は、左右の縁、切れ目、根元の端をすべてここで四角の内側に描き、輪郭で囲む。
+  // 左右の縁を線の帯 (縁を中心にした帯) で描くと、半分が四角の外にはみ出し、内側だけに描く切れ目の線と角でずれて途切れた。
+  // 矢じりに続く尾の付け根 (最後の区切りの先の端) には引かない
+  if (dashed) {
+    float pixel = max(fwidth(dash), 1e-6); // 1 画素あたりの区切りの進み
+    float d = fract(dash);
+    float fromStart = d / pixel;
+    float fromEnd = floor(dash) == 0.0 ? 1e6 : (0.6 - d) / pixel;
+    float fromSide = (1.0 - abs(vSide)) / max(fwidth(vSide), 1e-6);
+    // 根元の端。根元を消す最初の矢印には引かない
+    float fromRoot = uFade > 0.0 && vStartAt < 1e-6 ? 1e6 : (vProgress - vStartAt) / max(fwidth(vProgress), 1e-9);
+    float cut = min(min(fromStart, fromEnd), min(fromSide, fromRoot));
+    float line = 1.0 - smoothstep(${(OUTLINE_WIDTH_PX * 0.15).toFixed(2)}, ${(OUTLINE_WIDTH_PX * 0.5).toFixed(2)}, cut);
+    if (line > 0.0) {
+      float peak = max(max(uColor.r, uColor.g), uColor.b);
+      vec3 lineColor = mix(uColor, vec3(peak), 0.25) * flowGain(vProgress, uReveal);
+      color = mix(color, lineColor, line);
+      alpha = max(alpha, uOpacity * tail * line);
+    }
+  }
+  gl_FragColor = vec4(color, alpha);
+}
+`;
+
+// 太さのある矢印の三角形を、地表に沿うように細かくして球に貼る (幅の広い矢じりが地面に沈まないように)
+function buildThickArrowFill(triangles: [ArrowVertex, ArrowVertex, ArrowVertex][]): THREE.BufferGeometry {
+  const positions: number[] = [];
+  const progress: number[] = [];
+  const sides: number[] = [];
+  const heads: number[] = [];
+  const headAts: number[] = [];
+  const startAts: number[] = [];
+  const v = new THREE.Vector3();
+  const mid = (a: ArrowVertex, b: ArrowVertex): ArrowVertex => ({
+    lon: (a.lon + b.lon) / 2,
+    lat: (a.lat + b.lat) / 2,
+    progress: (a.progress + b.progress) / 2,
+    side: (a.side + b.side) / 2,
+    head: Math.min(a.head, b.head),
+    headAt: a.headAt,
+    startAt: a.startAt,
+  });
+  const span = (a: ArrowVertex, b: ArrowVertex): number => Math.hypot(a.lon - b.lon, a.lat - b.lat);
+  const push = (p: ArrowVertex): void => {
+    lonLatToVector3(p.lon, p.lat, ARROW_RADIUS, v);
+    positions.push(v.x, v.y, v.z);
+    progress.push(p.progress);
+    sides.push(p.side);
+    heads.push(p.head);
+    headAts.push(p.headAt);
+    startAts.push(p.startAt);
+  };
+  const subdivide = (a: ArrowVertex, b: ArrowVertex, c: ArrowVertex, depth: number): void => {
+    if (Math.max(span(a, b), span(b, c), span(c, a)) <= MAX_TRIANGLE_DEG || depth > 6) {
+      push(a);
+      push(b);
+      push(c);
+      return;
+    }
+    const ab = mid(a, b);
+    const bc = mid(b, c);
+    const ca = mid(c, a);
+    subdivide(a, ab, ca, depth + 1);
+    subdivide(ab, b, bc, depth + 1);
+    subdivide(ca, bc, c, depth + 1);
+    subdivide(ab, bc, ca, depth + 1);
+  };
+  for (const [a, b, c] of triangles) subdivide(a, b, c, 0);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute('aProgress', new THREE.Float32BufferAttribute(progress, 1));
+  geometry.setAttribute('aSide', new THREE.Float32BufferAttribute(sides, 1));
+  geometry.setAttribute('aHead', new THREE.Float32BufferAttribute(heads, 1));
+  geometry.setAttribute('aHeadAt', new THREE.Float32BufferAttribute(headAts, 1));
+  geometry.setAttribute('aStartAt', new THREE.Float32BufferAttribute(startAts, 1));
+  return geometry;
+}
+
 // 範囲の塗り。輪郭が一番濃く、内側へ行くほど薄くなる (輪郭から内側へ広がる光)。aEdge は輪郭までの距離 (km)
 const FILL_VS = /* glsl */ `
 attribute float aEdge;
@@ -274,7 +416,7 @@ void main() {
 `;
 
 // 線の集まり (平らな [lon, lat, ...] と、各点の進み具合 0〜1) から帯の形を作る
-function buildRibbon(lines: { coords: number[]; progress: number[] }[]): THREE.InstancedBufferGeometry {
+function buildRibbon(lines: { coords: number[]; progress: number[] }[], radius = LINE_RADIUS): THREE.InstancedBufferGeometry {
   const starts: number[] = [];
   const ends: number[] = [];
   const progress: number[] = [];
@@ -289,8 +431,8 @@ function buildRibbon(lines: { coords: number[]; progress: number[] }[]): THREE.I
       for (let s = 0; s < steps; s++) {
         const t0 = s / steps;
         const t1 = (s + 1) / steps;
-        lonLatToVector3(lon0 + (lon1 - lon0) * t0, lat0 + (lat1 - lat0) * t0, LINE_RADIUS, a);
-        lonLatToVector3(lon0 + (lon1 - lon0) * t1, lat0 + (lat1 - lat0) * t1, LINE_RADIUS, b);
+        lonLatToVector3(lon0 + (lon1 - lon0) * t0, lat0 + (lat1 - lat0) * t0, radius, a);
+        lonLatToVector3(lon0 + (lon1 - lon0) * t1, lat0 + (lat1 - lat0) * t1, radius, b);
         starts.push(a.x, a.y, a.z);
         ends.push(b.x, b.y, b.z);
         progress.push(p0 + (p1 - p0) * t0, p0 + (p1 - p0) * t1);
@@ -319,6 +461,8 @@ function ribbonMaterial(color: THREE.Color, width: number, head: number, dashed 
       uReveal: { value: 0 },
       uHead: { value: head },
       uDashes: { value: dashed ? DASH_COUNT : 0 },
+      uFade: { value: 0 },
+      uHeadAt: { value: -1 },
       uResolution: { value: new THREE.Vector2(1, 1) },
       uWidth: { value: width },
     },
@@ -720,12 +864,12 @@ export class Highlights {
     const areaColor = base;
     const areaLineColor = lineColor;
     // flow は揺らぎの種類。wave は流れる波 (川と線)、twinkle はきらめき (範囲の縁取り)
-    const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number, arrows = false, flow: 'none' | 'wave' | 'twinkle' = 'none'): void => {
+    const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number, arrows = false, flow: 'none' | 'wave' | 'twinkle' = 'none', radius = LINE_RADIUS): THREE.ShaderMaterial => {
       const flowMode = flow === 'wave' ? 1 : flow === 'twinkle' ? 2 : 0;
       const material = ribbonMaterial(color, width, head, spec.dashed, flowMode);
-      item.group.add(new THREE.Mesh(buildRibbon(lines), material));
+      item.group.add(new THREE.Mesh(buildRibbon(lines, radius), material));
       item.ribbons.push({ material, seconds });
-      if (!arrows) return;
+      if (!arrows) return material;
       const arrow = new THREE.ShaderMaterial({
         uniforms: {
           uTime: { value: 0 },
@@ -743,6 +887,7 @@ export class Highlights {
       });
       item.group.add(new THREE.Mesh(buildArrows(lines), arrow));
       item.ribbons.push({ material: arrow, seconds });
+      return material;
     };
     const addArea = (polygons: number[][][]): void => {
       const fill = new THREE.ShaderMaterial({
@@ -822,6 +967,73 @@ export class Highlights {
     if (spec.points.length < 2) return null;
     const coords = unwrapLongitudes(flatOf(spec.points));
     const text = spec.label ?? spec.name ?? '';
+    if (spec.type === 'arrow') {
+      const lonLats: [number, number][] = [];
+      for (let i = 0; i + 1 < coords.length; i += 2) lonLats.push([coords[i], coords[i + 1]]);
+      const widthKm = spec.width ?? defaultArrowWidthKm(lonLats);
+      // 急に曲がる所 (来た道を戻る所など) では、無理に曲げずに矢印を分ける
+      const split = buildSplitArrow(lonLats, widthKm, { offsetKm: spec.offset });
+      if (!split) return null;
+      const { pieces } = split;
+      // 根元を消す区間 (全体を通した進み具合)。最初の 1 本の根元だけに効かせる。消さないときは 0
+      const firstShare = pieces[0].lengthKm / split.lengthKm;
+      const fade = spec.fade ? arrowFadeShare(widthKm, pieces[0].lengthKm) * firstShare : 0;
+      // 分けた本数が多いと、1 本あたりの伸びる時間が短くなるので、全体の時間を少し延ばす
+      const revealSeconds = THICK_ARROW_REVEAL_SECONDS * Math.min(2, 1 + 0.25 * (pieces.length - 1));
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uFlow: { value: 1 },
+          uColor: { value: base.clone().multiplyScalar(LINE_GLOW) },
+          uOpacity: { value: 0 },
+          uReveal: { value: 0 },
+          uResolution: { value: new THREE.Vector2(1, 1) }, // 使わないが、線と同じ更新で値を入れる
+          uStrength: { value: 1 },
+          uDashes: { value: spec.dashed ? arrowDashCount(widthKm, split.lengthKm) : 0 },
+          uFill: { value: spec.opaque ? THICK_ARROW_OPAQUE_FILL : THICK_ARROW_FILL },
+          uEdge: { value: spec.opaque ? THICK_ARROW_OPAQUE_EDGE : THICK_ARROW_EDGE },
+          uFade: { value: fade },
+        },
+        vertexShader: THICK_ARROW_VS,
+        fragmentShader: THICK_ARROW_FS,
+        transparent: true,
+        // 急に曲がる所で帯が重なっても、半透明が二重に足されないようにする (範囲の塗りと同じ)
+        depthWrite: true,
+        depthFunc: THREE.LessDepth,
+        side: THREE.DoubleSide,
+      });
+      item.group.add(new THREE.Mesh(buildThickArrowFill(pieces.flatMap((piece) => piece.triangles)), material));
+      item.ribbons.push({ material, seconds: revealSeconds });
+      // 縁取り。左右の縁と、根元の端 (最初の 1 本の根元を消すときは、その端の線を描かず、縁も根元から濃くする)
+      const edgeLine = (vertices: ArrowVertex[]) => ({
+        coords: vertices.flatMap((p) => [p.lon, p.lat]),
+        progress: vertices.map((p) => p.progress),
+      });
+      // 帯の縁と矢じりの縁は分けて描く。破線のとき、帯の縁は塗りと同じ区切りの破線にし、矢じりの縁は区切らない
+      // 帯の縁は矢印ごとに描き、破線の区切りをその矢じりの根元から逆算する (塗りと揃える)
+      const headEdges: { coords: number[]; progress: number[] }[] = [];
+      pieces.forEach((piece, index) => {
+        const shaftEdges: { coords: number[]; progress: number[] }[] = [];
+        for (const side of [piece.outline.left, piece.outline.right]) {
+          const headStart = side.length - 3; // 帯の縁の最後の点 (矢じりの根元) から、矢じりの角、先端
+          shaftEdges.push(edgeLine(side.slice(0, headStart + 1)));
+          headEdges.push(edgeLine(side.slice(headStart)));
+        }
+        if (index > 0 || !fade) shaftEdges.push(edgeLine([piece.outline.left[0], piece.outline.right[0]]));
+        // 破線のときは、帯の縁を塗りのシェーダーで描くので、線の帯では描かない
+        if (spec.dashed) return;
+        const outline = addRibbon(shaftEdges, lineColor, OUTLINE_WIDTH_PX, revealSeconds, 1, false, 'wave', ARROW_OUTLINE_RADIUS);
+        outline.uniforms.uFade.value = fade;
+        outline.uniforms.uDashes.value = material.uniforms.uDashes.value;
+        outline.uniforms.uHeadAt.value = piece.outline.left[piece.outline.left.length - 2].headAt;
+      });
+      const headOutline = addRibbon(headEdges, lineColor, OUTLINE_WIDTH_PX, revealSeconds, 1, false, 'wave', ARROW_OUTLINE_RADIUS);
+      headOutline.uniforms.uDashes.value = 0;
+      const candidates = lineCandidates(pieces.map((piece) => edgeLine(piece.center)));
+      addLabel(text, 'river', candidates.points, candidates.progress, false);
+      item.revealSeconds = revealSeconds;
+      return { item, info: { name: spec.name ?? '', kind: 'arrow', lengthKm: Math.round(split.lengthKm), bounds: boundsOf([coords]) } };
+    }
     if (spec.type === 'line') {
       const line = { coords, progress: progressAlong(coords) };
       addRibbon([line], lineColor, RIVER_WIDTH_PX, RIVER_REVEAL_SECONDS, 1, spec.arrows ?? true, 'wave');

@@ -85,6 +85,27 @@ const highlightSpec = z.discriminatedUnion('type', [
     ...style,
   }),
   z.object({ type: z.literal('line'), points: z.array(latLon).min(2).describe('[緯度, 経度] の並び'), name: z.string().optional(), ...style }),
+  z.object({
+    type: z.literal('arrow'),
+    points: z.array(latLon).min(2).describe('[緯度, 経度] の並び。根元から先端へ。点を直線で結び、角を丸める。曲がる所には点を置く。135° より大きく曲がる所 (来た道を戻る所) では矢印を分ける'),
+    width: z.number().min(1).max(2000).optional().describe('太さ (km)。省くと長さの 3.5% (10〜150km)。同じ所から出る矢印や、範囲を示す場面では 30km 前後に細くする'),
+    fade: z
+      .boolean()
+      .optional()
+      .describe('根元をグラデーションで消す。前の場面から続いている道の一部や、出発点のはっきりしない流れ (伝播、移動) に使う。はっきりした出発点から始まるときは付けない'),
+    offset: z
+      .number()
+      .min(-500)
+      .max(500)
+      .optional()
+      .describe('根元と先端を横へずらす幅 (km)。正は進む向きの右、負は左。途中は渡した点を通る。同じ所から出る・同じ所へ向かう矢印の重なりを避けるときに、帯の太さほどずらす'),
+    opaque: z
+      .boolean()
+      .optional()
+      .describe('塗りをほぼ不透明にする。主役の動きをはっきり見せたいときに使う。矢印の下の地形や範囲を見せたい場面では付けない'),
+    name: z.string().optional(),
+    ...style,
+  }),
   z.object({ type: z.literal('polygon'), points: z.array(latLon).min(3).describe('[緯度, 経度] の並び (輪郭)'), name: z.string().optional(), ...style }),
 ]);
 const camera = {
@@ -112,7 +133,7 @@ function createServer(): McpServer {
     'highlight',
     {
       description:
-        '地図に重ねて示す。川をなぞる (river)、山脈・砂漠などの範囲 (area)、山頂などの点 (point)、座標の線 (line) と多角形 (polygon)。結果に名前、範囲、通る国などを返す。append が false (既定) なら前のハイライトは消える。示したあとは frame_highlights でカメラを寄せる。',
+        '地図に重ねて示す。川をなぞる (river)、山脈・砂漠などの範囲 (area)、山頂などの点 (point)、座標の線 (line)、太さのある矢印 (arrow。進軍や移動の大きな流れ) と多角形 (polygon)。結果に名前、範囲、通る国などを返す。append が false (既定) なら前のハイライトは消える。示したあとは frame_highlights でカメラを寄せる。',
       inputSchema: { spec: highlightSpec, append: z.boolean().optional() },
     },
     relay('highlight'),
