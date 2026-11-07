@@ -137,6 +137,8 @@ class GraphicsUpdate(BaseModel):
     show_tour_panel: bool = True  # 以前の画面から送られても受け付けるよう、省いたときは出す
     show_heading_tape: bool = True  # 同上
     show_scale_bar: bool = True  # 同上
+    show_population: bool = False  # 以前の画面から送られても受け付けるよう、省いたときは出さない
+    population_style: Literal["heatmap", "dots", "dots_flat"] = "dots"  # 同上
 
 
 @app.get("/health")

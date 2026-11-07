@@ -118,6 +118,7 @@ a:hover {
 #tour-panel,
 .forecast-panel,
 #layer-info,
+#population-legend,
 #screenshot-toast,
 #music-popup,
 #tour-caption,
@@ -1778,6 +1779,38 @@ body.hide-tour-panel #tour-panel {
 
 #layer-info.source-only #layer-source {
   margin-top: 0;
+}
+
+/* 人口の分布の凡例。目盛りは密度の位置に置く */
+#population-legend {
+  width: 240px;
+  padding: 8px 12px;
+  color: var(--text-2);
+  font-size: 12px;
+  background: var(--panel);
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+#population-legend .legend-scale {
+  position: relative;
+  height: 1.3em;
+}
+
+#population-legend .legend-scale span {
+  position: absolute;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+/* 右端の目盛りは帯の端に右を揃え、箱からはみ出さないようにする */
+#population-legend .legend-scale span:last-child {
+  transform: translateX(-100%);
+}
+
+#population-legend .legend-caption {
+  margin-top: 2px;
+  font-size: 11px;
 }
 
 /* ------------------------------------------------ スクリーンショットの通知 */

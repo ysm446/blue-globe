@@ -236,6 +236,7 @@ export function initSettingsDialog(
   const choices = {
     ui_font: el<HTMLSelectElement>('ui-font'),
     cruise_mode: el<HTMLSelectElement>('cruise-mode'),
+    population_style: el<HTMLSelectElement>('population-style'),
   };
   // 入っていないフォントは候補から外す。外したものが保存されていても、文字は游ゴシック UI で出る
   for (const option of Array.from(choices.ui_font.options)) {
@@ -250,6 +251,7 @@ export function initSettingsDialog(
     show_map_lines: el<HTMLInputElement>('map-lines-toggle'),
     show_city_labels: el<HTMLInputElement>('city-labels-toggle'),
     show_country_labels: el<HTMLInputElement>('country-labels-toggle'),
+    show_population: el<HTMLInputElement>('population-toggle'),
     show_planet_labels: el<HTMLInputElement>('planet-labels-toggle'),
     show_constellations: el<HTMLInputElement>('constellations-toggle'),
     star_twinkle: el<HTMLInputElement>('twinkle-toggle'),
@@ -326,6 +328,7 @@ export function initSettingsDialog(
     for (const key of keysOf(sliders)) graphics[key] = sliders[key].read();
     graphics.ui_font = choices.ui_font.value as UiFont;
     graphics.cruise_mode = choices.cruise_mode.value as CruiseMode;
+    graphics.population_style = choices.population_style.value as PopulationStyle;
     return graphics;
   }
 

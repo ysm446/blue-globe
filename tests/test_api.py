@@ -81,6 +81,8 @@ class SettingsApiTest(unittest.TestCase):
         "border_opacity": 2.0,
         "show_city_labels": False,
         "show_country_labels": True,
+        "show_population": True,
+        "population_style": "heatmap",
         "show_planet_labels": False,
         "show_constellations": True,
         "star_twinkle": False,
@@ -147,6 +149,7 @@ class SettingsApiTest(unittest.TestCase):
             {"fps_limit": 45},
             {"ui_font": "comic-sans"},
             {"cruise_mode": "reverse"},
+            {"population_style": "bars"},
             {"render_scale": 10},
             {"star_brightness": 100},
             {"star_brightness": 0},
@@ -189,6 +192,8 @@ class SettingsApiTest(unittest.TestCase):
         self.assertTrue(graphics["show_map_lines"])
         self.assertTrue(graphics["show_city_labels"])
         self.assertFalse(graphics["show_country_labels"])
+        self.assertFalse(graphics["show_population"])
+        self.assertEqual(graphics["population_style"], "dots")
         self.assertTrue(graphics["show_planet_labels"])
         self.assertFalse(graphics["show_constellations"])
         self.assertTrue(graphics["star_twinkle"])

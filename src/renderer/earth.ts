@@ -1,5 +1,6 @@
 // 写実的な地球。地表写真、夜の街明かり、大気の縁、雲の層を描く。
 // 雲は天気モードのときだけ表示し (setCloudsEnabled)、地表より少し高い別の球に載せる。
+// 人口の分布は設定でオンにしたときだけ、地表の色の上にヒートマップとして重ねる (setPopulationVisible)。
 // 回すと地面とずれて動くので、ボリューム雲を使わなくても高さが感じられる。
 // 地球ビューでも地域ビューでも、近づくと立体の雲 (volume-clouds.ts) に入れ替える。
 // 新しい時刻の雲は一瞬で切り替えず、見えている雲から線形に混ぜて入れ替える (cloud-blend.ts)
@@ -10,6 +11,7 @@ import { moonlightStrength } from './astro';
 import { CLOUD_SUN_COLOR_GLSL, FULLSCREEN_VS, MOONLIGHT_GLSL, VALUE_NOISE_GLSL } from './glsl';
 import { createWireOverlay } from './globe';
 import { easeInOut } from './math';
+import { POPULATION_GLSL, POPULATION_STYLE_CODES } from './population';
 import type { RegionDetail } from './region-detail';
 import { TILE_DEGREES, WINDOW_TILES } from './tile-window';
 import { SLOPE_RANGE } from '../main/terrain';
@@ -51,6 +53,8 @@ const GLOW_MAP_TAPS = 8; // 縮小画像の 1 画素に、元の画像の 8×8 �
 const GLOW_FAR_LOD = 2; // 1 画素が約 160km
 const GLOW_BRIGHTNESS = 0.6; // 設定が 100% のときの明るさ。にじみのしきい値 (2.6) より十分低くし、白く飛ばさない
 const GLOW_MAX_PATH = 2; // 斜めに見るほど大気を長く通って強くにじむ。真上から見たときに対する上限
+const EARTH_RADIUS_KM = 6371;
+const POPULATION_DIMS_CITY_LIGHTS = 0.85; // 人口の分布を出している間、街明かりを弱める割合。どちらも橙〜白で見分けにくい
 
 // 街明かりの描画と同じ式で、街明かりの画像から光だけを取り出して縮小する
 const GLOW_MAP_FS = /* glsl */ `
@@ -116,12 +120,16 @@ uniform vec2 uDetailCenter;
 uniform float uBakedShadowMix;
 uniform float uCityGlow;
 uniform sampler2D uGlowMap;
+uniform sampler2D uPopulation;
+uniform float uPopulationAmount;
+uniform float uPopulationStyle; // 0 はヒートマップ、1 は大きさの変わる点、2 は同じ大きさの点
 varying vec3 vPos;
 ${MOONLIGHT_GLSL}
 ${CLOUD_SUN_COLOR_GLSL}
 varying vec2 vUv;
 ${CLOUD_SAMPLING_GLSL}
 ${BAKED_SHADOW_GLSL}
+${POPULATION_GLSL}
 // 縮小段階をそのまま引くと、粗い段の画素の四角が見える。半画素ずらした 4 点をならして角を丸める
 float glowAt(vec2 uv, float lod) {
   vec2 half_ = 0.5 * exp2(lod) / vec2(${GLOW_MAP_SIZE[0].toFixed(1)}, ${GLOW_MAP_SIZE[1].toFixed(1)});
@@ -256,6 +264,7 @@ void main() {
     vec3 throughCloud = normalize(n + view * uCloudAltitude / max(dot(n, view), 0.25));
     lights *= exp(-cloudAt(throughCloud, dFdx(vUv), dFdy(vUv)) * ${CITY_LIGHT_EXTINCTION.toFixed(1)} * uShadowAmount);
   }
+  lights *= 1.0 - uPopulationAmount * ${POPULATION_DIMS_CITY_LIGHTS.toFixed(2)};
   color +=vec3(1.0, 0.6, 0.26) * lights * 4.5; // 画面の白より明るくして、にじませる
 
   // 街明かりの暈。遠くから見て 1 画素が縮小段階より広いときは、その画素の広さに合わせて粗い段を引く
@@ -264,7 +273,8 @@ void main() {
     float pixelLod = log2(max(max(length(dFdx(texels)), length(dFdy(texels))), 1.0));
     float glow = glowAt(vUv, max(0.0, pixelLod + 1.0)) * 0.7 + glowAt(vUv, max(${GLOW_FAR_LOD.toFixed(1)}, pixelLod + 1.0)) * 0.3;
     float path = min(1.0 / max(dot(n, view), 0.01), ${GLOW_MAX_PATH.toFixed(1)});
-    float glowLight = glow * path * uCityGlow * ${GLOW_BRIGHTNESS.toFixed(2)} * (1.0 - dayMask);
+    float glowLight = glow * path * uCityGlow * ${GLOW_BRIGHTNESS.toFixed(2)} * (1.0 - dayMask)
+      * (1.0 - uPopulationAmount * ${POPULATION_DIMS_CITY_LIGHTS.toFixed(2)});
     if (uShadowAmount > 0.0) {
       vec3 throughCloud = normalize(n + view * uCloudAltitude / max(dot(n, view), 0.25));
       glowLight *= exp(-cloudAt(throughCloud, dFdx(vUv), dFdy(vUv)) * ${CITY_LIGHT_EXTINCTION.toFixed(1)} * uShadowAmount);
@@ -288,6 +298,24 @@ void main() {
   float hazeShade = 1.0 - shadow * uBakedShadowMix * ${SHADOW_ON_HAZE.toFixed(1)};
   color += vec3(0.22, 0.48, 1.0) * fresnel * smoothstep(-0.15, 0.45, ndl) * 1.2 * uHaze * hazeShade;
   color += vec3(0.07, 0.16, 0.34) * light * 0.35 * uHaze * hazeShade;
+
+  // 人口の分布。昼夜の陰とは切り離した一定の明るさで重ね、夜の側でも読めるようにする
+  if (uPopulationAmount > 0.0) {
+    vec4 heat;
+    if (uPopulationStyle < 0.5) {
+      heat = populationColor(populationLog(texture2D(uPopulation, vUv).rg));
+    } else {
+      // 1 画素の地表の大きさ (km)。マスの大きさは面積から、点の縁のぼかしは斜めに伸びた長い向きから決める。
+      // 長い向きでマスを決めると、斜めに見たときに手前の点が横に詰まって網目のように見えた
+      vec3 dx = dFdx(vPos);
+      vec3 dy = dFdy(vPos);
+      float kmPerUnit = ${EARTH_RADIUS_KM.toFixed(1)} / length(vPos);
+      float pixelKm = sqrt(length(cross(dx, dy))) * kmPerUnit;
+      float blurKm = max(length(dx), length(dy)) * kmPerUnit;
+      heat = populationDots(vUv, pixelKm, blurKm);
+    }
+    color = mix(color, heat.rgb, heat.a * uPopulationAmount);
+  }
 
   gl_FragColor = vec4(color, 1.0);
   #include <colorspace_fragment>
@@ -425,6 +453,8 @@ export class RealisticEarth {
   private bakedBlend = 1; // 立体の雲の影を焼いたときの、雲の入れ替えの進み具合
   private cloudsWanted = false;
   private cloudFade = 0;
+  private populationWanted = false;
+  private populationFade = 0;
   private readonly haze = { value: 1 };
   private readonly atmosphereThinness = { value: 1 };
   private readonly volume: VolumeClouds;
@@ -462,6 +492,9 @@ export class RealisticEarth {
         uBakedShadowMix: { value: 0 },
         uCityGlow: { value: 1 },
         uGlowMap: { value: null },
+        uPopulation: { value: null },
+        uPopulationAmount: { value: 0 },
+        uPopulationStyle: { value: POPULATION_STYLE_CODES.dots },
         ...this.moon,
         uSunDir: { value: this.sunDir },
       },
@@ -678,6 +711,31 @@ export class RealisticEarth {
 
   setCloudsEnabled(enabled: boolean): void {
     this.cloudsWanted = enabled;
+  }
+
+  // 画像は 1 色だけ使う。届くまでは、オンにしても現れ始めない
+  setPopulationTexture(texture: THREE.Texture): void {
+    this.material.uniforms.uPopulation.value = texture;
+  }
+
+  setPopulationStyle(style: PopulationStyle): void {
+    this.material.uniforms.uPopulationStyle.value = POPULATION_STYLE_CODES[style];
+  }
+
+  setPopulationVisible(visible: boolean): void {
+    this.populationWanted = visible;
+  }
+
+  // 少しでも見えているか
+  get populationShown(): boolean {
+    return this.populationFade > 0;
+  }
+
+  // 毎フレーム呼ぶ
+  updatePopulation(dt: number): void {
+    const ready = this.material.uniforms.uPopulation.value !== null;
+    this.populationFade = stepFade(this.populationFade, this.populationWanted && ready, dt);
+    this.material.uniforms.uPopulationAmount.value = easeInOut(this.populationFade);
   }
 
   // 地球ごと隠すときは途中の状態を残さない。次に見せるときは最初から現れる

@@ -21,7 +21,7 @@ type EarthTileLayer = 'day' | 'night' | 'water';
 // 取得する画像の種類。day は地形の陰影あり、day-plain は陰影なし
 type EarthTileSource = EarthTileLayer | 'day-plain';
 
-type EarthTextureName = 'earth-day' | 'earth-night' | 'earth-water';
+type EarthTextureName = 'earth-day' | 'earth-night' | 'earth-water' | 'population';
 
 interface WeatherLocation {
   name: string;
@@ -33,6 +33,7 @@ interface WeatherLocation {
 }
 
 type UiFont = 'noto-sans-jp' | 'yu-gothic-ui' | 'meiryo-ui' | 'biz-udp-gothic' | 'yu-mincho';
+type PopulationStyle = 'heatmap' | 'dots' | 'dots_flat'; // 塗り、色と大きさの変わる点、色だけ変わる点
 type CruiseMode = 'analog' | 'stepped'; // analog は押している間に速さが変わり、stepped は 1 回押すごとに 1 段変わる
 
 interface GraphicsSettings {
@@ -50,6 +51,8 @@ interface GraphicsSettings {
   border_opacity: number; // 国境線の濃さの倍率。1 が既定 (0〜3)
   show_city_labels: boolean; // 地球儀の上の都市のラベル
   show_country_labels: boolean; // 地球儀の上の国名と国旗
+  show_population: boolean; // 地表に重ねる人口の分布 (通常・天気モード)
+  population_style: PopulationStyle; // 人口の分布の描き方
   show_planet_labels: boolean; // 惑星の点の横の名前
   show_constellations: boolean; // 星座の線
   star_twinkle: boolean; // 星の明るさをゆっくり揺らす

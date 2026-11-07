@@ -29,6 +29,8 @@ DEFAULT_SETTINGS = {
         "border_opacity": 1.0,  # 国境線の濃さの倍率。1 が既定
         "show_city_labels": True,
         "show_country_labels": False,  # 地球儀の上の国名と国旗
+        "show_population": False,  # 地表に重ねる人口の分布 (GHS-POP)
+        "population_style": "dots",  # heatmap は塗り、dots は色と大きさの変わる点、dots_flat は色だけ変わる点
         "show_planet_labels": True,
         "show_constellations": False,  # 星座の線
         "star_twinkle": True,  # 星の明るさをゆっくり揺らす
