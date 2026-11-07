@@ -94,9 +94,13 @@ const TWINKLE_SPEED = 0.8; // 揺れが移り変わる速さ (1 秒あたり)
 const TWINKLE_BASE = 0.65; // 縁は細く、雪などの明るい地面に埋もれやすいので、暗い所をはっきり下げる
 const TWINKLE_PEAK = 0.8; // 一番明るい所は約 1.45 倍
 const ARROW_SIZE_PX = 9; // 矢印の大きさ (描画の画素。先端から根元まで)
-// 太さのある矢印。半透明の塗りに、縁を少し濃くしたもの。縁取りは線と同じ光る帯で描く
-const THICK_ARROW_FILL = 0.3; // 中央の濃さ
-const THICK_ARROW_EDGE = 0.22; // 縁で足す濃さ
+// 太さのある矢印。半透明の塗りに、縁を少し濃くしたもの。縁取りは線と同じ光る帯で描く。
+// はじめは中央 0.3 の薄い塗りで、乾いた大地や砂漠の上では地面に溶けて見づらかったので濃くした。
+// 外側に暗い縁 (ケーシング) を足す案も試したが、汚く見えたのでやめた
+const THICK_ARROW_FILL = 0.6; // 中央の濃さ
+const THICK_ARROW_EDGE = 0.15; // 縁で足す濃さ
+const THICK_ARROW_OPAQUE_FILL = 0.9; // opaque を指定したときの濃さ (主役の動きをはっきり見せる)
+const THICK_ARROW_OPAQUE_EDGE = 0.05;
 const THICK_ARROW_DASHED = 0.5; // 破線のときの塗りの濃さの倍率 (推定のルートなどは控えめにする)
 const THICK_ARROW_REVEAL_SECONDS = 3;
 const ARROW_COUNT = 6; // 線の途中に置く矢印の数 (終点の矢印は別)
@@ -127,7 +131,7 @@ export type HighlightSpec = HighlightStyle &
     | { type: 'river'; name: string }
     | { type: 'area'; name: string }
     | { type: 'line'; points: [number, number][]; name?: string } // [lat, lon] の並び
-    | { type: 'arrow'; points: [number, number][]; name?: string; width?: number; fade?: boolean } // 太さのある矢印。width は太さ (km)、fade は根元をグラデーションで消す
+    | { type: 'arrow'; points: [number, number][]; name?: string; width?: number; fade?: boolean; opaque?: boolean } // 太さのある矢印。width は太さ (km)、fade は根元をグラデーションで消す、opaque は塗りをほぼ不透明にする
     | { type: 'polygon'; points: [number, number][]; name?: string }
     | { type: 'point'; name?: string; lat?: number; lon?: number; elevation?: number } // 名前で探すか、座標で置く。elevation は標高 (m)
   );
@@ -275,6 +279,8 @@ uniform vec3 uColor;
 uniform float uOpacity;
 uniform float uReveal;
 uniform float uStrength; // 塗りの濃さの倍率 (破線のときは下げる)
+uniform float uFill; // 中央の濃さ
+uniform float uEdge; // 縁で足す濃さ
 uniform float uFade; // 根元から、この進み具合までを透明から濃くする。0 で消さない
 varying float vProgress;
 varying float vSide;
@@ -282,7 +288,7 @@ void main() {
   if (vProgress > uReveal) discard;
   float edge = smoothstep(0.45, 1.0, abs(vSide));
   float tail = uFade > 0.0 ? smoothstep(0.0, uFade, vProgress) : 1.0;
-  float alpha = uOpacity * uStrength * tail * (${THICK_ARROW_FILL.toFixed(2)} + ${THICK_ARROW_EDGE.toFixed(2)} * edge);
+  float alpha = uOpacity * uStrength * tail * (uFill + uEdge * edge);
   gl_FragColor = vec4(uColor * flowGain(vProgress, uReveal), alpha);
 }
 `;
@@ -924,6 +930,8 @@ export class Highlights {
           uReveal: { value: 0 },
           uResolution: { value: new THREE.Vector2(1, 1) }, // 使わないが、線と同じ更新で値を入れる
           uStrength: { value: spec.dashed ? THICK_ARROW_DASHED : 1 },
+          uFill: { value: spec.opaque ? THICK_ARROW_OPAQUE_FILL : THICK_ARROW_FILL },
+          uEdge: { value: spec.opaque ? THICK_ARROW_OPAQUE_EDGE : THICK_ARROW_EDGE },
           uFade: { value: fade },
         },
         vertexShader: THICK_ARROW_VS,

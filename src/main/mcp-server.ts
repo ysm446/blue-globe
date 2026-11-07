@@ -93,6 +93,10 @@ const highlightSpec = z.discriminatedUnion('type', [
       .boolean()
       .optional()
       .describe('根元をグラデーションで消す。前の場面から続いている道の一部や、出発点のはっきりしない流れ (伝播、移動) に使う。はっきりした出発点から始まるときは付けない'),
+    opaque: z
+      .boolean()
+      .optional()
+      .describe('塗りをほぼ不透明にする。主役の動きをはっきり見せたいときに使う。矢印の下の地形や範囲を見せたい場面では付けない'),
     name: z.string().optional(),
     ...style,
   }),
