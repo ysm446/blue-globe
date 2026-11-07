@@ -190,6 +190,11 @@
         <div class="legend-scale"><span>0</span><span>風速 m/s</span><span id="legend-max"></span></div>
         <div id="layer-source"></div>
       </div>
+      <div id="population-legend" hidden>
+        <div class="legend-bar" id="population-legend-bar"></div>
+        <div class="legend-scale" id="population-legend-scale"></div>
+        <div class="legend-caption">人口密度 人/km²(GHS-POP 2025 年推計)</div>
+      </div>
     </div>
 
     <div id="screenshot-toast" role="status" hidden>
@@ -258,6 +263,19 @@
         <div class="check-line">
           <label class="check-row" data-help="地球の上に国名と国旗を出します。引いているときは大きな国だけ、寄るほど小さな国まで出ます。都市ラベルとは重なりません。既定: オフ"><input id="country-labels-toggle" type="checkbox" />国名を表示(国旗付き)</label>
           <button class="reset-button" data-reset="show_country_labels" type="button" aria-label="国名の表示を既定に戻す" title="既定に戻す"></button>
+        </div>
+        <div class="check-line">
+          <label class="check-row" data-help="地表に人口密度(人/km²)を色の濃さで重ねます。GHS-POP の 2025 年の推計値を約 5km 四方にまとめたもので、人が住んでいない所は塗りません。風速モードと太陽系では出ません。既定: オフ"><input id="population-toggle" type="checkbox" />人口の分布を表示(通常・天気モード)</label>
+          <button class="reset-button" data-reset="show_population" type="button" aria-label="人口の分布の表示を既定に戻す" title="既定に戻す"></button>
+        </div>
+        <div class="field-grid">
+          <label for="population-style" data-help="人口の分布の描き方。点は地表に同じ間隔で並べ、マスの中心の人口密度の色を付けます。間隔は画面の上でほぼ一定になるよう、寄るほど細かくなります。「色と大きさ」は密な所ほど点を大きくします。既定: 点(色と大きさ)">人口の分布の描き方</label>
+          <select id="population-style">
+            <option value="dots">点(色と大きさ)</option>
+            <option value="dots_flat">点(色だけ)</option>
+            <option value="heatmap">ヒートマップ</option>
+          </select>
+          <button class="reset-button" data-reset="population_style" type="button" aria-label="人口の分布の描き方を既定に戻す" title="既定に戻す"></button>
         </div>
         <h3 class="settings-subhead">空</h3>
         <div class="field-grid">
@@ -550,6 +568,7 @@
         地表: NASA Blue Marble Next Generation(地球ビュー、陰影なしの設定)、Blue Marble Shaded Relief and Bathymetry(陰影ありの設定)。NASA GIBS の固定の合成画像<br />
         標高(地形の陰): AWS Terrain Tiles(Mapzen。SRTM、GMTED2010、ETOPO1 などから作られたもの)<br />
         地域ビューの街明かり: NASA Black Marble(2016 年。GIBS)<br />
+        人口の分布: GHS-POP R2023A(European Commission, Joint Research Centre。2025 年の推計値)を約 5km 四方の人口密度にまとめたもので、元データそのものではありません。Schiavina, M., Freire, S., Carioli, A., MacManus, K. (2023): GHS-POP R2023A - GHS population grid multitemporal (1975-2030). European Commission, Joint Research Centre (JRC). doi:10.2905/2FF68A52-5B5B-4A22-8F40-C41DA8332CFE<br />
         We acknowledge the use of imagery provided by services from NASA's Global Imagery Browse Services (GIBS),
         part of NASA's Earth Science Data and Information System (ESDIS).
         </p>

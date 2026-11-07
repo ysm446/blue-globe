@@ -194,6 +194,7 @@ const TEXTURES: Record<string, string> = {
   'earth-day': 'earth-day.jpg',
   'earth-night': 'earth-night.jpg',
   'earth-water': 'earth-water.png',
+  population: 'population.png', // 人口の分布 (scripts/build-population.py で作る)
 };
 
 ipcMain.handle('texture:get', async (_event, name: string) => {

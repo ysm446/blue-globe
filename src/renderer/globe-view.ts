@@ -28,6 +28,7 @@ import { TourPlayer, type TourScene } from './tour';
 import { bearingDegrees, easeInOut, separationDegrees, wrapDegrees, type LonLat } from './math';
 import { SpeedOverlay } from './overlay';
 import { ParticleSystem } from './particles';
+import { initPopulationLegend } from './population';
 import {
   frameRegionView,
   addRegionDrag,
@@ -565,6 +566,14 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
   const cameraPanel = new CameraPanel(camera, GLOBE_RADIUS);
   const scaleBar = new ScaleBar(camera, GLOBE_RADIUS);
   let scaleBarEnabled = true; // 設定の show_scale_bar
+  // 人口の分布。画像 (4MB) は初めてオンにしたときに読み込む
+  let populationEnabled = false; // 設定の show_population
+  let populationRequested = false;
+  const populationLegend = initPopulationLegend(
+    el('population-legend'),
+    el('population-legend-bar'),
+    el('population-legend-scale'),
+  );
   const planetLabels = new PlanetLabels(el('planet-labels'), sky.planets.map((planet) => planet.name), GLOBE_RADIUS);
   let planetLabelsEnabled = false;
 
@@ -1774,6 +1783,17 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     planetLabelsEnabled = graphics.show_planet_labels;
     headingTapeEnabled = graphics.show_heading_tape;
     scaleBarEnabled = graphics.show_scale_bar;
+    populationEnabled = graphics.show_population;
+    earth.setPopulationStyle(graphics.population_style);
+    if (populationEnabled && !populationRequested) {
+      populationRequested = true;
+      loadEarthTexture('population', renderer)
+        .then((texture) => earth.setPopulationTexture(texture))
+        .catch((err) => {
+          console.error('population texture load failed', err);
+          populationRequested = false; // 次にオンにしたときに読み直す
+        });
+    }
     syncCityLabels();
     if (fpsCounter.hidden === graphics.show_fps) {
       fpsCounter.hidden = !graphics.show_fps;
@@ -1878,6 +1898,8 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
     // 風速モードは元の見た目のまま、HDR の処理を通さず画面へ直接描く
     if (mode !== 'wind' && earthReady) {
       earth.updateClouds(dt);
+      earth.setPopulationVisible(populationEnabled && !solar.active);
+      earth.updatePopulation(dt);
       // 太陽系の場面は地球の球で奥行きを求められないので、ぼかさない。太陽の光のぼけにも使うので、露出より先に決める
       hdr.setDepthOfField(solar.active ? null : depthOfField);
       updateExposure(dt);
@@ -1897,6 +1919,7 @@ export function initGlobe(onSelectCity: (place: DemoPlace) => void, onViewChange
       exposure: mode !== 'wind' && earthReady ? brightness : null,
     });
     scaleBar.update(scaleBarEnabled && !solar.active);
+    populationLegend.setVisible(mode !== 'wind' && earthReady && earth.populationShown);
     if (measureGpu) {
       gpuTimer.end();
       for (const ms of gpuTimer.collect()) {
@@ -2133,7 +2156,9 @@ async function loadEarthTexture(
   });
   const texture = new THREE.Texture(bitmap);
   texture.flipY = false;
-  if (name === 'earth-water') texture.format = THREE.RedFormat; // 1 色だけなので、メモリを 4 分の 1 にする
+  // 1 色だけなので、メモリを 4 分の 1 にする。人口は密度と、人が住んでいるかの 2 色
+  if (name === 'earth-water') texture.format = THREE.RedFormat;
+  if (name === 'population') texture.format = THREE.RGFormat;
   if (name === 'earth-day') texture.colorSpace = THREE.SRGBColorSpace;
   texture.minFilter = THREE.LinearMipmapLinearFilter;
   texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
