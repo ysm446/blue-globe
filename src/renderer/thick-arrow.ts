@@ -1,5 +1,5 @@
 // 太さのある矢印 (ツアーのハイライトの arrow) の形。帯は地表の距離 (km) で一定の太さを持ち、
-// 先端に帯より幅の広い矢じりを付ける (根元から先へ太らせる形は、道筋が読みにくいのでやめた)。渡された点は数点の折れ線なので、点を必ず通るなめらかな曲線にしてから帯にする
+// 先端に帯より幅の広い矢じりを付ける (根元から先へ太らせる形は、道筋が読みにくいのでやめた)。渡された点を直線で結び、角だけを丸めてから帯にする
 // (角で帯が折れ重なるのを防ぐ)。描画 (highlights.ts) から切り離して検証できるよう、Three.js に依存しない。
 // 計算は矢印のまわりの平面 (経度を緯度で縮めた km の座標) で行う。数千 km までの矢印ならずれは小さい
 
@@ -7,7 +7,8 @@ const KM_PER_DEGREE = 111.2;
 const HEAD_WIDTH_RATIO = 1.9; // 矢じりの幅 (帯の太さに対する割合)
 const HEAD_LENGTH_RATIO = 1.3; // 矢じりの長さ (矢じりの幅に対する割合)
 const HEAD_MAX_SHARE = 0.4; // 短い矢印でも、矢じりは全体の長さのこの割合まで
-const SAMPLE_PER_WIDTH = 3; // 曲線を、帯の太さの 1/3 ごとに区切る
+const SAMPLE_PER_WIDTH = 3; // 道筋を、帯の太さの 1/3 ごとに区切る
+const CORNER_RADIUS_RATIO = 2; // 角を丸める大きさ (帯の太さに対する割合)
 
 // 頂点。lon, lat は度、progress は根元からの進み具合 (0〜1)、side は帯の左右 (-1〜1。矢じりの先端は 0)
 export interface ArrowVertex {
@@ -35,39 +36,35 @@ const normalize = (a: Vec): Vec => {
   return l > 1e-12 ? [a[0] / l, a[1] / l] : [1, 0];
 };
 
-// セントリペタル Catmull-Rom 曲線で、p1 から p2 までを t (0〜1) で補間する。ループや尖りができにくい
-function catmullRom(p0: Vec, p1: Vec, p2: Vec, p3: Vec, t: number): Vec {
-  const knot = (a: Vec, b: Vec, previous: number): number => previous + Math.max(Math.sqrt(length(sub(b, a))), 1e-6);
-  const t0 = 0;
-  const t1 = knot(p0, p1, t0);
-  const t2 = knot(p1, p2, t1);
-  const t3 = knot(p2, p3, t2);
-  const u = t1 + (t2 - t1) * t;
-  const lerp = (a: Vec, b: Vec, ta: number, tb: number): Vec => add(scale(a, (tb - u) / (tb - ta)), scale(b, (u - ta) / (tb - ta)));
-  const a1 = lerp(p0, p1, t0, t1);
-  const a2 = lerp(p1, p2, t1, t2);
-  const a3 = lerp(p2, p3, t2, t3);
-  const b1 = lerp(a1, a2, t0, t2);
-  const b2 = lerp(a2, a3, t1, t3);
-  return lerp(b1, b2, t1, t2);
-}
-
-// 点 (平面の km) を通るなめらかな曲線を、step ごとに区切った点の並びにする
-function smoothPath(points: Vec[], step: number): Vec[] {
-  if (points.length < 3) {
-    const [a, b] = points;
-    const count = Math.max(1, Math.ceil(length(sub(b, a)) / step));
-    return Array.from({ length: count + 1 }, (_, i) => add(a, scale(sub(b, a), i / count)));
-  }
-  // 両端は、端の線分をそのまま延ばした点を補って曲線を作る
-  const first = sub(scale(points[0], 2), points[1]);
-  const last = sub(scale(points[points.length - 1], 2), points[points.length - 2]);
-  const padded = [first, ...points, last];
+// 点 (平面の km) を直線で結び、角だけを丸めた道筋を、step ごとに区切った点の並びにする。
+// 角は、曲がり始めと曲がり終わりの点を角から radius ほど手前と先に取り、角を制御点にした 2 次ベジェ曲線でつなぐ。
+// 前後の線分が短いときは、その半分までに縮める (隣の角の丸めと重ならないように)。
+// はじめは点を必ず通るなめらかな曲線 (セントリペタル Catmull-Rom) にしていたが、行って戻る道で折り返しの外へ輪のようにはみ出し、
+// 点の間隔がばらばらな所でうねったので、渡された道筋の外へ出ないこの形にした
+function roundedPath(points: Vec[], step: number, radius: number): Vec[] {
   const out: Vec[] = [points[0]];
-  for (let i = 1; i + 2 < padded.length; i++) {
-    const count = Math.max(1, Math.ceil(length(sub(padded[i + 1], padded[i])) / step));
-    for (let k = 1; k <= count; k++) out.push(catmullRom(padded[i - 1], padded[i], padded[i + 1], padded[i + 2], k / count));
+  const pushLine = (from: Vec, to: Vec): void => {
+    const count = Math.max(1, Math.ceil(length(sub(to, from)) / step));
+    for (let k = 1; k <= count; k++) out.push(add(from, scale(sub(to, from), k / count)));
+  };
+  let cursor = points[0];
+  for (let i = 1; i + 1 < points.length; i++) {
+    const corner = points[i];
+    const before = length(sub(corner, points[i - 1]));
+    const after = length(sub(points[i + 1], corner));
+    const cut = Math.min(radius, before / 2, after / 2);
+    const start = add(corner, scale(normalize(sub(points[i - 1], corner)), cut));
+    const end = add(corner, scale(normalize(sub(points[i + 1], corner)), cut));
+    pushLine(cursor, start);
+    const count = Math.max(2, Math.ceil((cut * 2) / step));
+    for (let k = 1; k <= count; k++) {
+      const t = k / count;
+      const u = 1 - t;
+      out.push(add(add(scale(start, u * u), scale(corner, 2 * u * t)), scale(end, t * t)));
+    }
+    cursor = end;
   }
+  pushLine(cursor, points[points.length - 1]);
   return out;
 }
 
@@ -86,7 +83,7 @@ export function buildThickArrow(points: [number, number][], widthKm: number): Th
     if (plane.length === 0 || length(sub(point, plane[plane.length - 1])) > 1e-6) plane.push(point);
   }
   if (plane.length < 2) return null;
-  const path = smoothPath(plane, widthKm / SAMPLE_PER_WIDTH);
+  const path = roundedPath(plane, widthKm / SAMPLE_PER_WIDTH, widthKm * CORNER_RADIUS_RATIO);
   const along = [0];
   for (let i = 1; i < path.length; i++) along.push(along[i - 1] + length(sub(path[i], path[i - 1])));
   const total = along[along.length - 1];
@@ -185,4 +182,80 @@ export function defaultArrowWidthKm(points: [number, number][]): number {
     total += Math.hypot((lon1 - lon0) * k, lat1 - lat0) * KM_PER_DEGREE;
   }
   return Math.min(150, Math.max(10, total * 0.035));
+}
+
+// これより大きく曲がる所 (内側の角度が 45° より鋭い所) で矢印を分ける。来た道を戻る所 (アレキサンダーで 138〜180°) は分け、
+// ただの曲がり角 (同じく 112〜113°) は分けない。はじめは 110° にしていて、ただの曲がり角でも切れ、場面 1 が 8 本に分かれた
+const SPLIT_TURN_DEG = 135;
+const SPLIT_GAP_RATIO = 0.8; // 分けた次の矢印の根元を、前の矢じりから離す距離 (帯の太さに対する割合)
+
+// 点 i で曲がる角度 (度。0 はまっすぐ、180 は来た道を戻る)
+function turnAt(points: [number, number][], i: number): number {
+  const vector = (a: [number, number], b: [number, number]): Vec => {
+    const k = Math.cos((((a[1] + b[1]) / 2) * Math.PI) / 180);
+    return [(b[0] - a[0]) * k, b[1] - a[1]];
+  };
+  const before = normalize(vector(points[i - 1], points[i]));
+  const after = normalize(vector(points[i], points[i + 1]));
+  const dot = Math.max(-1, Math.min(1, before[0] * after[0] + before[1] * after[1]));
+  return (Math.acos(dot) * 180) / Math.PI;
+}
+
+// 急に曲がる所で、点の並びを分ける。分けた点はどちらの並びにも入る
+export function splitAtSharpTurns(points: [number, number][], maxTurnDeg = SPLIT_TURN_DEG): [number, number][][] {
+  const pieces: [number, number][][] = [];
+  let current: [number, number][] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    current.push(points[i]);
+    if (i + 1 < points.length && turnAt(points, i) > maxTurnDeg) {
+      pieces.push(current);
+      current = [points[i]];
+    }
+  }
+  pieces.push(current);
+  return pieces.filter((piece) => piece.length >= 2);
+}
+
+// 急に曲がる所で分けた矢印。進み具合 (progress) は全体を通した値にし、1 本目が伸びきってから 2 本目が伸びるようにする。
+// 2 本目からは、前の矢じりと重ならないよう根元を少し先から始める
+export function buildSplitArrow(points: [number, number][], widthKm: number): { pieces: ThickArrow[]; lengthKm: number } | null {
+  const gapKm = widthKm * SPLIT_GAP_RATIO;
+  const built: ThickArrow[] = [];
+  splitAtSharpTurns(points).forEach((piece, index) => {
+    let start = piece;
+    if (index > 0) {
+      const [a, b] = piece;
+      const k = Math.cos((((a[1] + b[1]) / 2) * Math.PI) / 180);
+      const segmentKm = Math.hypot((b[0] - a[0]) * k, b[1] - a[1]) * KM_PER_DEGREE;
+      const t = Math.min(gapKm, segmentKm * 0.3) / Math.max(segmentKm, 1e-9);
+      start = [[a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t], ...piece.slice(1)];
+    }
+    const arrow = buildThickArrow(start, widthKm);
+    if (arrow) built.push(arrow);
+  });
+  if (built.length === 0) return null;
+  const total = built.reduce((sum, arrow) => sum + arrow.lengthKm, 0);
+  let offset = 0;
+  const pieces = built.map((arrow) => {
+    const share = arrow.lengthKm / total;
+    const base = offset;
+    offset += share;
+    // 頂点は三角形と縁で共有しているので、同じ頂点は 1 回だけ置き換える
+    const mapped = new Map<ArrowVertex, ArrowVertex>();
+    const remap = (v: ArrowVertex): ArrowVertex => {
+      let out = mapped.get(v);
+      if (!out) {
+        out = { ...v, progress: base + v.progress * share };
+        mapped.set(v, out);
+      }
+      return out;
+    };
+    return {
+      triangles: arrow.triangles.map(([a, b, c]) => [remap(a), remap(b), remap(c)] as [ArrowVertex, ArrowVertex, ArrowVertex]),
+      outline: { left: arrow.outline.left.map(remap), right: arrow.outline.right.map(remap) },
+      center: arrow.center.map(remap),
+      lengthKm: arrow.lengthKm,
+    };
+  });
+  return { pieces, lengthKm: total };
 }

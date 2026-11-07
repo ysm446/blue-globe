@@ -87,7 +87,7 @@ const highlightSpec = z.discriminatedUnion('type', [
   z.object({ type: z.literal('line'), points: z.array(latLon).min(2).describe('[緯度, 経度] の並び'), name: z.string().optional(), ...style }),
   z.object({
     type: z.literal('arrow'),
-    points: z.array(latLon).min(2).describe('[緯度, 経度] の並び。根元から先端へ。点を通るなめらかな曲線にする'),
+    points: z.array(latLon).min(2).describe('[緯度, 経度] の並び。根元から先端へ。点を直線で結び、角を丸める。曲がる所には点を置く。135° より大きく曲がる所 (来た道を戻る所) では矢印を分ける'),
     width: z.number().min(1).max(2000).optional().describe('太さ (km)。省くと長さの 3.5% (10〜150km)。同じ所から出る矢印や、範囲を示す場面では 30km 前後に細くする'),
     fade: z
       .boolean()

@@ -1,7 +1,7 @@
 // 太さのある矢印の形の検証。実行: node --test tests/thick-arrow.test.ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { arrowFadeShare, buildThickArrow, defaultArrowWidthKm } from '../src/renderer/thick-arrow.ts';
+import { arrowFadeShare, buildSplitArrow, buildThickArrow, defaultArrowWidthKm, splitAtSharpTurns } from '../src/renderer/thick-arrow.ts';
 
 const KM = 111.2;
 
@@ -32,10 +32,22 @@ test('帯は根元から先まで同じ太さで、矢じりは帯より幅が�
   assert.ok(head > shaftEnd * 1.8, `矢じり ${head} が帯 ${shaftEnd} より十分広くない`);
 });
 
-test('曲がった道筋でも、渡した途中の点を通る', () => {
-  const arrow = buildThickArrow([[0, 0], [5, 5], [10, 0]], 40)!;
-  const nearest = Math.min(...arrow.center.map((v) => Math.hypot(v.lon - 5, v.lat - 5)));
-  assert.ok(nearest < 0.05, `途中の点から ${nearest} 度離れた`);
+test('点の間は直線で結び、角だけを丸める', () => {
+  // 長い 2 本の線分。角から離れた所は、点を結ぶ直線の上にある
+  const arrow = buildThickArrow([[0, 0], [10, 0], [10, 10]], 20)!;
+  const onFirst = arrow.center.filter((v) => v.lon > 1 && v.lon < 8);
+  assert.ok(onFirst.length > 0);
+  for (const v of onFirst) assert.ok(Math.abs(v.lat) < 1e-9, `直線から外れた: ${v.lat}`);
+  // 角は丸めるので、角の点そのものは通らないが、近くを通る
+  const nearest = Math.min(...arrow.center.map((v) => Math.hypot(v.lon - 10, v.lat)));
+  assert.ok(nearest > 0.01 && nearest < 0.5, `角からの距離: ${nearest}`);
+});
+
+test('行って戻る道でも、折り返しの外へはみ出さない', () => {
+  // 東へ 10 度進み、ほぼ同じ道を戻る。折り返しの点 (経度 10) より東へ出ない
+  const arrow = buildThickArrow([[0, 0], [10, 0], [0, 0.5]], 30)!;
+  const east = Math.max(...arrow.center.map((v) => v.lon));
+  assert.ok(east <= 10 + 1e-9, `折り返しの外へ出た: ${east}`);
 });
 
 test('進み具合は根元から先へ増えていく', () => {
@@ -73,4 +85,27 @@ test('根元を消す区間は帯の太さの 4 倍で、全体の 30% まで', 
   assert.ok(Math.abs(arrowFadeShare(30, 1000) - 0.12) < 1e-9);
   assert.equal(arrowFadeShare(30, 200), 0.3);
   assert.equal(arrowFadeShare(30, 0), 0);
+});
+
+test('来た道を戻る所では矢印を分け、ゆるい角では分けない', () => {
+  assert.equal(splitAtSharpTurns([[0, 0], [10, 0], [0, 1]]).length, 2);
+  assert.equal(splitAtSharpTurns([[0, 0], [10, 0], [10, 10]]).length, 1); // 90°
+  assert.equal(splitAtSharpTurns([[0, 0], [10, 0], [5, 5]]).length, 1); // 135°
+  assert.equal(splitAtSharpTurns([[0, 0], [10, 0], [20, 0]]).length, 1);
+  const pieces = splitAtSharpTurns([[0, 0], [10, 0], [0, 1], [10, 2]]);
+  assert.equal(pieces.length, 3);
+  assert.deepEqual(pieces[1][0], [10, 0]); // 分けた点は次の並びの始まりにもなる
+});
+
+test('分けた矢印は、1 本目が伸びきってから 2 本目が伸びる', () => {
+  const split = buildSplitArrow([[0, 0], [10, 0], [0, 1]], 40)!;
+  assert.equal(split.pieces.length, 2);
+  const [first, second] = split.pieces;
+  const firstEnd = Math.max(...first.center.map((v) => v.progress));
+  const secondStart = Math.min(...second.center.map((v) => v.progress));
+  assert.ok(Math.abs(firstEnd - secondStart) < 1e-9, `${firstEnd} と ${secondStart}`);
+  assert.ok(Math.abs(Math.max(...second.center.map((v) => v.progress)) - 1) < 1e-9);
+  // 2 本目の根元は、折り返しの点から少し離れている
+  const tail = second.center[0];
+  assert.ok(tail.lon < 10 - 0.05, `根元の経度: ${tail.lon}`);
 });

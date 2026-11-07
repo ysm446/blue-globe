@@ -17,7 +17,7 @@ import {
   type RegionRecord,
   type RiverRecord,
 } from './highlight-data';
-import { arrowFadeShare, buildThickArrow, defaultArrowWidthKm, type ArrowVertex } from './thick-arrow';
+import { arrowFadeShare, buildSplitArrow, defaultArrowWidthKm, type ArrowVertex } from './thick-arrow';
 
 // 地表からの高さ。海岸線 (地域ビューで 1.0007) と同じくらいにし、塗りは線より下に置く
 const LINE_RADIUS = 1.0009;
@@ -917,10 +917,15 @@ export class Highlights {
       const lonLats: [number, number][] = [];
       for (let i = 0; i + 1 < coords.length; i += 2) lonLats.push([coords[i], coords[i + 1]]);
       const widthKm = spec.width ?? defaultArrowWidthKm(lonLats);
-      const arrow = buildThickArrow(lonLats, widthKm);
-      if (!arrow) return null;
-      // 根元を消す区間 (進み具合)。消さないときは 0
-      const fade = spec.fade ? arrowFadeShare(widthKm, arrow.lengthKm) : 0;
+      // 急に曲がる所 (来た道を戻る所など) では、無理に曲げずに矢印を分ける
+      const split = buildSplitArrow(lonLats, widthKm);
+      if (!split) return null;
+      const { pieces } = split;
+      // 根元を消す区間 (全体を通した進み具合)。最初の 1 本の根元だけに効かせる。消さないときは 0
+      const firstShare = pieces[0].lengthKm / split.lengthKm;
+      const fade = spec.fade ? arrowFadeShare(widthKm, pieces[0].lengthKm) * firstShare : 0;
+      // 分けた本数が多いと、1 本あたりの伸びる時間が短くなるので、全体の時間を少し延ばす
+      const revealSeconds = THICK_ARROW_REVEAL_SECONDS * Math.min(2, 1 + 0.25 * (pieces.length - 1));
       const material = new THREE.ShaderMaterial({
         uniforms: {
           uTime: { value: 0 },
@@ -942,22 +947,24 @@ export class Highlights {
         depthFunc: THREE.LessDepth,
         side: THREE.DoubleSide,
       });
-      item.group.add(new THREE.Mesh(buildThickArrowFill(arrow.triangles), material));
-      item.ribbons.push({ material, seconds: THICK_ARROW_REVEAL_SECONDS });
-      // 縁取り。左右の縁と、根元の端 (根元を消すときは端の線を描かず、縁も根元から濃くする)
+      item.group.add(new THREE.Mesh(buildThickArrowFill(pieces.flatMap((piece) => piece.triangles)), material));
+      item.ribbons.push({ material, seconds: revealSeconds });
+      // 縁取り。左右の縁と、根元の端 (最初の 1 本の根元を消すときは、その端の線を描かず、縁も根元から濃くする)
       const edgeLine = (vertices: ArrowVertex[]) => ({
         coords: vertices.flatMap((p) => [p.lon, p.lat]),
         progress: vertices.map((p) => p.progress),
       });
-      const edges = [edgeLine(arrow.outline.left), edgeLine(arrow.outline.right)];
-      if (!fade) edges.push(edgeLine([arrow.outline.left[0], arrow.outline.right[0]]));
-      const outline = addRibbon(edges, lineColor, OUTLINE_WIDTH_PX, THICK_ARROW_REVEAL_SECONDS, 1, false, 'wave');
+      const edges = pieces.flatMap((piece, index) => {
+        const lines = [edgeLine(piece.outline.left), edgeLine(piece.outline.right)];
+        if (index > 0 || !fade) lines.push(edgeLine([piece.outline.left[0], piece.outline.right[0]]));
+        return lines;
+      });
+      const outline = addRibbon(edges, lineColor, OUTLINE_WIDTH_PX, revealSeconds, 1, false, 'wave');
       outline.uniforms.uFade.value = fade;
-      const centerLine = edgeLine(arrow.center);
-      const candidates = lineCandidates([centerLine]);
+      const candidates = lineCandidates(pieces.map((piece) => edgeLine(piece.center)));
       addLabel(text, 'river', candidates.points, candidates.progress, false);
-      item.revealSeconds = THICK_ARROW_REVEAL_SECONDS;
-      return { item, info: { name: spec.name ?? '', kind: 'arrow', lengthKm: Math.round(arrow.lengthKm), bounds: boundsOf([coords]) } };
+      item.revealSeconds = revealSeconds;
+      return { item, info: { name: spec.name ?? '', kind: 'arrow', lengthKm: Math.round(split.lengthKm), bounds: boundsOf([coords]) } };
     }
     if (spec.type === 'line') {
       const line = { coords, progress: progressAlong(coords) };
