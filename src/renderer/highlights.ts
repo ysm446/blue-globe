@@ -17,7 +17,7 @@ import {
   type RegionRecord,
   type RiverRecord,
 } from './highlight-data';
-import { buildThickArrow, defaultArrowWidthKm, type ArrowVertex } from './thick-arrow';
+import { arrowFadeShare, buildThickArrow, defaultArrowWidthKm, type ArrowVertex } from './thick-arrow';
 
 // 地表からの高さ。海岸線 (地域ビューで 1.0007) と同じくらいにし、塗りは線より下に置く
 const LINE_RADIUS = 1.0009;
@@ -127,7 +127,7 @@ export type HighlightSpec = HighlightStyle &
     | { type: 'river'; name: string }
     | { type: 'area'; name: string }
     | { type: 'line'; points: [number, number][]; name?: string } // [lat, lon] の並び
-    | { type: 'arrow'; points: [number, number][]; name?: string; width?: number } // 太さのある矢印。width は太さ (km)
+    | { type: 'arrow'; points: [number, number][]; name?: string; width?: number; fade?: boolean } // 太さのある矢印。width は太さ (km)、fade は根元をグラデーションで消す
     | { type: 'polygon'; points: [number, number][]; name?: string }
     | { type: 'point'; name?: string; lat?: number; lon?: number; elevation?: number } // 名前で探すか、座標で置く。elevation は標高 (m)
   );
@@ -205,18 +205,20 @@ uniform float uOpacity;
 uniform float uReveal;
 uniform float uHead; // なぞっている先端を明るくする強さ
 uniform float uDashes; // 破線の切れ目の数。0 で実線
+uniform float uFade; // 根元から、この進み具合までを透明から濃くする (太さのある矢印の根元を消す)。0 で消さない
 varying float vProgress;
 varying float vSide;
 void main() {
   if (vProgress > uReveal) discard;
   if (uDashes > 0.0 && fract(vProgress * uDashes) > 0.6) discard;
+  float tail = uFade > 0.0 ? smoothstep(0.0, uFade, vProgress) : 1.0;
   float side = abs(vSide);
   float edge = 1.0 - smoothstep(0.15, 1.0, side);
   // 中心は白に寄せて明るさを保ち、縁は色のまま薄くする。光る管のような質感にする
   float peak = max(max(uColor.r, uColor.g), uColor.b);
   vec3 color = mix(uColor, vec3(peak), 0.25 * (1.0 - smoothstep(0.0, 0.55, side)));
   float head = uHead * exp(-(uReveal - vProgress) * 40.0) * (1.0 - step(0.999, uReveal));
-  gl_FragColor = vec4(color * (1.0 + head * 1.2) * flowGain(vProgress, uReveal), edge * uOpacity);
+  gl_FragColor = vec4(color * (1.0 + head * 1.2) * flowGain(vProgress, uReveal), edge * uOpacity * tail);
 }
 `;
 
@@ -273,12 +275,14 @@ uniform vec3 uColor;
 uniform float uOpacity;
 uniform float uReveal;
 uniform float uStrength; // 塗りの濃さの倍率 (破線のときは下げる)
+uniform float uFade; // 根元から、この進み具合までを透明から濃くする。0 で消さない
 varying float vProgress;
 varying float vSide;
 void main() {
   if (vProgress > uReveal) discard;
   float edge = smoothstep(0.45, 1.0, abs(vSide));
-  float alpha = uOpacity * uStrength * (${THICK_ARROW_FILL.toFixed(2)} + ${THICK_ARROW_EDGE.toFixed(2)} * edge);
+  float tail = uFade > 0.0 ? smoothstep(0.0, uFade, vProgress) : 1.0;
+  float alpha = uOpacity * uStrength * tail * (${THICK_ARROW_FILL.toFixed(2)} + ${THICK_ARROW_EDGE.toFixed(2)} * edge);
   gl_FragColor = vec4(uColor * flowGain(vProgress, uReveal), alpha);
 }
 `;
@@ -398,6 +402,7 @@ function ribbonMaterial(color: THREE.Color, width: number, head: number, dashed 
       uReveal: { value: 0 },
       uHead: { value: head },
       uDashes: { value: dashed ? DASH_COUNT : 0 },
+      uFade: { value: 0 },
       uResolution: { value: new THREE.Vector2(1, 1) },
       uWidth: { value: width },
     },
@@ -799,12 +804,12 @@ export class Highlights {
     const areaColor = base;
     const areaLineColor = lineColor;
     // flow は揺らぎの種類。wave は流れる波 (川と線)、twinkle はきらめき (範囲の縁取り)
-    const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number, arrows = false, flow: 'none' | 'wave' | 'twinkle' = 'none'): void => {
+    const addRibbon = (lines: { coords: number[]; progress: number[] }[], color: THREE.Color, width: number, seconds: number, head: number, arrows = false, flow: 'none' | 'wave' | 'twinkle' = 'none'): THREE.ShaderMaterial => {
       const flowMode = flow === 'wave' ? 1 : flow === 'twinkle' ? 2 : 0;
       const material = ribbonMaterial(color, width, head, spec.dashed, flowMode);
       item.group.add(new THREE.Mesh(buildRibbon(lines), material));
       item.ribbons.push({ material, seconds });
-      if (!arrows) return;
+      if (!arrows) return material;
       const arrow = new THREE.ShaderMaterial({
         uniforms: {
           uTime: { value: 0 },
@@ -822,6 +827,7 @@ export class Highlights {
       });
       item.group.add(new THREE.Mesh(buildArrows(lines), arrow));
       item.ribbons.push({ material: arrow, seconds });
+      return material;
     };
     const addArea = (polygons: number[][][]): void => {
       const fill = new THREE.ShaderMaterial({
@@ -904,8 +910,11 @@ export class Highlights {
     if (spec.type === 'arrow') {
       const lonLats: [number, number][] = [];
       for (let i = 0; i + 1 < coords.length; i += 2) lonLats.push([coords[i], coords[i + 1]]);
-      const arrow = buildThickArrow(lonLats, spec.width ?? defaultArrowWidthKm(lonLats));
+      const widthKm = spec.width ?? defaultArrowWidthKm(lonLats);
+      const arrow = buildThickArrow(lonLats, widthKm);
       if (!arrow) return null;
+      // 根元を消す区間 (進み具合)。消さないときは 0
+      const fade = spec.fade ? arrowFadeShare(widthKm, arrow.lengthKm) : 0;
       const material = new THREE.ShaderMaterial({
         uniforms: {
           uTime: { value: 0 },
@@ -915,6 +924,7 @@ export class Highlights {
           uReveal: { value: 0 },
           uResolution: { value: new THREE.Vector2(1, 1) }, // 使わないが、線と同じ更新で値を入れる
           uStrength: { value: spec.dashed ? THICK_ARROW_DASHED : 1 },
+          uFade: { value: fade },
         },
         vertexShader: THICK_ARROW_VS,
         fragmentShader: THICK_ARROW_FS,
@@ -926,13 +936,15 @@ export class Highlights {
       });
       item.group.add(new THREE.Mesh(buildThickArrowFill(arrow.triangles), material));
       item.ribbons.push({ material, seconds: THICK_ARROW_REVEAL_SECONDS });
-      // 縁取り。左右の縁と、根元の端
+      // 縁取り。左右の縁と、根元の端 (根元を消すときは端の線を描かず、縁も根元から濃くする)
       const edgeLine = (vertices: ArrowVertex[]) => ({
         coords: vertices.flatMap((p) => [p.lon, p.lat]),
         progress: vertices.map((p) => p.progress),
       });
-      const tail = [arrow.outline.left[0], arrow.outline.right[0]];
-      addRibbon([edgeLine(arrow.outline.left), edgeLine(arrow.outline.right), edgeLine(tail)], lineColor, OUTLINE_WIDTH_PX, THICK_ARROW_REVEAL_SECONDS, 1, false, 'wave');
+      const edges = [edgeLine(arrow.outline.left), edgeLine(arrow.outline.right)];
+      if (!fade) edges.push(edgeLine([arrow.outline.left[0], arrow.outline.right[0]]));
+      const outline = addRibbon(edges, lineColor, OUTLINE_WIDTH_PX, THICK_ARROW_REVEAL_SECONDS, 1, false, 'wave');
+      outline.uniforms.uFade.value = fade;
       const centerLine = edgeLine(arrow.center);
       const candidates = lineCandidates([centerLine]);
       addLabel(text, 'river', candidates.points, candidates.progress, false);

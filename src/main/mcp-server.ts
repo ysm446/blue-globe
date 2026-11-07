@@ -88,7 +88,11 @@ const highlightSpec = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('arrow'),
     points: z.array(latLon).min(2).describe('[緯度, 経度] の並び。根元から先端へ。点を通るなめらかな曲線にする'),
-    width: z.number().min(1).max(2000).optional().describe('太さ (km)。省くと長さの 3.5% (10〜150km)'),
+    width: z.number().min(1).max(2000).optional().describe('太さ (km)。省くと長さの 3.5% (10〜150km)。同じ所から出る矢印や、範囲を示す場面では 30km 前後に細くする'),
+    fade: z
+      .boolean()
+      .optional()
+      .describe('根元をグラデーションで消す。前の場面から続いている道の一部や、出発点のはっきりしない流れ (伝播、移動) に使う。はっきりした出発点から始まるときは付けない'),
     name: z.string().optional(),
     ...style,
   }),

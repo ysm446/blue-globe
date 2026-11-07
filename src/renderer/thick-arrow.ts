@@ -167,6 +167,13 @@ export function buildThickArrow(points: [number, number][], widthKm: number): Th
   };
 }
 
+// 根元をグラデーションで消すとき、消える区間の長さ (根元からの進み具合 0〜1)。帯の太さの 4 倍で、全体の 30% まで。
+// 根元が消える矢印は「前から続いている道」や「出発点のはっきりしない流れ」を示す
+export function arrowFadeShare(widthKm: number, lengthKm: number): number {
+  if (!(lengthKm > 0)) return 0;
+  return Math.min(0.3, (widthKm * 4) / lengthKm);
+}
+
 // 太さを指定されなかったときの太さ (km)。矢印の長さの 3.5% にし、細すぎも太すぎもしないよう抑える。
 // はじめは 6% (最大 300km) にしたが、帯が太く、急な曲がり角で帯が重なった
 export function defaultArrowWidthKm(points: [number, number][]): number {

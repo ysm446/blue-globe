@@ -1,7 +1,7 @@
 // 太さのある矢印の形の検証。実行: node --test tests/thick-arrow.test.ts
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildThickArrow, defaultArrowWidthKm } from '../src/renderer/thick-arrow.ts';
+import { arrowFadeShare, buildThickArrow, defaultArrowWidthKm } from '../src/renderer/thick-arrow.ts';
 
 const KM = 111.2;
 
@@ -67,4 +67,10 @@ test('道筋が先端の近くで曲がっていても、矢じりは左右対�
   const dist = (a: { lon: number; lat: number }, b: { lon: number; lat: number }): number => Math.hypot((a.lon - b.lon) * k, a.lat - b.lat);
   const ratio = dist(tip, left) / dist(tip, right);
   assert.ok(Math.abs(ratio - 1) < 0.02, `左右の辺の長さの比: ${ratio}`);
+});
+
+test('根元を消す区間は帯の太さの 4 倍で、全体の 30% まで', () => {
+  assert.ok(Math.abs(arrowFadeShare(30, 1000) - 0.12) < 1e-9);
+  assert.equal(arrowFadeShare(30, 200), 0.3);
+  assert.equal(arrowFadeShare(30, 0), 0);
 });
