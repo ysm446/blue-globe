@@ -81,6 +81,7 @@ class SettingsApiTest(unittest.TestCase):
         "border_opacity": 2.0,
         "show_city_labels": False,
         "show_country_labels": True,
+        "show_terrain_labels": True,
         "show_population": True,
         "population_style": "heatmap",
         "show_planet_labels": False,
@@ -192,6 +193,7 @@ class SettingsApiTest(unittest.TestCase):
         self.assertTrue(graphics["show_map_lines"])
         self.assertTrue(graphics["show_city_labels"])
         self.assertFalse(graphics["show_country_labels"])
+        self.assertFalse(graphics["show_terrain_labels"])
         self.assertFalse(graphics["show_population"])
         self.assertEqual(graphics["population_style"], "dots")
         self.assertTrue(graphics["show_planet_labels"])

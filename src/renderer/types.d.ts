@@ -51,6 +51,7 @@ interface GraphicsSettings {
   border_opacity: number; // 国境線の濃さの倍率。1 が既定 (0〜3)
   show_city_labels: boolean; // 地球儀の上の都市のラベル
   show_country_labels: boolean; // 地球儀の上の国名と国旗
+  show_terrain_labels: boolean; // 地球儀の上の地形の名前 (山脈、砂漠など) と山の頂
   show_population: boolean; // 地表に重ねる人口の分布 (通常・天気モード)
   population_style: PopulationStyle; // 人口の分布の描き方
   show_planet_labels: boolean; // 惑星の点の横の名前

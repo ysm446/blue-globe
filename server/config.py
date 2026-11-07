@@ -29,6 +29,7 @@ DEFAULT_SETTINGS = {
         "border_opacity": 1.0,  # 国境線の濃さの倍率。1 が既定
         "show_city_labels": True,
         "show_country_labels": False,  # 地球儀の上の国名と国旗
+        "show_terrain_labels": False,  # 地球儀の上の地形の名前 (山脈、砂漠など) と山の頂
         "show_population": False,  # 地表に重ねる人口の分布 (GHS-POP)
         "population_style": "dots",  # heatmap は塗り、dots は色と大きさの変わる点、dots_flat は色だけ変わる点
         "show_planet_labels": True,

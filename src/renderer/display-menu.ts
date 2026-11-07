@@ -4,6 +4,7 @@ import { el } from './dom';
 type DisplayKey =
   | 'show_map_lines'
   | 'show_country_labels'
+  | 'show_terrain_labels'
   | 'show_population'
   | 'show_city_labels'
   | 'show_planet_labels'
@@ -25,6 +26,7 @@ const ITEMS: DisplayItem[] = [
     inactive: (mode, view) => (view === 'solar' ? '太陽系では出ません' : mode === 'wind' ? '風速モードではいつも描きます' : null),
   },
   { key: 'show_country_labels', label: '国名', inactive: (_mode, view) => (view === 'solar' ? '太陽系では出ません' : null) },
+  { key: 'show_terrain_labels', label: '地形の名前', inactive: (_mode, view) => (view === 'solar' ? '太陽系では出ません' : null) },
   { key: 'show_city_labels', label: '都市名', inactive: (_mode, view) => (view === 'solar' ? '太陽系では出ません' : null) },
   {
     key: 'show_population',

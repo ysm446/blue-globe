@@ -21,6 +21,7 @@ interface CountryLabel {
   world: THREE.Vector3;
   width: number; // 文字の幅は変わらないので、最初に測って使い回す
   height: number;
+  box: LabelBox | null;
   transform: string;
   shown: boolean;
 }
@@ -68,10 +69,16 @@ export class CountryLabels {
         world: lonLatToVector3(country.x, country.y, this.radius),
         width: 0,
         height: 0,
+        box: null,
         transform: '',
         shown: false,
       };
     });
+  }
+
+  shownBoxes(): LabelBox[] {
+    if (this.container.hidden) return [];
+    return this.labels.filter((label) => label.shown && label.box).map((label) => label.box as LabelBox);
   }
 
   // 毎フレーム呼ぶ。blocked は重ねない範囲 (都市のラベルなど)、excluded はハイライトがすでに出している国 (ADM0_A3)
@@ -91,6 +98,7 @@ export class CountryLabels {
     const shown = placeLabels(boxes, blocked);
     this.labels.forEach((label, index) => {
       const box = boxes[index];
+      label.box = box;
       if (box) {
         const transform = `translate(${box.x.toFixed(1)}px, ${box.y.toFixed(1)}px)`;
         if (transform !== label.transform) {
