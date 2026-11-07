@@ -266,7 +266,7 @@
           <button class="reset-button" data-reset="show_country_labels" type="button" aria-label="国名の表示を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
-          <label class="check-row" data-help="地球の上に山脈、砂漠、高原、平野、盆地などの名前を出します。引いているときは大きな地形だけ、寄るほど小さな地形まで出ます。地域ビューで寄ると、山の頂を標高付きで出します。都市名と国名とは重なりません。既定: オフ"><input id="terrain-labels-toggle" type="checkbox" />地形の名前を表示(山脈、砂漠、山の頂など)</label>
+          <label class="check-row" data-help="地球の上に山脈、砂漠、高原、平野、盆地、川、湖などの名前を出します。川の名前は、日本語の名前が定まっている主な川だけです。引いているときは大きな地形だけ、寄るほど小さな地形まで出ます。地域ビューで寄ると、山の頂を標高付きで出します。都市名と国名とは重なりません。既定: オフ"><input id="terrain-labels-toggle" type="checkbox" />地形の名前を表示(山脈、砂漠、川、湖、山の頂など)</label>
           <button class="reset-button" data-reset="show_terrain_labels" type="button" aria-label="地形の名前の表示を既定に戻す" title="既定に戻す"></button>
         </div>
         <div class="check-line">
@@ -569,7 +569,7 @@
         地名検索: 国土地理院、Open-Meteo<br />
         雲: NOAA GMGSI(衛星の全球合成画像)と NOAA GFS をもとに加工したもので、元データそのものではありません。近づいたときの立体の雲は、高さと細かい形を見た目のために作っています<br />
         星と星座の線: Hipparcos カタログ、d3-celestial<br />
-        川、山脈などの範囲、国: Natural Earth。国旗: flag-icons(MIT)<br />
+        川、山脈などの範囲、湖、国: Natural Earth(湖の日本語名は Natural Earth に含まれる Wikidata の名前。川の日本語名はアプリで付けたもの)。国旗: flag-icons(MIT)<br />
         地表: NASA Blue Marble Next Generation(地球ビュー、陰影なしの設定)、Blue Marble Shaded Relief and Bathymetry(陰影ありの設定)。NASA GIBS の固定の合成画像<br />
         標高(地形の陰): AWS Terrain Tiles(Mapzen。SRTM、GMTED2010、ETOPO1 などから作られたもの)<br />
         地域ビューの街明かり: NASA Black Marble(2016 年。GIBS)<br />
